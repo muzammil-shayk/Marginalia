@@ -131,12 +131,13 @@ function renderHighlightedText(
     let bb = 'none';
 
     if (styleInfo.ai) {
-      bg = `${styleInfo.color || defaultColor}40`;
+      bg = `${styleInfo.color || defaultColor}20`;
       bb = 'none';
       if (fw === 'inherit') fw = 'bold';
     }
+    
     if (styleInfo.type.has('highlight')) {
-      bg = `${styleInfo.color || defaultColor}50`;
+      bg = `${styleInfo.color || defaultColor}35`;
     }
 
     const isHoveredAnno = hoveredAnnotationId && styleInfo.annoIds.has(hoveredAnnotationId);
@@ -161,7 +162,7 @@ function renderHighlightedText(
       <mark
         id={spanId}
         key={`span-${key}`}
-        className={`transition-all inline select-text ${cls} ${styleInfo.type.size > 0 && !styleInfo.ai ? 'cursor-pointer hover:opacity-80' : ''}`}
+        className={`transition-all inline select-text ${cls}`}
         style={{
           backgroundColor: adjustedBg,
           borderBottom: bb,
@@ -171,13 +172,6 @@ function renderHighlightedText(
           textUnderlineOffset: '5px',
           color: 'inherit',
           fontWeight: fw
-        }}
-        onClick={(e) => {
-          if (styleInfo.type.size > 0 && !styleInfo.ai && onFormatClick) {
-            e.preventDefault();
-            e.stopPropagation();
-            onFormatClick(start, end);
-          }
         }}
       >
         {text}
@@ -519,7 +513,8 @@ export const DocumentInspectionPanel: React.FC<DocumentInspectionPanelProps> = (
       start: editingNoteRange?.start,
       end: editingNoteRange?.end,
       noteText: noteInputText.trim(),
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      color: selectedHighlightColor
     };
     setAnnotations((prev) => [...prev, newAnnotation]);
     setNoteInputText('');
@@ -548,99 +543,105 @@ export const DocumentInspectionPanel: React.FC<DocumentInspectionPanelProps> = (
   return (
     <div
       ref={containerRef}
-      className={`w-full h-full rounded-3xl border shadow-xl flex flex-col overflow-hidden transition-all duration-300 select-text ${
-        isDark ? 'bg-[#161a18] border-stone-800 text-stone-100' : 'bg-[#fdfcf9] border-stone-200/90 text-stone-900'
+      className={`fixed lg:relative inset-0 lg:inset-auto w-screen lg:w-full h-screen lg:h-full z-[100] lg:z-0 lg:border-l lg:border-stone-200/50 dark:border-stone-800/50 flex flex-col overflow-hidden transition-all duration-300 animate-in zoom-in-95 fade-in ease-out ${
+        isDark ? 'bg-[#121513] text-stone-100' : 'bg-[#fafaf9] text-stone-900'
       }`}
     >
-      <header className="p-3.5 sm:p-4 border-b border-stone-200 dark:border-stone-800 flex flex-wrap items-center justify-between gap-3 shrink-0 bg-stone-50/90 dark:bg-[#121513]/90 backdrop-blur-md z-20">
-        <div className="flex items-center gap-2 min-w-0">
-          <span
-            className="w-3 h-3 rounded-full shrink-0 shadow-2xs"
-            style={{ backgroundColor: activeBorderColor }}
-          />
-          <div className="flex items-center gap-1.5 min-w-0">
-            <h3 className="font-serif text-[15px] sm:text-[16px] font-bold truncate text-stone-900 dark:text-white">
-              {themeTitle}
-            </h3>
-            <span className="hidden sm:inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 shrink-0">
-              {confidenceLabel}
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-0.5 bg-stone-200/60 dark:bg-stone-800/60 p-0.5 rounded-full border border-stone-300/50 dark:border-stone-700/50 shrink-0">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handlePrev();
-              }}
-              className="p-1 rounded-full hover:bg-white dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 transition-all active:scale-95 cursor-pointer"
-              title="Previous Mention"
-            >
-              <ChevronLeft className="w-3.5 h-3.5" />
-            </button>
-
-            <span className="px-1.5 text-[10px] font-bold text-stone-700 dark:text-stone-300 font-mono shrink-0">
-              {activeMentionIndex + 1} / {totalMentions}
-            </span>
-
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleNext();
-              }}
-              className="p-1 rounded-full hover:bg-white dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 transition-all active:scale-95 cursor-pointer"
-              title="Next Mention"
-            >
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
+      <header className="px-5 py-4 border-b border-stone-200/50 dark:border-stone-800/50 shrink-0 bg-stone-50/70 dark:bg-[#121513]/70 backdrop-blur-xl saturate-150 z-20">
+        <div className="flex flex-col sm:flex-row justify-between gap-4">
+          <div className="flex items-center gap-2 min-w-0">
+            <span
+              className="w-3 h-3 rounded-full shrink-0 shadow-2xs"
+              style={{ backgroundColor: activeBorderColor }}
+            />
+            <div className="flex items-center gap-1.5 min-w-0">
+              <h3 className="font-serif text-[15px] sm:text-[16px] font-bold truncate text-stone-900 dark:text-white">
+                {themeTitle}
+              </h3>
+              <span className="hidden sm:inline-block text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 shrink-0">
+                {confidenceLabel}
+              </span>
+            </div>
           </div>
 
-          <div className="relative">
-            <button
-              type="button"
-              onClick={() => setIsDownloadMenuOpen((prev) => !prev)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900 text-[12px] font-medium hover:scale-105 active:scale-95 transition-all shadow-xs cursor-pointer"
-            >
-              <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Export</span>
-            </button>
-            {isDownloadMenuOpen && (
-              <div className="absolute top-full right-0 mt-2 w-40 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 shadow-xl overflow-hidden z-50 animate-in slide-in-from-top-2 fade-in">
-                <button onClick={() => handleExport('html')} className="w-full text-left px-4 py-2.5 text-[13px] font-medium text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-700 flex items-center gap-2 cursor-pointer transition-colors">
-                  <FileCode className="w-4 h-4 text-orange-500" /> HTML Export
+          <div className="flex items-center justify-between sm:justify-end gap-4 w-full sm:w-auto">
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-0.5 bg-stone-200/60 dark:bg-stone-800/60 p-0.5 rounded-full border border-stone-300/50 dark:border-stone-700/50 shrink-0">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handlePrev();
+                  }}
+                  className="p-1.5 rounded-full hover:bg-white dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 transition-transform duration-150 active:scale-[0.97] cursor-pointer"
+                  title="Previous Mention"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
                 </button>
-                <button onClick={() => handleExport('pdf')} className="w-full text-left px-4 py-2.5 text-[13px] font-medium text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-700 flex items-center gap-2 cursor-pointer transition-colors">
-                  <FileText className="w-4 h-4 text-red-500" /> PDF Format
-                </button>
-                <button onClick={() => handleExport('docx')} className="w-full text-left px-4 py-2.5 text-[13px] font-medium text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-700 flex items-center gap-2 cursor-pointer transition-colors">
-                  <Bookmark className="w-4 h-4 text-blue-500" /> DOCX Format
-                </button>
-                <button onClick={() => handleExport('txt')} className="w-full text-left px-4 py-2.5 text-[13px] font-medium text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-700 flex items-center gap-2 cursor-pointer transition-colors">
-                  <FileText className="w-4 h-4 text-stone-500" /> Plain Text
+
+                <span className="px-1.5 text-[10px] font-bold text-stone-700 dark:text-stone-300 font-mono shrink-0">
+                  {activeMentionIndex + 1} / {totalMentions}
+                </span>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleNext();
+                  }}
+                  className="p-1.5 rounded-full hover:bg-white dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 transition-transform duration-150 active:scale-[0.97] cursor-pointer"
+                  title="Next Mention"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
                 </button>
               </div>
-            )}
-          </div>
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-full bg-stone-200/50 dark:bg-stone-800/50 hover:bg-stone-300/50 dark:hover:bg-stone-700/50 text-stone-500 hover:text-stone-900 dark:hover:text-white transition-all cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsDownloadMenuOpen((prev) => !prev)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-900 text-white dark:bg-stone-100 dark:text-stone-900 text-[12px] font-medium hover:scale-105 active:scale-[0.97] transition-transform duration-150 shadow-xs cursor-pointer"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Export</span>
+                </button>
+                {isDownloadMenuOpen && (
+                  <div className="absolute top-full right-0 mt-2 w-40 rounded-xl bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700 shadow-xl overflow-hidden z-50 animate-in slide-in-from-top-2 fade-in">
+                    <button onClick={() => handleExport('html')} className="w-full text-left px-4 py-2.5 text-[13px] font-medium text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-700 flex items-center gap-2 cursor-pointer transition-colors">
+                      <FileCode className="w-4 h-4 text-orange-500" /> HTML Export
+                    </button>
+                    <button onClick={() => handleExport('pdf')} className="w-full text-left px-4 py-2.5 text-[13px] font-medium text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-700 flex items-center gap-2 cursor-pointer transition-colors">
+                      <FileText className="w-4 h-4 text-red-500" /> PDF Format
+                    </button>
+                    <button onClick={() => handleExport('docx')} className="w-full text-left px-4 py-2.5 text-[13px] font-medium text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-700 flex items-center gap-2 cursor-pointer transition-colors">
+                      <Bookmark className="w-4 h-4 text-blue-500" /> DOCX Format
+                    </button>
+                    <button onClick={() => handleExport('txt')} className="w-full text-left px-4 py-2.5 text-[13px] font-medium text-stone-700 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-700 flex items-center gap-2 cursor-pointer transition-colors">
+                      <FileText className="w-4 h-4 text-stone-500" /> Plain Text
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-full border border-stone-300/80 dark:border-stone-700/80 bg-stone-200/50 dark:bg-stone-800/50 hover:bg-stone-300/50 dark:hover:bg-stone-700/50 text-stone-500 hover:text-stone-900 dark:hover:text-white transition-transform duration-150 active:scale-[0.97] cursor-pointer"
+              title="Close Reader"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
       </header>
 
       <div
         id="document-inspection-scroll-container"
         ref={scrollContainerRef}
-        className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-8 scroll-smooth"
+        className="flex-1 overflow-y-auto p-4 sm:p-8 lg:p-12 scroll-smooth"
       >
+        <div className="max-w-6xl mx-auto space-y-12">
         {paragraphs.map((paraText, pIdx) => {
           const paraAnnotations = annotations.filter((a) => a.paragraphIndex === pIdx);
           
@@ -648,11 +649,11 @@ export const DocumentInspectionPanel: React.FC<DocumentInspectionPanelProps> = (
             <div
               key={pIdx}
               id={`inspection-paragraph-node-${pIdx}`}
-              className="p-4 rounded-2xl border border-stone-200/80 dark:border-stone-800/80 bg-white/60 dark:bg-stone-900/30 hover:border-stone-300 dark:hover:border-stone-700 transition-all"
+              className="p-5 sm:p-8 rounded-3xl border border-stone-200/80 dark:border-stone-800/80 bg-white/60 dark:bg-stone-900/30 hover:border-stone-300 dark:hover:border-stone-700 transition-all shadow-sm"
             >
-              <div className="flex items-center justify-between gap-x-2 mb-3 pb-2 border-b border-stone-200/50 dark:border-stone-800/50">
-                <div className="flex items-center gap-2 shrink-0 overflow-hidden text-[11px] text-stone-500 dark:text-stone-400">
-                  <span className="font-medium tracking-tight">Paragraph {pIdx + 1} of {paragraphs.length}</span>
+              <div className="flex items-center justify-between gap-x-2 mb-4 pb-3 border-b border-stone-200/50 dark:border-stone-800/50">
+                <div className="flex items-center gap-2 shrink-0 overflow-hidden text-[12px] text-stone-500 dark:text-stone-400">
+                  <span className="font-medium tracking-tight uppercase tracking-wider">Paragraph {pIdx + 1}</span>
                 </div>
                 
                 <div className="flex items-center gap-3 shrink-0 relative">
@@ -662,17 +663,15 @@ export const DocumentInspectionPanel: React.FC<DocumentInspectionPanelProps> = (
                       setEditingNoteRange(null);
                       setEditingParagraphIndex(editingParagraphIndex === pIdx ? null : pIdx);
                     }}
-                    className="flex items-center gap-1.5 text-[11px] font-medium text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white cursor-pointer bg-stone-100 dark:bg-stone-800 px-2 py-1 rounded-lg transition-colors"
+                    className="flex items-center gap-1.5 text-[12px] font-bold text-stone-500 dark:text-stone-400 hover:text-stone-900 dark:hover:text-white cursor-pointer bg-stone-100 dark:bg-stone-800 px-3 py-1.5 rounded-lg transition-colors active:scale-[0.97]"
                   >
-                    <MessageSquarePlus className="w-3.5 h-3.5 text-stone-500" />
+                    <MessageSquarePlus className="w-4 h-4 text-stone-500" />
                     <span className="hidden sm:inline">Add Note</span>
                   </button>
-
-                  {/* Tooltip removed - textarea relocated to margin */}
                 </div>
               </div>
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start relative">
-                <div className="lg:col-span-8 relative">
+              <div className="flex flex-col lg:flex-row gap-8 lg:gap-12 items-start relative">
+                <div className="w-full lg:w-[55%] xl:w-[60%] shrink-0 relative">
                   <p id={`inspection-paragraph-text-${pIdx}`} className="font-serif text-[15px] leading-relaxed text-stone-600 dark:text-stone-400 select-text touch-auto relative z-10">
                     {renderHighlightedText(
                       paraText, themes, activeBorderColor, 
@@ -684,7 +683,7 @@ export const DocumentInspectionPanel: React.FC<DocumentInspectionPanelProps> = (
                   </p>
                 </div>
 
-                <div className="hidden lg:block lg:col-span-4 relative z-10 min-h-full min-h-[40px]">
+                <div className="hidden lg:block lg:flex-1 shrink-0 relative z-10 min-h-10 mt-4 lg:mt-0">
                   {paraAnnotations.length > 0 && (
                     <div className="w-full h-full relative opacity-90 hover:opacity-100 transition-opacity">
                       {paraAnnotations.map((anno, aIdx) => (
@@ -696,8 +695,8 @@ export const DocumentInspectionPanel: React.FC<DocumentInspectionPanelProps> = (
                           style={{
                             top: (anno.id && annotationOffsets[anno.id]) ? `${annotationOffsets[anno.id]}px` : `${aIdx * 40}px`,
                             zIndex: hoveredAnnotationId === anno.id ? 50 : (10 + aIdx),
-                            backgroundColor: hoveredAnnotationId === anno.id ? '#fef08a' : `${activeBorderColor}10`,
-                            borderColor: hoveredAnnotationId === anno.id ? '#eab308' : `${activeBorderColor}30`,
+                            backgroundColor: hoveredAnnotationId === anno.id ? '#fef08a' : `${anno.color || activeBorderColor}25`,
+                            borderColor: hoveredAnnotationId === anno.id ? '#eab308' : `${anno.color || activeBorderColor}60`,
                             transform: hoveredAnnotationId === anno.id ? 'scale(1.05) rotate(0deg) translateX(-10px)' : 'rotate(-2deg)'
                           }}
                         >
@@ -721,8 +720,8 @@ export const DocumentInspectionPanel: React.FC<DocumentInspectionPanelProps> = (
                       className="absolute w-full p-3 rounded-2xl shadow-2xl z-50 animate-in fade-in slide-in-from-right-4 transform -rotate-1"
                       style={{ 
                         top: `${editingNoteOffset}px`,
-                        backgroundColor: `${activeBorderColor}20`,
-                        borderColor: `${activeBorderColor}50`,
+                        backgroundColor: `${selectedHighlightColor}35`,
+                        borderColor: `${selectedHighlightColor}80`,
                         borderWidth: '1px'
                       }}
                     >
@@ -732,7 +731,7 @@ export const DocumentInspectionPanel: React.FC<DocumentInspectionPanelProps> = (
                         onChange={(e) => setNoteInputText(e.target.value)}
                         placeholder="Type your marginalia..."
                         className="w-full bg-transparent border-b p-2 text-[15px] leading-tight font-bold font-handwriting min-h-20 focus:outline-none resize-none text-stone-900 dark:text-stone-100 placeholder-stone-400 dark:placeholder-stone-500"
-                        style={{ borderBottomColor: `${activeBorderColor}40` }}
+                        style={{ borderBottomColor: `${selectedHighlightColor}40` }}
                       />
                       <div className="flex justify-end gap-2 mt-2">
                         <button
@@ -749,7 +748,7 @@ export const DocumentInspectionPanel: React.FC<DocumentInspectionPanelProps> = (
                           type="button"
                           onClick={() => handleAddAnnotation(pIdx)}
                           className="px-3 py-1.5 text-xs font-bold text-white rounded-lg shadow-md hover:brightness-110 transition-all cursor-pointer"
-                          style={{ backgroundColor: activeBorderColor }}
+                          style={{ backgroundColor: selectedHighlightColor }}
                         >
                           Save Note
                         </button>
@@ -768,10 +767,21 @@ export const DocumentInspectionPanel: React.FC<DocumentInspectionPanelProps> = (
                     {paraAnnotations.map((anno, aIdx) => (
                       <div
                         key={aIdx}
-                        className="relative p-3.5 rounded-2xl shadow-md -rotate-1 hover:rotate-0 transition-all duration-200 border"
+                        onClick={() => {
+                          const newId = hoveredAnnotationId === anno.id ? null : (anno.id || null);
+                          setHoveredAnnotationId(newId);
+                          if (newId) {
+                            setTimeout(() => {
+                              const el = document.getElementById(`anno-span-${newId}`);
+                              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }, 50);
+                          }
+                        }}
+                        className="relative p-3.5 rounded-2xl shadow-md -rotate-1 hover:rotate-0 transition-all duration-200 border cursor-pointer select-none"
                         style={{
-                          backgroundColor: `${activeBorderColor}18`,
-                          borderColor: `${activeBorderColor}60`
+                          backgroundColor: hoveredAnnotationId === anno.id ? '#fef08a' : `${anno.color || activeBorderColor}25`,
+                          borderColor: hoveredAnnotationId === anno.id ? '#eab308' : `${anno.color || activeBorderColor}80`,
+                          transform: hoveredAnnotationId === anno.id ? 'scale(1.02) rotate(0deg)' : 'rotate(-1deg)'
                         }}
                       >
                         <div className="flex justify-between items-start mb-1">
@@ -782,8 +792,11 @@ export const DocumentInspectionPanel: React.FC<DocumentInspectionPanelProps> = (
                             </span>
                           </div>
                           <button
-                            onClick={() => handleDeleteAnnotation(annotations.indexOf(anno))}
-                            className="p-1 text-stone-400 hover:text-red-500 transition-colors cursor-pointer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteAnnotation(annotations.indexOf(anno));
+                            }}
+                            className="p-1 text-stone-400 hover:text-red-500 transition-colors cursor-pointer z-10 relative"
                             title="Delete Note"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -799,8 +812,8 @@ export const DocumentInspectionPanel: React.FC<DocumentInspectionPanelProps> = (
                       <div 
                         className="relative p-3.5 rounded-2xl shadow-xl"
                         style={{
-                          backgroundColor: `${activeBorderColor}20`,
-                          borderColor: `${activeBorderColor}50`,
+                          backgroundColor: `${selectedHighlightColor}35`,
+                          borderColor: `${selectedHighlightColor}80`,
                           borderWidth: '1px'
                         }}
                       >
@@ -810,7 +823,7 @@ export const DocumentInspectionPanel: React.FC<DocumentInspectionPanelProps> = (
                           onChange={(e) => setNoteInputText(e.target.value)}
                           placeholder="Type your marginalia..."
                           className="w-full bg-transparent border-b p-2 text-[18px] leading-snug font-bold font-handwriting min-h-20 focus:outline-none resize-none text-stone-900 dark:text-stone-100 placeholder-stone-400 dark:placeholder-stone-500"
-                          style={{ borderBottomColor: `${activeBorderColor}40` }}
+                          style={{ borderBottomColor: `${selectedHighlightColor}40` }}
                         />
                         <div className="flex justify-end gap-2 mt-2">
                           <button
@@ -827,7 +840,7 @@ export const DocumentInspectionPanel: React.FC<DocumentInspectionPanelProps> = (
                             type="button"
                             onClick={() => handleAddAnnotation(pIdx)}
                             className="px-3 py-1.5 text-xs font-bold text-white rounded-lg shadow-md hover:brightness-110 transition-all cursor-pointer"
-                            style={{ backgroundColor: activeBorderColor }}
+                            style={{ backgroundColor: selectedHighlightColor }}
                           >
                             Save Note
                           </button>
@@ -855,7 +868,7 @@ export const DocumentInspectionPanel: React.FC<DocumentInspectionPanelProps> = (
           
           <button
             type="button"
-            onPointerDown={(e) => { e.preventDefault(); handleFormatText('underline'); }}
+            onPointerDown={(e) => { e.preventDefault(); handleFormatText('underline', selectedHighlightColor); }}
             className="p-1.5 rounded-full hover:bg-stone-700/80 text-stone-300 hover:text-white transition-all cursor-pointer"
             title="Underline"
           >
@@ -902,12 +915,12 @@ export const DocumentInspectionPanel: React.FC<DocumentInspectionPanelProps> = (
               <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 p-2 rounded-2xl bg-stone-900/95 dark:bg-stone-800/95 border border-stone-700 shadow-2xl z-50 flex items-center gap-1.5 animate-in fade-in zoom-in-95 duration-150 shrink-0">
                 {[
                   { label: 'Theme Default', value: activeBorderColor },
-                  { label: 'Yellow', value: '#fef08a' },
-                  { label: 'Amber', value: '#fed7aa' },
-                  { label: 'Emerald', value: '#a7f3d0' },
-                  { label: 'Sky Blue', value: '#bae6fd' },
-                  { label: 'Purple', value: '#ddd6fe' },
-                  { label: 'Rose', value: '#fbcfe8' }
+                  { label: 'Yellow', value: '#fde047' },
+                  { label: 'Amber', value: '#fbbf24' },
+                  { label: 'Emerald', value: '#34d399' },
+                  { label: 'Sky Blue', value: '#38bdf8' },
+                  { label: 'Purple', value: '#a78bfa' },
+                  { label: 'Rose', value: '#f472b6' }
                 ].map((swatch) => (
                   <button
                     key={swatch.value}
@@ -982,6 +995,7 @@ export const DocumentInspectionPanel: React.FC<DocumentInspectionPanelProps> = (
           >
             <MessageSquarePlus className="w-3.5 h-3.5" />
           </button>
+        </div>
         </div>
       </div>
 

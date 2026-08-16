@@ -18,7 +18,6 @@ import {
   FileText
 } from 'lucide-react';
 import { Screen, TransitionType, ThemeInsight, MetaphorPattern } from '../types';
-import { MentionPreviewModal } from './MentionPreviewModal';
 import { DocumentInspectionPanel, getThemeMentionNodes } from './DocumentInspectionPanel';
 import { AnalysisSkeleton } from './SkeletonLoaders';
 
@@ -150,24 +149,10 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
   const hasSplitView = Boolean(themes.length > 0 && documentText && documentText.trim().length > 0);
 
   return (
-    <main
-      className={`flex-1 px-4 sm:px-6 py-4 pb-24 md:pb-8 w-full transition-all duration-500 ease-out ${
-        hasSplitView
-          ? 'max-w-7xl mx-auto'
-          : 'max-w-md sm:max-w-xl md:max-w-2xl mx-auto'
-      }`}
-    >
-      <div
-        className={`grid grid-cols-1 gap-6 transition-all duration-500 ease-out ${
-          hasSplitView ? 'lg:grid-cols-12' : ''
-        }`}
-      >
-        {/* Left Column / Main Thematic Analysis Screen */}
-        <div
-          className={`space-y-6 transition-all duration-500 ease-out ${
-            hasSplitView ? 'lg:col-span-5 xl:col-span-5' : 'w-full'
-          }`}
-        >
+    <main className={`flex-1 flex w-full mx-auto h-full overflow-hidden transition-all duration-500 ease-out ${isPreviewModalOpen ? 'max-w-[1600px]' : 'max-w-3xl'}`}>
+      {/* Left Pane */}
+      <div className={`w-full transition-all duration-500 ease-in-out ${isPreviewModalOpen ? 'lg:w-[400px] xl:w-[450px] shrink-0 border-r border-stone-200/60 dark:border-stone-800/60 lg:h-full lg:overflow-y-auto' : 'max-w-3xl mx-auto'} px-4 sm:px-6 py-4 pb-24 md:pb-8`}>
+        <div className="space-y-8">
           {isLoading ? (
             <AnalysisSkeleton isDark={isDark} documentTitle={documentTitle} />
           ) : themes.length === 0 ? (
@@ -466,35 +451,22 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
       </section>
       </>
       )}
-    </div>
-
-        {/* Right Column: Desktop Split Inspection Panel (lg: >= 1024px) */}
-        {hasSplitView && (
-          <div className="hidden lg:block lg:col-span-7 xl:col-span-7 h-[calc(100vh-100px)] sticky top-20 animate-in fade-in slide-in-from-right-8 duration-300">
-            <DocumentInspectionPanel
-              themes={themes as any}
-              activeThemeId={selectedThemeId}
-              documentTitle={documentTitle}
-              documentText={documentText}
-              isDark={isDark}
-              onClose={() => setIsPreviewModalOpen(false)}
-              isDesktopSplit={true}
-            />
-          </div>
-        )}
       </div>
-
-      {/* Mobile/Tablet Modal View (< 1024px) */}
+      </div>
+      
+      {/* Right Pane (Desktop side-by-side) OR Mobile Overlay */}
       {isPreviewModalOpen && (
-        <MentionPreviewModal
-          isOpen={isPreviewModalOpen}
-          onClose={() => setIsPreviewModalOpen(false)}
-          isDark={isDark}
-          themes={themes as any}
-          activeThemeId={selectedThemeId}
-          documentTitle={documentTitle}
-          documentText={documentText}
-        />
+        <div className={`hidden lg:block lg:flex-1 lg:h-full lg:relative !block`}>
+          <DocumentInspectionPanel
+            themes={themes as any}
+            activeThemeId={selectedThemeId || (themes.length > 0 ? themes[0].id : '')}
+            documentTitle={documentTitle}
+            documentText={documentText}
+            isDark={isDark}
+            onClose={() => setIsPreviewModalOpen(false)}
+            isDesktopSplit={hasSplitView && !isPreviewModalOpen}
+          />
+        </div>
       )}
     </main>
   );

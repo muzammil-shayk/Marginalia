@@ -3,6 +3,8 @@ import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
+import puppeteer from "puppeteer";
+import { generateDownloadContent, DownloadPayload } from "./src/services/downloadService";
 
 const app = express();
 const PORT = 3000;
@@ -450,6 +452,47 @@ app.post("/api/gemini/quick-insight", async (req, res) => {
   } catch (err: any) {
     console.error("Quick insight error (recovered gracefully):", err);
     res.json(fallbackInsight);
+  }
+});
+
+// API: Download Generator
+app.post("/api/download", async (req, res) => {
+  try {
+    const payload = req.body as DownloadPayload;
+    const { format } = payload;
+    const { content, contentType, extension } = generateDownloadContent(payload);
+    
+    // Fallback safe filename
+    const safeTitle = (payload.title || 'Document').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    
+    if (format === 'pdf') {
+      const filename = `${safeTitle}_annotated.pdf`;
+      const browser = await puppeteer.launch({ headless: true });
+      const page = await browser.newPage();
+      
+      // Load the generated HTML
+      await page.setContent(content, { waitUntil: 'load' });
+      
+      // Generate PDF utilizing @media print styles
+      const pdfBuffer = await page.pdf({
+        format: 'A4',
+        printBackground: true, // Need true so highlights are visible
+        margin: { top: '0', right: '0', bottom: '0', left: '0' } // Relying on @page margin in CSS
+      });
+      await browser.close();
+
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+      res.send(Buffer.from(pdfBuffer));
+    } else {
+      const filename = `${safeTitle}_annotated.${extension}`;
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `inline; filename="${filename}"`);
+      res.send(content);
+    }
+  } catch (error) {
+    console.error('Error generating download:', error);
+    res.status(500).json({ error: 'Failed to generate download file.' });
   }
 });
 
