@@ -1,7 +1,7 @@
 import React from 'react';
 import { DocumentInspectionPanel } from './DocumentInspectionPanel';
 
-import { PreviewTheme } from './DocumentInspectionPanel';
+import { PreviewTheme } from '../utils/documentExporter';
 
 interface MentionPreviewModalProps {
   isOpen: boolean;
