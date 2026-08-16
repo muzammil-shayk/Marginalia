@@ -1,30 +1,25 @@
 import React from 'react';
 import { DocumentInspectionPanel } from './DocumentInspectionPanel';
 
+import { PreviewTheme } from './DocumentInspectionPanel';
+
 interface MentionPreviewModalProps {
   isOpen: boolean;
   onClose: () => void;
   isDark?: boolean;
-  themeTitle: string;
-  themeColor: string;
-  confidenceLabel: string;
-  mentionsCount: number;
-  excerpts: string[];
-  keyQuote?: string;
+  themes: PreviewTheme[];
+  activeThemeId?: string;
   documentTitle?: string;
   documentText?: string;
 }
+
 
 export const MentionPreviewModal: React.FC<MentionPreviewModalProps> = ({
   isOpen,
   onClose,
   isDark = false,
-  themeTitle,
-  themeColor,
-  confidenceLabel,
-  mentionsCount,
-  excerpts = [],
-  keyQuote,
+  themes,
+  activeThemeId,
   documentTitle = 'The Architecture of Complexity',
   documentText
 }) => {
@@ -67,12 +62,8 @@ export const MentionPreviewModal: React.FC<MentionPreviewModalProps> = ({
       {/* Modal Container */}
       <div className="relative w-full max-w-2xl h-[85vh] max-h-[90vh] z-10 animate-in zoom-in-95 duration-200 flex flex-col min-h-0 touch-auto">
         <DocumentInspectionPanel
-          themeTitle={themeTitle}
-          themeColor={themeColor}
-          confidenceLabel={confidenceLabel}
-          mentionsCount={mentionsCount}
-          excerpts={excerpts}
-          keyQuote={keyQuote}
+          themes={themes}
+          activeThemeId={activeThemeId}
           documentTitle={documentTitle}
           documentText={documentText}
           isDark={isDark}

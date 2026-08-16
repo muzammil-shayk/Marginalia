@@ -56,27 +56,11 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
   const [aiSource, setAiSource] = useState<string>('gemini-flash');
 
   // Preview Modal State
-  const [previewModalData, setPreviewModalData] = useState<{
-    isOpen: boolean;
-    themeTitle: string;
-    themeColor: string;
-    confidenceLabel: string;
-    mentionsCount: number;
-    excerpts: string[];
-    keyQuote?: string;
-  } | null>(null);
+  const [isPreviewModalOpen, setIsPreviewModalOpen] = useState(false);
 
   const openMentionPreview = (theme: any) => {
-    const actualCount = calculateActualMentionCount(theme, documentText);
-    setPreviewModalData({
-      isOpen: true,
-      themeTitle: theme.title || theme.name || 'Theme Spotlight',
-      themeColor: theme.color || '#8b5cf6',
-      confidenceLabel: theme.confidenceLabel || `${Math.round((theme.confidence || 0.9) * 100)}% Confidence`,
-      mentionsCount: actualCount,
-      excerpts: theme.excerpts || [theme.title || theme.name],
-      keyQuote: theme.keyQuote || theme.description || theme.rationale
-    });
+    setSelectedThemeId(theme.id || theme.name);
+    setIsPreviewModalOpen(true);
   };
 
   // Trigger Gemini Flash Thematic Analysis
@@ -163,7 +147,7 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
     ? (themes.find((t) => t.id === selectedThemeId) || themes[0])
     : undefined;
 
-  const hasSplitView = Boolean(previewModalData && previewModalData.isOpen);
+  const hasSplitView = Boolean(themes.length > 0 && documentText && documentText.trim().length > 0);
 
   return (
     <main
@@ -485,19 +469,15 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
     </div>
 
         {/* Right Column: Desktop Split Inspection Panel (lg: >= 1024px) */}
-        {hasSplitView && previewModalData && (
+        {hasSplitView && (
           <div className="hidden lg:block lg:col-span-7 xl:col-span-7 h-[calc(100vh-100px)] sticky top-20 animate-in fade-in slide-in-from-right-8 duration-300">
             <DocumentInspectionPanel
-              themeTitle={previewModalData.themeTitle}
-              themeColor={previewModalData.themeColor}
-              confidenceLabel={previewModalData.confidenceLabel}
-              mentionsCount={previewModalData.mentionsCount}
-              excerpts={previewModalData.excerpts}
-              keyQuote={previewModalData.keyQuote}
+              themes={themes as any}
+              activeThemeId={selectedThemeId}
               documentTitle={documentTitle}
               documentText={documentText}
               isDark={isDark}
-              onClose={() => setPreviewModalData(null)}
+              onClose={() => setIsPreviewModalOpen(false)}
               isDesktopSplit={true}
             />
           </div>
@@ -505,17 +485,13 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
       </div>
 
       {/* Mobile/Tablet Modal View (< 1024px) */}
-      {previewModalData && (
+      {isPreviewModalOpen && (
         <MentionPreviewModal
-          isOpen={previewModalData.isOpen}
-          onClose={() => setPreviewModalData(null)}
+          isOpen={isPreviewModalOpen}
+          onClose={() => setIsPreviewModalOpen(false)}
           isDark={isDark}
-          themeTitle={previewModalData.themeTitle}
-          themeColor={previewModalData.themeColor}
-          confidenceLabel={previewModalData.confidenceLabel}
-          mentionsCount={previewModalData.mentionsCount}
-          excerpts={previewModalData.excerpts}
-          keyQuote={previewModalData.keyQuote}
+          themes={themes as any}
+          activeThemeId={selectedThemeId}
           documentTitle={documentTitle}
           documentText={documentText}
         />
