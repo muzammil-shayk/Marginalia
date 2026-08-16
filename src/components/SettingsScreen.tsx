@@ -203,7 +203,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
         {/* Dark Mode Toggle */}
         <div className="flex items-center justify-between pt-3 border-t border-stone-200 dark:border-stone-700/50">
-          <div className="max-w-[240px]">
+          <div className="max-w-60">
             <h4 className="text-[13px] font-medium text-stone-900 dark:text-white">Dark Mode</h4>
             <p className="text-[12px] text-stone-500 dark:text-stone-400 leading-snug">
               Switch to a darker theme for low-light environments
@@ -228,7 +228,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
         {/* Reader Mode Toggle */}
         <div className="flex items-center justify-between pt-3 border-t border-stone-200 dark:border-stone-700/50">
-          <div className="max-w-[240px]">
+          <div className="max-w-60">
             <h4 className="text-[13px] font-medium text-stone-900 dark:text-white">Reader Mode</h4>
             <p className="text-[12px] text-stone-500 dark:text-stone-400 leading-snug">
               Emphasize a distraction-free experience
