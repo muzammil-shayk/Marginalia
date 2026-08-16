@@ -40,7 +40,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const themes = cachedAnalysis?.extractedThemes || [];
 
   return (
-    <main className="flex-1 px-5 md:px-8 lg:px-12 py-6 md:py-10 pb-28 md:pb-10 max-w-[1400px] mx-auto w-full">
+    <main className="flex-1 px-5 md:px-8 lg:px-12 py-6 md:py-10 pb-28 md:pb-10 max-w-350 mx-auto w-full">
       {hasActiveDoc ? (
         /* ──────────────── HAS ACTIVE DOCUMENT STATE ──────────────── */
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6 lg:gap-8 items-start">

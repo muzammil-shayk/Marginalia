@@ -130,7 +130,7 @@ export const AnalysisSkeleton: React.FC<SkeletonProps> = ({ isDark = false, docu
 // ─── HomeScreen Skeleton (matches active-doc layout) ───
 export const HomeScreenSkeleton: React.FC<SkeletonProps> = ({ isDark = false }) => {
   return (
-    <div className="px-5 md:px-8 lg:px-12 py-6 md:py-10 max-w-[1400px] mx-auto w-full animate-pulse">
+    <div className="px-5 md:px-8 lg:px-12 py-6 md:py-10 max-w-350 mx-auto w-full animate-pulse">
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6 lg:gap-8 items-start">
         {/* Left Column */}
         <div className="md:col-span-7 lg:col-span-8 space-y-6">

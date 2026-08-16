@@ -34,10 +34,10 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
   return (
     <aside
       id="desktop-sidebar-nav"
-      className={`hidden md:flex flex-col w-[220px] shrink-0 border-r h-screen sticky top-0 transition-colors ${
+      className={`hidden md:flex flex-col w-55 shrink-0 border-r h-screen sticky top-0 transition-colors ${
         isDark
           ? 'bg-[#121514] border-white/5'
-          : 'bg-[#f9f9f7] border-black/[0.04]'
+          : 'bg-[#f9f9f7] border-black/4'
       }`}
     >
       {/* Brand */}
@@ -83,7 +83,7 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
 
       {/* Bottom section */}
       <div className={`px-4 py-4 border-t text-[11px] text-stone-500 dark:text-stone-600 ${
-        isDark ? 'border-white/5' : 'border-black/[0.04]'
+        isDark ? 'border-white/5' : 'border-black/4'
       }`}>
         <span>Marginalia • AI Reading</span>
       </div>
