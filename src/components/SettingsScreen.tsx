@@ -92,7 +92,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   };
 
   return (
-    <main className="flex-1 px-5 py-4 pb-20 max-w-md mx-auto w-full space-y-6">
+    <main className="flex-1 px-5 py-4 pb-24 md:pb-8 max-w-md md:max-w-2xl mx-auto w-full space-y-6">
       {/* Title */}
       <h2 className="font-serif text-[28px] font-semibold text-stone-900 dark:text-white">
         Settings

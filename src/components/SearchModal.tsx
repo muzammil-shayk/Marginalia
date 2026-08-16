@@ -1,8 +1,6 @@
 import React, { useState } from 'react';
 import { Search, X, BookOpen, Sparkles, FileText, ArrowRight } from 'lucide-react';
 import { Screen, TransitionType } from '../types';
-import { libraryBooks, recentDocuments, extractedThemes } from '../data/mockData';
-
 interface SearchModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -38,13 +36,13 @@ export const SearchModal: React.FC<SearchModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-200"
+            className="p-1 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Quick results */}
+        {/* Quick navigation */}
         <div className="mt-4 space-y-3 max-h-80 overflow-y-auto">
           <div className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider">
             Quick Navigation
@@ -60,8 +58,8 @@ export const SearchModal: React.FC<SearchModalProps> = ({
             <div className="flex items-center gap-2.5">
               <BookOpen className="w-4 h-4 text-[#435c52]" />
               <div>
-                <p className="text-[13px] font-medium">The Architecture of Complexity</p>
-                <p className="text-[11px] text-stone-400">Current Reading • Ch. 4</p>
+                <p className="text-[13px] font-medium">Active Reading Session</p>
+                <p className="text-[11px] text-stone-400">Open active document text</p>
               </div>
             </div>
             <ArrowRight className="w-4 h-4 text-stone-400" />
@@ -77,8 +75,8 @@ export const SearchModal: React.FC<SearchModalProps> = ({
             <div className="flex items-center gap-2.5">
               <Sparkles className="w-4 h-4 text-purple-500" />
               <div>
-                <p className="text-[13px] font-medium">Thematic Analysis: Hierarchical Systems</p>
-                <p className="text-[11px] text-stone-400">94% Confidence • 28 mentions</p>
+                <p className="text-[13px] font-medium">Thematic Analysis Screen</p>
+                <p className="text-[11px] text-stone-400">AI Synthesis</p>
               </div>
             </div>
             <ArrowRight className="w-4 h-4 text-stone-400" />

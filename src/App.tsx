@@ -3,12 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Screen, TransitionType, UserSettings } from './types';
 import { initialSettings } from './data/mockData';
 import { Header } from './components/Header';
 import { BottomNav } from './components/BottomNav';
+import { DesktopNav } from './components/DesktopNav';
 import { HomeScreen } from './components/HomeScreen';
 import { ThematicAnalysisScreen } from './components/ThematicAnalysisScreen';
 import { SettingsScreen } from './components/SettingsScreen';
@@ -16,26 +17,113 @@ import { UploadDocumentScreen } from './components/UploadDocumentScreen';
 import { ReaderScreen } from './components/ReaderScreen';
 import { SearchModal } from './components/SearchModal';
 import { SidebarDrawer } from './components/SidebarDrawer';
+import { ErrorBoundary } from './components/ErrorBoundary';
+
+// ── Storage Keys ──
+const SETTINGS_KEY = 'marginalia_settings';       // localStorage — persists across sessions
+const SESSION_KEY = 'marginalia_session';          // sessionStorage — per-tab, clears on close
+const ANALYSIS_CACHE_PREFIX = 'marginalia_analysis_'; // sessionStorage — per-document AI cache
+
+// ── Helpers ──
+function loadSettings(): UserSettings {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) { /* ignore */ }
+  return initialSettings;
+}
+
+function saveSettings(s: UserSettings) {
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) { /* ignore */ }
+}
+
+interface SessionState {
+  currentScreen: Screen;
+  analysisDoc: { title: string; text: string };
+  uploadedLibrary: Array<{ id: string; title: string; text: string; date: string; wordCount: number }>;
+}
+
+function loadSession(): SessionState | null {
+  try {
+    const raw = sessionStorage.getItem(SESSION_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) { /* ignore */ }
+  return null;
+}
+
+function saveSession(s: SessionState) {
+  try { sessionStorage.setItem(SESSION_KEY, JSON.stringify(s)); } catch (e) { /* ignore */ }
+}
+
+/** Load cached AI analysis for a document (from sessionStorage) */
+function loadCachedAnalysis(docTitle: string): any | null {
+  try {
+    const key = ANALYSIS_CACHE_PREFIX + docTitle.replace(/[^a-zA-Z0-9]/g, '_');
+    const raw = sessionStorage.getItem(key);
+    if (raw) return JSON.parse(raw);
+  } catch (e) { /* ignore */ }
+  return null;
+}
 
 export default function App() {
-  const [currentScreen, setCurrentScreen] = useState<Screen>('home');
+  // ── Hydrate state ──
+  const [settings, setSettings] = useState<UserSettings>(() => loadSettings());
+
+  const savedSession = loadSession();
+
+  const [currentScreen, setCurrentScreen] = useState<Screen>(
+    savedSession?.currentScreen || 'home'
+  );
   const [transitionType, setTransitionType] = useState<TransitionType>('push');
-  const [settings, setSettings] = useState<UserSettings>(initialSettings);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [analysisDoc, setAnalysisDoc] = useState<{ title: string; text: string }>({
-    title: 'The Architecture of Complexity',
-    text: ''
-  });
+  const [analysisDoc, setAnalysisDoc] = useState<{ title: string; text: string }>(
+    savedSession?.analysisDoc || { title: '', text: '' }
+  );
+  const [uploadedLibrary, setUploadedLibrary] = useState<
+    Array<{ id: string; title: string; text: string; date: string; wordCount: number }>
+  >(savedSession?.uploadedLibrary || []);
 
-  // Sync theme consistently with settings
+  // Cached analysis for home screen (read from sessionStorage)
+  const [cachedAnalysis, setCachedAnalysis] = useState<any>(null);
+
+  // Load cached analysis whenever analysisDoc changes
+  useEffect(() => {
+    if (analysisDoc.title && analysisDoc.text) {
+      const cached = loadCachedAnalysis(analysisDoc.title);
+      setCachedAnalysis(cached);
+    } else {
+      setCachedAnalysis(null);
+    }
+  }, [analysisDoc.title, analysisDoc.text]);
+
+  // ── Persist settings to localStorage ──
+  useEffect(() => { saveSettings(settings); }, [settings]);
+
+  // ── Persist session to sessionStorage ──
+  useEffect(() => {
+    saveSession({ currentScreen, analysisDoc, uploadedLibrary });
+  }, [currentScreen, analysisDoc, uploadedLibrary]);
+
   const isDark = settings.darkMode;
 
-  const navigate = (screen: Screen, transition: TransitionType = 'push') => {
+  const navigate = useCallback((screen: Screen, transition: TransitionType = 'push') => {
     setTransitionType(transition);
     setCurrentScreen(screen);
     window.scrollTo({ top: 0, behavior: 'instant' });
-  };
+  }, []);
+
+  const handleSelectDocumentForAnalysis = useCallback((title: string, text: string) => {
+    const newDoc = {
+      id: `doc-${Date.now()}`,
+      title: title || 'Uploaded Document',
+      text,
+      date: new Date().toLocaleDateString(),
+      wordCount: text.split(/\s+/).filter(Boolean).length
+    };
+    setUploadedLibrary((prev) => [newDoc, ...prev.filter((d) => d.title !== title)]);
+    setAnalysisDoc({ title, text });
+  }, []);
 
   const getTransitionVariants = () => {
     switch (transitionType) {
@@ -76,98 +164,120 @@ export default function App() {
   return (
     <div
       id="app-container"
-      className={`min-h-screen flex flex-col font-sans transition-colors duration-200 ${
+      className={`min-h-screen flex flex-row font-sans transition-colors duration-200 overflow-x-clip w-full max-w-full ${
         isDark ? 'bg-[#121514] text-white dark' : 'bg-[#f9f9f7] text-[#1c2321]'
       }`}
     >
-      {/* Search Dialog */}
-      <SearchModal
-        isOpen={isSearchOpen}
-        onClose={() => setIsSearchOpen(false)}
+      {/* Desktop Sidebar Navigation (hidden on mobile) */}
+      <DesktopNav
+        currentScreen={currentScreen}
         onNavigate={navigate}
         isDark={isDark}
       />
 
-      {/* Sidebar Drawer */}
-      <SidebarDrawer
-        isOpen={isSidebarOpen}
-        onClose={() => setIsSidebarOpen(false)}
-        onNavigate={navigate}
-        isDark={isDark}
-      />
-
-      {/* Screen Rendering */}
-      {currentScreen === 'reader' ? (
-        <ReaderScreen
-          settings={settings}
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col min-h-screen min-w-0">
+        {/* Search Dialog */}
+        <SearchModal
+          isOpen={isSearchOpen}
+          onClose={() => setIsSearchOpen(false)}
           onNavigate={navigate}
           isDark={isDark}
         />
-      ) : (
-        <div className="flex-1 flex flex-col min-h-screen">
-          {/* Shared Header for Non-Reader Screens */}
-          <Header
-            currentScreen={currentScreen}
+
+        {/* Sidebar Drawer (mobile menu) */}
+        <SidebarDrawer
+          isOpen={isSidebarOpen}
+          onClose={() => setIsSidebarOpen(false)}
+          onNavigate={navigate}
+          isDark={isDark}
+        />
+
+        {/* Screen Rendering */}
+        {currentScreen === 'reader' ? (
+          <ReaderScreen
+            settings={settings}
             onNavigate={navigate}
-            onOpenMenu={() => setIsSidebarOpen(true)}
-            onOpenSearch={() => setIsSearchOpen(true)}
             isDark={isDark}
+            documentText={analysisDoc.text}
+            documentTitle={analysisDoc.title}
           />
+        ) : (
+          <div className="flex-1 flex flex-col min-h-screen">
+            {/* Shared Header for Non-Reader Screens — mobile only since desktop has sidebar */}
+            <div className="md:hidden">
+              <Header
+                currentScreen={currentScreen}
+                onNavigate={navigate}
+                onOpenMenu={() => setIsSidebarOpen(true)}
+                onOpenSearch={() => setIsSearchOpen(true)}
+                isDark={isDark}
+              />
+            </div>
 
-          {/* Active Screen Content with Animated Transition */}
-          <div className="flex-1 flex flex-col">
-            <AnimatePresence mode="wait">
-              <motion.div
-                key={currentScreen}
-                initial={variants.initial}
-                animate={variants.animate}
-                exit={variants.exit}
-                transition={variants.transition}
-                className="flex-1 flex flex-col"
-              >
-                {currentScreen === 'home' && (
-                  <HomeScreen onNavigate={navigate} isDark={isDark} />
-                )}
+            {/* Active Screen Content with Animated Transition */}
+            <div className="flex-1 flex flex-col">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={currentScreen}
+                  initial={variants.initial}
+                  animate={variants.animate}
+                  exit={variants.exit}
+                  transition={variants.transition}
+                  className="flex-1 flex flex-col"
+                >
+                  <ErrorBoundary>
+                    {currentScreen === 'home' && (
+                      <HomeScreen
+                        onNavigate={navigate}
+                        isDark={isDark}
+                        activeDocument={analysisDoc.text ? analysisDoc : null}
+                        uploadedLibrary={uploadedLibrary}
+                        cachedAnalysis={cachedAnalysis}
+                        onSelectDocumentForAnalysis={handleSelectDocumentForAnalysis}
+                      />
+                    )}
 
-                {currentScreen === 'analysis' && (
-                  <ThematicAnalysisScreen
-                    onNavigate={navigate}
-                    isDark={isDark}
-                    documentTitle={analysisDoc.title}
-                    documentText={analysisDoc.text}
-                  />
-                )}
+                    {currentScreen === 'analysis' && (
+                      <ThematicAnalysisScreen
+                        onNavigate={navigate}
+                        isDark={isDark}
+                        documentTitle={analysisDoc.title}
+                        documentText={analysisDoc.text}
+                      />
+                    )}
 
-                {currentScreen === 'settings' && (
-                  <SettingsScreen
-                    settings={settings}
-                    onUpdateSettings={setSettings}
-                    onNavigate={navigate}
-                    isDark={isDark}
-                  />
-                )}
+                    {currentScreen === 'settings' && (
+                      <SettingsScreen
+                        settings={settings}
+                        onUpdateSettings={setSettings}
+                        onNavigate={navigate}
+                        isDark={isDark}
+                      />
+                    )}
 
-                {currentScreen === 'upload' && (
-                  <UploadDocumentScreen
-                    onNavigate={navigate}
-                    isDark={isDark}
-                    onSelectDocumentForAnalysis={(title, text) => {
-                      setAnalysisDoc({ title, text });
-                    }}
-                  />
-                )}
-              </motion.div>
-            </AnimatePresence>
+                    {currentScreen === 'upload' && (
+                      <UploadDocumentScreen
+                        onNavigate={navigate}
+                        isDark={isDark}
+                        uploadedLibrary={uploadedLibrary}
+                        onSelectDocumentForAnalysis={handleSelectDocumentForAnalysis}
+                      />
+                    )}
+                  </ErrorBoundary>
+                </motion.div>
+              </AnimatePresence>
+            </div>
           </div>
+        )}
 
-          {/* Persistent Bottom Navigation */}
-          <BottomNav
-            currentScreen={currentScreen}
-            onNavigate={navigate}
-            isDark={isDark}
-          />
-        </div>
-      )}
+        {/* Persistent Bottom Navigation (mobile only via md:hidden in component) */}
+        <BottomNav
+          currentScreen={currentScreen}
+          onNavigate={navigate}
+          isDark={isDark}
+        />
+      </div>
     </div>
   );
 }

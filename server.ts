@@ -1,3 +1,4 @@
+import "dotenv/config";
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
@@ -7,6 +8,37 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: "10mb" }));
+
+// Startup diagnostic
+console.log(`[Marginalia] GEMINI_API_KEY loaded: ${!!process.env.GEMINI_API_KEY}`);
+
+// Health check endpoint
+app.get("/api/health", (_req, res) => {
+  res.json({
+    status: "ok",
+    apiKeyLoaded: !!process.env.GEMINI_API_KEY,
+    apiKeyPrefix: process.env.GEMINI_API_KEY ? process.env.GEMINI_API_KEY.substring(0, 6) + "..." : "NOT SET"
+  });
+});
+
+// Client log forwarding endpoint
+app.post("/api/client-log", (req, res) => {
+  try {
+    const { type, messages = [] } = req.body || {};
+    const prefix = `[Browser ${String(type || 'log').toUpperCase()}]`;
+    const logList = Array.isArray(messages) ? messages : [messages];
+    if (type === 'error') {
+      console.error(prefix, ...logList);
+    } else if (type === 'warn') {
+      console.warn(prefix, ...logList);
+    } else {
+      console.log(prefix, ...logList);
+    }
+  } catch (e) {
+    // Ignore logging errors
+  }
+  res.sendStatus(200);
+});
 
 // Lazy initialization of Gemini SDK
 let aiClient: GoogleGenAI | null = null;
@@ -33,9 +65,9 @@ async function generateGeminiWithRetry(
 ): Promise<{ data: any; modelUsed: string }> {
   // Ordered sequence of fast models to try in case of 503 high-demand or rate limit
   const modelsToTry = [
-    params.primaryModel || "gemini-3.7-flash",
+    params.primaryModel || "gemini-3.6-flash",
+    "gemini-3.5-flash",
     "gemini-flash-latest",
-    "gemini-3.1-flash-lite",
   ];
 
   let lastError: any = null;
@@ -189,7 +221,7 @@ Focus Mode: ${mode}
       prompt,
       systemInstruction,
       responseSchema,
-      primaryModel: "gemini-3.7-flash",
+      primaryModel: "gemini-3.6-flash",
     });
 
     res.json({ suggestions: data.suggestions || [], source: modelUsed });
@@ -207,13 +239,18 @@ Focus Mode: ${mode}
 
 // API: Full Thematic & Metaphor Analysis using Gemini Flash
 app.post("/api/gemini/thematic-analysis", async (req, res) => {
-  const { text, title = "The Architecture of Complexity" } = req.body;
-  const documentText = text || `A complex system is composed of many parts that interact in a non-simple way. The whole is more than the sum of the parts. Hierarchic systems have the property of near-decomposability: intra-component interactions are stronger than inter-component interactions. The watchmakers Tempus and Hora illustrate how intermediate stable sub-assemblies dramatically accelerate the evolution of complex structures in biology, computation, and social organizations.`;
+  const { text, title } = req.body;
+  if (!text || typeof text !== 'string' || !text.trim()) {
+    res.status(400).json({ error: 'Document text is required for thematic analysis' });
+    return;
+  }
+  const documentText = text;
+  const documentTitle = title || 'Untitled Document';
 
   const ai = getAIClient();
   if (!ai) {
     // High-fidelity fallback
-    res.json(getFallbackThematicAnalysis(title));
+    res.json(getFallbackThematicAnalysis(documentTitle));
     return;
   }
 
@@ -222,14 +259,14 @@ app.post("/api/gemini/thematic-analysis", async (req, res) => {
 Analyze the provided document text for structural themes, philosophical arguments, and symbolic/metaphorical patterns.
 Generate deep, rigorous, and nuanced thematic extractions with confidence scores, exact quote citations, and metaphor pattern distributions.`;
 
-    const prompt = `Analyze this document/passage titled "${title}":
+    const prompt = `Analyze this document/passage titled "${documentTitle}":
 """
 ${documentText}
 """
 
 Extract:
 1. Executive summary (1-2 sentences)
-2. 2 to 4 major extracted themes with titles, detailed analytical descriptions, confidence scores (0-1), confidence labels (e.g. "95% Confidence"), estimated mention count, and supporting quotes.
+2. 2 to 4 major extracted themes with titles, detailed analytical descriptions, confidence scores (0-1), confidence labels (e.g. "95% Confidence"), estimated mention count, supporting quotes, and an array of 2 to 5 exact short excerpt strings ('excerpts') found verbatim in the document text representing that theme.
 3. Top 3 metaphor/symbolic patterns with percentage distributions summing to 100% and brief analytical rationales.
 4. One central synthesized quotation summarizing the dominant structural pattern.`;
 
@@ -251,7 +288,11 @@ Extract:
               mentions: { type: Type.INTEGER },
               color: { type: Type.STRING },
               rationale: { type: Type.STRING },
-              keyQuote: { type: Type.STRING }
+              keyQuote: { type: Type.STRING },
+              excerpts: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING }
+              }
             },
             required: ["id", "title", "description", "confidence", "confidenceLabel", "mentions"]
           }
@@ -277,11 +318,11 @@ Extract:
       prompt,
       systemInstruction,
       responseSchema,
-      primaryModel: "gemini-3.7-flash",
+      primaryModel: "gemini-3.6-flash",
     });
 
     res.json({
-      documentTitle: parsed.documentTitle || title,
+      documentTitle: parsed.documentTitle || documentTitle,
       executiveSummary: parsed.executiveSummary || "",
       extractedThemes: (parsed.extractedThemes || []).map((t: any, i: number) => ({
         ...t,
@@ -295,7 +336,7 @@ Extract:
   } catch (error: any) {
     console.error("Thematic analysis error (recovered gracefully):", error);
     res.json({
-      ...getFallbackThematicAnalysis(title),
+      ...getFallbackThematicAnalysis(documentTitle),
       source: "ai-fallback-recovered",
       warning: "Model was temporarily experiencing high traffic; loaded cached analytical model."
     });
@@ -316,7 +357,13 @@ function getFallbackThematicAnalysis(title: string) {
         mentions: 14,
         color: "#8b5cf6",
         rationale: "Foundational structural thesis proven by the watchmaker allegory.",
-        keyQuote: "Complex systems evolve far more rapidly if there are stable intermediate forms."
+        keyQuote: "Complex systems evolve far more rapidly if there are stable intermediate forms.",
+        excerpts: [
+          "Complex systems evolve far more rapidly",
+          "stable intermediate forms",
+          "sub-assemblies dramatically accelerate",
+          "hierarchic systems"
+        ]
       },
       {
         id: "t2",
@@ -327,7 +374,13 @@ function getFallbackThematicAnalysis(title: string) {
         mentions: 9,
         color: "#3b82f6",
         rationale: "Demonstrates evolutionary fitness advantages of loose coupling.",
-        keyQuote: "The time required for evolution of a complex form depends critically on intermediate stability."
+        keyQuote: "The time required for evolution of a complex form depends critically on intermediate stability.",
+        excerpts: [
+          "evolution of a complex form",
+          "intermediate stability",
+          "survive systemic environmental shocks",
+          "modular autonomy"
+        ]
       },
       {
         id: "t3",
@@ -338,7 +391,13 @@ function getFallbackThematicAnalysis(title: string) {
         mentions: 6,
         color: "#10b981",
         rationale: "Connects computational constraints to institutional architecture.",
-        keyQuote: "In nearly decomposable systems, the short-run behavior of each component is relatively independent."
+        keyQuote: "In nearly decomposable systems, the short-run behavior of each component is relatively independent.",
+        excerpts: [
+          "nearly decomposable systems",
+          "short-run behavior of each component",
+          "decentralized sub-systems",
+          "information processing limits"
+        ]
       }
     ],
     metaphorPatterns: [
@@ -384,7 +443,7 @@ app.post("/api/gemini/quick-insight", async (req, res) => {
     const { data: parsed, modelUsed } = await generateGeminiWithRetry(ai, {
       prompt: `Provide a concise 2-sentence analytical insight and 3 key conceptual terms for this passage:\n"""${text}"""`,
       responseSchema,
-      primaryModel: "gemini-3.7-flash",
+      primaryModel: "gemini-3.6-flash",
     });
 
     res.json({ ...parsed, source: modelUsed });
@@ -410,8 +469,8 @@ async function start() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Marginalia server running on http://0.0.0.0:${PORT}`);
+  app.listen(PORT, "localhost", () => {
+    console.log(`Marginalia server running on http://localhost:${PORT}`);
   });
 }
 

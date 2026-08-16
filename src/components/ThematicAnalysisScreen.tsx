@@ -13,10 +13,14 @@ import {
   Layers, 
   Lightbulb, 
   Info,
-  Share2
+  Share2,
+  ExternalLink,
+  FileText
 } from 'lucide-react';
 import { Screen, TransitionType, ThemeInsight, MetaphorPattern } from '../types';
-import { extractedThemes as defaultThemes, metaphorPatterns as defaultMetaphors, sampleReaderParagraphs } from '../data/mockData';
+import { MentionPreviewModal } from './MentionPreviewModal';
+import { DocumentInspectionPanel, getThemeMentionNodes } from './DocumentInspectionPanel';
+import { AnalysisSkeleton } from './SkeletonLoaders';
 
 interface ThematicAnalysisScreenProps {
   onNavigate: (screen: Screen, transition?: TransitionType) => void;
@@ -25,28 +29,86 @@ interface ThematicAnalysisScreenProps {
   documentText?: string;
 }
 
+function calculateActualMentionCount(theme: any, documentText?: string): number {
+  if (!documentText || !documentText.trim()) return theme.mentions || 1;
+  const paragraphs = documentText.split(/\n\n+/).map((p) => p.trim()).filter((p) => p.length > 0);
+  const nodes = getThemeMentionNodes(
+    theme.excerpts || [],
+    theme.keyQuote || theme.description || theme.rationale,
+    paragraphs,
+    theme.title || theme.name || ''
+  );
+  return nodes.length || 1;
+}
+
 export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
   onNavigate,
   isDark = false,
-  documentTitle = 'The Architecture of Complexity',
+  documentTitle = '',
   documentText
 }) => {
-  const [themes, setThemes] = useState<ThemeInsight[]>(defaultThemes);
-  const [metaphors, setMetaphors] = useState<MetaphorPattern[]>(defaultMetaphors);
-  const [selectedThemeId, setSelectedThemeId] = useState<string>('t1');
-  const [executiveSummary, setExecutiveSummary] = useState<string>(
-    'Hierarchical decomposition into nearly decomposable sub-assemblies shields intermediate evolutionary progress from environmental shocks.'
-  );
-  const [synthesisQuote, setSynthesisQuote] = useState<string>(
-    'The watchmaker metaphor is dominant, used primarily to illustrate the stability of intermediate forms in complex system assembly.'
-  );
+  const [themes, setThemes] = useState<ThemeInsight[]>([]);
+  const [metaphors, setMetaphors] = useState<MetaphorPattern[]>([]);
+  const [selectedThemeId, setSelectedThemeId] = useState<string>('');
+  const [executiveSummary, setExecutiveSummary] = useState<string>('');
+  const [synthesisQuote, setSynthesisQuote] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [aiSource, setAiSource] = useState<string>('gemini-flash');
 
+  // Preview Modal State
+  const [previewModalData, setPreviewModalData] = useState<{
+    isOpen: boolean;
+    themeTitle: string;
+    themeColor: string;
+    confidenceLabel: string;
+    mentionsCount: number;
+    excerpts: string[];
+    keyQuote?: string;
+  } | null>(null);
+
+  const openMentionPreview = (theme: any) => {
+    const actualCount = calculateActualMentionCount(theme, documentText);
+    setPreviewModalData({
+      isOpen: true,
+      themeTitle: theme.title || theme.name || 'Theme Spotlight',
+      themeColor: theme.color || '#8b5cf6',
+      confidenceLabel: theme.confidenceLabel || `${Math.round((theme.confidence || 0.9) * 100)}% Confidence`,
+      mentionsCount: actualCount,
+      excerpts: theme.excerpts || [theme.title || theme.name],
+      keyQuote: theme.keyQuote || theme.description || theme.rationale
+    });
+  };
+
   // Trigger Gemini Flash Thematic Analysis
-  const runGeminiAnalysis = async () => {
+  const runGeminiAnalysis = async (forceReanalyze = false) => {
+    const textToAnalyze = documentText || '';
+    if (!textToAnalyze.trim()) return;
+    
+    const cacheKey = `marginalia_analysis_${documentTitle.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    
+    if (!forceReanalyze) {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (parsed.extractedThemes) {
+            setThemes(parsed.extractedThemes);
+            if (parsed.extractedThemes.length > 0) {
+              setSelectedThemeId(parsed.extractedThemes[0].id);
+            }
+            if (parsed.metaphorPatterns) setMetaphors(parsed.metaphorPatterns);
+            if (parsed.executiveSummary) setExecutiveSummary(parsed.executiveSummary);
+            if (parsed.synthesisQuote) setSynthesisQuote(parsed.synthesisQuote);
+            setAiSource(parsed.source || 'gemini-flash');
+            return;
+          }
+        } catch (e) {
+          console.warn('Failed to parse cached analysis', e);
+        }
+      }
+    }
+
     setIsLoading(true);
-    const textToAnalyze = documentText || sampleReaderParagraphs.map(p => p.text).join('\n\n');
 
     try {
       const res = await fetch('/api/gemini/thematic-analysis', {
@@ -63,6 +125,12 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
       }
 
       const data = await res.json();
+      
+      // Save successful response to cache
+      if (data && (data.extractedThemes || data.executiveSummary)) {
+        sessionStorage.setItem(cacheKey, JSON.stringify(data));
+      }
+
       if (data.extractedThemes && data.extractedThemes.length > 0) {
         setThemes(data.extractedThemes);
         setSelectedThemeId(data.extractedThemes[0].id);
@@ -84,21 +152,74 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
     }
   };
 
-  const selectedTheme = themes.find((t) => t.id === selectedThemeId) || themes[0];
+  // Auto-trigger analysis when component mounts or when documentText changes
+  useEffect(() => {
+    if (documentText && documentText.trim()) {
+      runGeminiAnalysis(false);
+    }
+  }, [documentText]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const selectedTheme = (themes && themes.length > 0)
+    ? (themes.find((t) => t.id === selectedThemeId) || themes[0])
+    : undefined;
+
+  const hasSplitView = Boolean(previewModalData && previewModalData.isOpen);
 
   return (
-    <main className="flex-1 px-5 py-4 pb-24 max-w-md mx-auto w-full space-y-6">
+    <main
+      className={`flex-1 px-4 sm:px-6 py-4 pb-24 md:pb-8 w-full transition-all duration-500 ease-out ${
+        hasSplitView
+          ? 'max-w-7xl mx-auto'
+          : 'max-w-md sm:max-w-xl md:max-w-2xl mx-auto'
+      }`}
+    >
+      <div
+        className={`grid grid-cols-1 gap-6 transition-all duration-500 ease-out ${
+          hasSplitView ? 'lg:grid-cols-12' : ''
+        }`}
+      >
+        {/* Left Column / Main Thematic Analysis Screen */}
+        <div
+          className={`space-y-6 transition-all duration-500 ease-out ${
+            hasSplitView ? 'lg:col-span-5 xl:col-span-5' : 'w-full'
+          }`}
+        >
+          {isLoading ? (
+            <AnalysisSkeleton isDark={isDark} documentTitle={documentTitle} />
+          ) : themes.length === 0 ? (
+            <div className="p-8 rounded-3xl border border-dashed border-stone-300 dark:border-stone-800 text-center bg-stone-50/50 dark:bg-stone-900/30 space-y-4 my-8">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center mx-auto">
+                <Sparkles className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="font-serif text-[20px] font-bold text-stone-900 dark:text-white">
+                  No Thematic Analysis Yet
+                </h3>
+                <p className="text-[13px] text-stone-600 dark:text-stone-400 max-w-sm mx-auto mt-1">
+                  Upload a document or paste text to run AI thematic analysis.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onNavigate('upload', 'push')}
+                className="px-5 py-2.5 rounded-xl bg-[#435c52] text-white font-semibold text-[13px] hover:bg-[#374c43] transition-all cursor-pointer shadow-xs active:scale-[0.98]"
+              >
+                Upload Document to Analyze
+              </button>
+            </div>
+          ) : (
+            <>
       {/* Document Title & Meta Header */}
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-600/10 text-emerald-800 dark:text-emerald-300 text-[11px] font-semibold">
             <Zap className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-            <span>Gemini Flash Analysis</span>
+            <span>AI Analysis</span>
           </div>
 
           <button
             type="button"
-            onClick={runGeminiAnalysis}
+            onClick={() => runGeminiAnalysis(true)}
             disabled={isLoading}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-200/80 hover:bg-stone-300 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-800 dark:text-stone-200 text-[12px] font-medium transition-all cursor-pointer disabled:opacity-50"
           >
@@ -112,10 +233,36 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
         </h2>
         
         {executiveSummary && (
-          <p className="text-[13px] text-stone-600 dark:text-stone-300 leading-relaxed italic bg-stone-100 dark:bg-stone-800/60 p-3 rounded-xl border border-stone-200/60 dark:border-stone-800">
-            &ldquo;{executiveSummary}&rdquo;
-          </p>
+          <div className="space-y-2">
+            <div className="text-[11px] font-bold text-stone-500 uppercase tracking-wider">AI Executive Summary</div>
+            <p className="text-[13px] text-stone-700 dark:text-stone-300 leading-relaxed italic bg-emerald-500/5 dark:bg-emerald-950/20 p-3.5 rounded-xl border border-emerald-500/20 dark:border-emerald-900/40">
+              &ldquo;{executiveSummary}&rdquo;
+            </p>
+          </div>
         )}
+
+        {/* Uploaded Document Name & Excerpt Summary Box */}
+        <div className="p-4 rounded-2xl border border-stone-200/80 dark:border-stone-800 bg-white/80 dark:bg-stone-900/60 space-y-2 shadow-2xs">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="p-1.5 rounded-lg bg-emerald-600/10 text-emerald-700 dark:text-emerald-300 shrink-0">
+                <FileText className="w-4 h-4" />
+              </div>
+              <span className="text-[13px] font-bold text-stone-900 dark:text-white truncate">
+                {documentTitle}
+              </span>
+            </div>
+            <span className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-stone-100 dark:bg-stone-800 text-stone-600 dark:text-stone-300 shrink-0">
+              {documentText ? `${documentText.split(/\s+/).filter(Boolean).length} words` : 'Parsed Document'}
+            </span>
+          </div>
+
+          {documentText && (
+            <p className="text-[12px] text-stone-600 dark:text-stone-400 line-clamp-3 leading-relaxed font-serif pt-1.5 border-t border-stone-100 dark:border-stone-800/60">
+              {documentText.substring(0, 320)}...
+            </p>
+          )}
+        </div>
       </div>
 
       {/* EXTRACTED THEMES Section */}
@@ -134,6 +281,7 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
         <div className="space-y-3.5">
           {themes.map((theme) => {
             const isSelected = selectedThemeId === theme.id;
+            const cardActualMentions = calculateActualMentionCount(theme, documentText);
             return (
               <div
                 key={theme.id}
@@ -164,32 +312,92 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
                   {theme.description}
                 </p>
 
-                {/* Expanded details when selected */}
-                {isSelected && (
-                  <div className="mt-3 pt-3 border-t border-stone-200 dark:border-stone-800 space-y-2 text-[12px] animate-in fade-in duration-150">
-                    <div className="p-2.5 rounded-xl bg-stone-100 dark:bg-stone-800/60 text-stone-700 dark:text-stone-300 italic border-l-2 border-emerald-600">
-                      &ldquo;{theme.description}&rdquo;
+                {/* Key Excerpt Mentions Box (Dynamically Color-Matched to theme.color) */}
+                {(() => {
+                  const cardThemeColor = theme.color || '#8b5cf6';
+                  return (
+                    <div className="mt-3 pt-3 border-t border-stone-200 dark:border-stone-800 space-y-2.5 text-[12px] animate-in fade-in duration-150">
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          openMentionPreview(theme);
+                        }}
+                        className="p-3.5 rounded-2xl space-y-2.5 transition-all cursor-pointer group shadow-2xs"
+                        style={{
+                          backgroundColor: `${cardThemeColor}10`,
+                          borderLeft: `4px solid ${cardThemeColor}`,
+                          borderTop: `1px solid ${cardThemeColor}20`,
+                          borderRight: `1px solid ${cardThemeColor}20`,
+                          borderBottom: `1px solid ${cardThemeColor}20`
+                        }}
+                      >
+                        <div className="flex items-center justify-between text-[11px] font-semibold">
+                          <span className="flex items-center gap-1.5" style={{ color: cardThemeColor }}>
+                            <Quote className="w-3.5 h-3.5" />
+                            <span>Key Document Excerpts</span>
+                          </span>
+                          <span
+                            className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
+                            style={{ backgroundColor: cardThemeColor }}
+                          >
+                            {theme.excerpts?.length || 3} key quotes
+                          </span>
+                        </div>
+
+                        {/* Render 2-3 Quote Snippets */}
+                        <div className="space-y-1.5 pt-0.5">
+                          {(theme.excerpts && theme.excerpts.length > 0
+                            ? theme.excerpts.slice(0, 3)
+                            : [theme.keyQuote || theme.description]
+                          ).map((excerpt: string, qIdx: number) => (
+                            <p
+                              key={qIdx}
+                              className="italic text-[12px] text-stone-700 dark:text-stone-300 leading-snug pl-2.5"
+                              style={{ borderLeft: `2px solid ${cardThemeColor}60` }}
+                            >
+                              &ldquo;{excerpt}&rdquo;
+                            </p>
+                          ))}
+                        </div>
+
+                        {/* CTA Button */}
+                        <div
+                          className="pt-1 flex items-center justify-between text-[11px] font-bold transition-colors"
+                          style={{ color: cardThemeColor }}
+                        >
+                          <span>Inspect all {cardActualMentions} mentions in document</span>
+                          <ExternalLink className="w-3.5 h-3.5" />
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 <div className="flex items-center justify-between text-[12px] pt-2 mt-1">
                   <div className="flex items-center gap-1.5">
                     <span
                       className="w-2.5 h-2.5 rounded-full shrink-0"
                       style={{
-                        backgroundColor: theme.id === 't1' ? '#8b5cf6' : theme.id === 't2' ? '#3b82f6' : '#10b981'
+                        backgroundColor: theme.color || '#8b5cf6'
                       }}
                     />
                     <span className="text-stone-700 dark:text-stone-300 font-medium">
-                      {theme.confidenceLabel || `${Math.round((theme.confidence || 0.9) * 100)}% Confidence`}
+                      {theme.confidenceLabel || `${Math.round(theme.confidence > 1 ? theme.confidence : (theme.confidence || 0.9) * 100)}% Confidence`}
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-1 text-stone-600 dark:text-stone-400 font-medium">
-                    <Quote className="w-3.5 h-3.5 text-stone-400" />
-                    <span>{theme.mentions} mentions</span>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openMentionPreview(theme);
+                    }}
+                    className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-stone-100 dark:bg-stone-800 hover:bg-emerald-50 dark:hover:bg-emerald-950/60 hover:text-emerald-700 dark:hover:text-emerald-300 text-stone-600 dark:text-stone-300 text-[11px] font-semibold transition-all active:scale-[0.96] shadow-2xs cursor-pointer"
+                  >
+                    <Quote className="w-3 h-3 text-stone-400" />
+                    <span>{cardActualMentions} mentions</span>
+                    <ExternalLink className="w-3 h-3 ml-0.5 opacity-60" />
+                  </button>
                 </div>
               </div>
             );
@@ -214,17 +422,22 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
             </span>
           </div>
           <span className="text-[10px] uppercase font-bold text-stone-500 bg-stone-200/60 dark:bg-stone-800 px-2 py-0.5 rounded-md">
-            Gemini Flash
+            AI
           </span>
         </div>
 
         {/* Metaphor Bars */}
         <div className="space-y-3 mb-5">
           {metaphors.map((item) => (
-            <div key={item.name} className="space-y-1">
+            <div
+              key={item.name}
+              onClick={() => openMentionPreview({ name: item.name, color: '#f59e0b', mentions: 5, excerpts: [item.name], rationale: item.rationale })}
+              className="space-y-1 p-1.5 rounded-xl hover:bg-stone-200/40 dark:hover:bg-stone-800/50 transition-all cursor-pointer"
+            >
               <div className="flex items-center justify-between gap-3 text-[13px]">
-                <span className="font-medium text-stone-700 dark:text-stone-300 w-28 shrink-0">
-                  {item.name}
+                <span className="font-medium text-stone-700 dark:text-stone-300 w-28 shrink-0 flex items-center gap-1">
+                  <span>{item.name}</span>
+                  <ExternalLink className="w-3 h-3 opacity-40" />
                 </span>
                 <div className="flex-1 h-3 bg-stone-300/60 dark:bg-stone-700 rounded-full overflow-hidden">
                   <div
@@ -267,6 +480,46 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
           </button>
         </div>
       </section>
+      </>
+      )}
+    </div>
+
+        {/* Right Column: Desktop Split Inspection Panel (lg: >= 1024px) */}
+        {hasSplitView && previewModalData && (
+          <div className="hidden lg:block lg:col-span-7 xl:col-span-7 h-[calc(100vh-100px)] sticky top-20 animate-in fade-in slide-in-from-right-8 duration-300">
+            <DocumentInspectionPanel
+              themeTitle={previewModalData.themeTitle}
+              themeColor={previewModalData.themeColor}
+              confidenceLabel={previewModalData.confidenceLabel}
+              mentionsCount={previewModalData.mentionsCount}
+              excerpts={previewModalData.excerpts}
+              keyQuote={previewModalData.keyQuote}
+              documentTitle={documentTitle}
+              documentText={documentText}
+              isDark={isDark}
+              onClose={() => setPreviewModalData(null)}
+              isDesktopSplit={true}
+            />
+          </div>
+        )}
+      </div>
+
+      {/* Mobile/Tablet Modal View (< 1024px) */}
+      {previewModalData && (
+        <MentionPreviewModal
+          isOpen={previewModalData.isOpen}
+          onClose={() => setPreviewModalData(null)}
+          isDark={isDark}
+          themeTitle={previewModalData.themeTitle}
+          themeColor={previewModalData.themeColor}
+          confidenceLabel={previewModalData.confidenceLabel}
+          mentionsCount={previewModalData.mentionsCount}
+          excerpts={previewModalData.excerpts}
+          keyQuote={previewModalData.keyQuote}
+          documentTitle={documentTitle}
+          documentText={documentText}
+        />
+      )}
     </main>
   );
 };
