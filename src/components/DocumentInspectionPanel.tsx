@@ -543,7 +543,7 @@ export const DocumentInspectionPanel: React.FC<DocumentInspectionPanelProps> = (
   return (
     <div
       ref={containerRef}
-      className={`fixed lg:relative inset-0 lg:inset-auto w-screen lg:w-full h-screen lg:h-full z-[100] lg:z-0 lg:border-l lg:border-stone-200/50 dark:border-stone-800/50 flex flex-col overflow-hidden transition-all duration-300 animate-in zoom-in-95 fade-in ease-out ${
+      className={`fixed lg:relative inset-0 lg:inset-auto w-screen lg:w-full h-screen lg:h-full z-100 lg:z-0 lg:border-l lg:border-stone-200/50 dark:border-stone-800/50 flex flex-col overflow-hidden transition-all duration-300 animate-in zoom-in-95 fade-in ease-out ${
         isDark ? 'bg-[#121513] text-stone-100' : 'bg-[#fafaf9] text-stone-900'
       }`}
     >
@@ -653,7 +653,7 @@ export const DocumentInspectionPanel: React.FC<DocumentInspectionPanelProps> = (
             >
               <div className="flex items-center justify-between gap-x-2 mb-4 pb-3 border-b border-stone-200/50 dark:border-stone-800/50">
                 <div className="flex items-center gap-2 shrink-0 overflow-hidden text-[12px] text-stone-500 dark:text-stone-400">
-                  <span className="font-medium tracking-tight uppercase tracking-wider">Paragraph {pIdx + 1}</span>
+                  <span className="font-medium uppercase tracking-wider">Paragraph {pIdx + 1}</span>
                 </div>
                 
                 <div className="flex items-center gap-3 shrink-0 relative">

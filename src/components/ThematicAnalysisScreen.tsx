@@ -151,7 +151,7 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
   return (
     <main className={`flex-1 flex w-full mx-auto h-full overflow-hidden transition-all duration-500 ease-out ${isPreviewModalOpen ? 'max-w-[1600px]' : 'max-w-3xl'}`}>
       {/* Left Pane */}
-      <div className={`w-full transition-all duration-500 ease-in-out ${isPreviewModalOpen ? 'lg:w-[400px] xl:w-[450px] shrink-0 border-r border-stone-200/60 dark:border-stone-800/60 lg:h-full lg:overflow-y-auto' : 'max-w-3xl mx-auto'} px-4 sm:px-6 py-4 pb-24 md:pb-8`}>
+      <div className={`w-full transition-all duration-500 ease-in-out ${isPreviewModalOpen ? 'lg:w-100 xl:w-112.5 shrink-0 border-r border-stone-200/60 dark:border-stone-800/60 lg:h-full lg:overflow-y-auto' : 'max-w-3xl mx-auto'} px-4 sm:px-6 py-4 pb-24 md:pb-8`}>
         <div className="space-y-8">
           {isLoading ? (
             <AnalysisSkeleton isDark={isDark} documentTitle={documentTitle} />
@@ -456,7 +456,7 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
       
       {/* Right Pane (Desktop side-by-side) OR Mobile Overlay */}
       {isPreviewModalOpen && (
-        <div className={`hidden lg:block lg:flex-1 lg:h-full lg:relative !block`}>
+        <div className="lg:flex-1 lg:h-full lg:relative">
           <DocumentInspectionPanel
             themes={themes as any}
             activeThemeId={selectedThemeId || (themes.length > 0 ? themes[0].id : '')}
