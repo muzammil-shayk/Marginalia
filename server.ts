@@ -5,9 +5,10 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import puppeteer from "puppeteer";
 import { generateDownloadContent, DownloadPayload } from "./src/services/downloadService";
+import { countThemeMentions, resolveMatchedParagraphIndices, splitIntoParagraphs } from "./src/utils/themeMatching";
 
 const app = express();
-const PORT = 3000;
+const PORT = 3001;
 
 app.use(express.json({ limit: "10mb" }));
 
@@ -268,9 +269,12 @@ ${documentText}
 
 Extract:
 1. Executive summary (1-2 sentences)
-2. 2 to 4 major extracted themes with titles, detailed analytical descriptions, confidence scores (0-1), confidence labels (e.g. "95% Confidence"), estimated mention count, supporting quotes, and an array of 2 to 5 exact short excerpt strings ('excerpts') found verbatim in the document text representing that theme.
+2. 2 to 4 major extracted themes with titles, detailed analytical descriptions, confidence scores (0-1), confidence labels (e.g. "95% Confidence"), estimated mention count, supporting quotes, an array of 2 to 5 exact short excerpt strings ('excerpts') found verbatim (character-for-character, not paraphrased or summarized) in the document text representing that theme, and crucially, a REQUIRED, non-empty array of integer paragraph indices ('matchedParagraphIndices') listing every paragraph where this theme is strongly discussed (where paragraph 0 is the first double-newline delimited block — count them carefully against the actual text above, since this is what the reader's UI uses to highlight the theme; it must never be empty and every index in it must genuinely discuss the theme).
 3. Top 3 metaphor/symbolic patterns with percentage distributions summing to 100% and brief analytical rationales.
-4. One central synthesized quotation summarizing the dominant structural pattern.`;
+4. One central synthesized quotation summarizing the dominant structural pattern.
+5. 2 to 4 recurring symbols or extended metaphors ('symbols'), each with a short name and a 1-sentence description of what it represents in the text.
+6. 2 to 4 of the single most striking, quotable sentences verbatim from the document text ('favoriteQuotes') — a reader's highlight reel.
+7. 3 to 6 notable or sophisticated vocabulary terms actually used in the document ('vocabulary'), each with a concise plain-language definition.`;
 
     const responseSchema = {
       type: Type.OBJECT,
@@ -294,9 +298,20 @@ Extract:
               excerpts: {
                 type: Type.ARRAY,
                 items: { type: Type.STRING }
+              },
+              matchedParagraphIndices: {
+                type: Type.ARRAY,
+                items: { type: Type.INTEGER },
+                minItems: "1",
+                description: "Every paragraph index (0-based) where this theme is genuinely discussed. Required, and must never be empty — the reader's UI highlights the theme using exactly these paragraphs, so an empty or missing array means the theme shows no highlight at all."
               }
             },
-            required: ["id", "title", "description", "confidence", "confidenceLabel", "mentions"]
+            // `matchedParagraphIndices` is deliberately required (not left to the excerpts
+            // alone): excerpts have to appear verbatim in the source text to ever produce a
+            // visible highlight, and models routinely paraphrase even when told not to. A
+            // required, non-empty paragraph-index list gives the UI a highlight it can always
+            // render correctly, instead of depending on fragile verbatim string matching.
+            required: ["id", "title", "description", "confidence", "confidenceLabel", "mentions", "matchedParagraphIndices"]
           }
         },
         metaphorPatterns: {
@@ -311,7 +326,33 @@ Extract:
             required: ["name", "percentage"]
           }
         },
-        synthesisQuote: { type: Type.STRING }
+        synthesisQuote: { type: Type.STRING },
+        symbols: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              name: { type: Type.STRING },
+              description: { type: Type.STRING }
+            },
+            required: ["name", "description"]
+          }
+        },
+        favoriteQuotes: {
+          type: Type.ARRAY,
+          items: { type: Type.STRING }
+        },
+        vocabulary: {
+          type: Type.ARRAY,
+          items: {
+            type: Type.OBJECT,
+            properties: {
+              term: { type: Type.STRING },
+              definition: { type: Type.STRING }
+            },
+            required: ["term", "definition"]
+          }
+        }
       },
       required: ["extractedThemes", "metaphorPatterns", "synthesisQuote"]
     };
@@ -323,16 +364,35 @@ Extract:
       primaryModel: "gemini-3.6-flash",
     });
 
+    const paragraphs = splitIntoParagraphs(documentText);
+
     res.json({
       documentTitle: parsed.documentTitle || documentTitle,
       executiveSummary: parsed.executiveSummary || "",
-      extractedThemes: (parsed.extractedThemes || []).map((t: any, i: number) => ({
-        ...t,
-        id: t.id || `t${i + 1}`,
-        color: t.color || (i === 0 ? "#8b5cf6" : i === 1 ? "#3b82f6" : "#10b981")
-      })),
+      // Two fixups, both against the exact same document text the reader's UI matches against:
+      // 1. `matchedParagraphIndices` is guaranteed non-empty and in-range, even if the model
+      //    didn't fully honor the (required) schema field — without this, a theme with no valid
+      //    anchor shows no highlight anywhere, so "jump to this theme's mention" has nowhere
+      //    real to land. See `resolveMatchedParagraphIndices` for the fallback order.
+      // 2. The AI guesses `mentions` when it extracts each theme, and that guess frequently
+      //    mismatches the count the UI actually finds when it highlights matches with the same
+      //    strict text-matching the reader sees on screen. Overwriting it here — computed AFTER
+      //    fixup 1, so it reflects the same guaranteed anchor the UI will actually highlight —
+      //    keeps every screen that just displays `theme.mentions` truthful.
+      extractedThemes: (parsed.extractedThemes || []).map((t: any, i: number) => {
+        const theme = {
+          ...t,
+          id: t.id || `t${i + 1}`,
+          color: t.color || (i === 0 ? "#8b5cf6" : i === 1 ? "#3b82f6" : "#10b981"),
+          matchedParagraphIndices: resolveMatchedParagraphIndices(t, paragraphs)
+        };
+        return { ...theme, mentions: countThemeMentions(theme, documentText) };
+      }),
       metaphorPatterns: parsed.metaphorPatterns || [],
       synthesisQuote: parsed.synthesisQuote || "Intermediate forms provide critical resilience in complex assembly.",
+      symbols: parsed.symbols || [],
+      favoriteQuotes: parsed.favoriteQuotes || [],
+      vocabulary: parsed.vocabulary || [],
       source: modelUsed
     });
   } catch (error: any) {
@@ -408,6 +468,18 @@ function getFallbackThematicAnalysis(title: string) {
       { name: "Tapestry", percentage: 18, rationale: "Intertwined threads representing weak inter-component bonds." }
     ],
     synthesisQuote: "The watchmaker metaphor is dominant, used primarily to illustrate the stability of intermediate forms in complex system assembly.",
+    symbols: [
+      { name: "The Watch", description: "Represents any complex whole whose survival depends on being built from stable intermediate parts rather than assembled all at once." },
+      { name: "Hora & Tempus", description: "Two watchmakers who personify decomposable versus monolithic design strategies and their radically different odds of success." }
+    ],
+    favoriteQuotes: [
+      "Complex systems evolve far more rapidly if there are stable intermediate forms.",
+      "The time required for evolution of a complex form depends critically on intermediate stability."
+    ],
+    vocabulary: [
+      { term: "Nearly decomposable", definition: "A system whose sub-parts can be analyzed and can function with only weak, infrequent interaction with the rest of the system." },
+      { term: "Hierarchic system", definition: "A system composed of interrelated subsystems, each of which is, in turn, hierarchic in structure." }
+    ],
     source: "mock-fallback"
   };
 }
@@ -472,7 +544,19 @@ app.post("/api/download", async (req, res) => {
       
       // Load the generated HTML
       await page.setContent(content, { waitUntil: 'load' });
-      
+
+      // The page's own inline script measures each sticky note's real anchor position and
+      // draws its arrow only after fonts/layout have settled, flagging completion via
+      // `window.__marginaliaLayoutReady`. Waiting for that here (with a bounded timeout, so a
+      // page with no notes — where the flag still gets set almost immediately — or a stuck
+      // script never hangs the export) ensures the arrows are actually present before the PDF
+      // is captured, instead of the print snapshotting a half-drawn layout.
+      try {
+        await page.waitForFunction('window.__marginaliaLayoutReady === true', { timeout: 5000 });
+      } catch {
+        console.warn('[Marginalia] PDF layout script did not signal completion in time; printing current state.');
+      }
+
       // Generate PDF utilizing @media print styles
       const pdfBuffer = await page.pdf({
         format: 'A4',

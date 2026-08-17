@@ -26,7 +26,8 @@ export interface Book {
 export interface StickyNote {
   id: string;
   paragraphIndex: number;
-  color: 'yellow' | 'purple' | 'teal' | 'rose';
+  /** Named palette color ('yellow' | 'purple' | 'teal' | 'rose') or an arbitrary hex string. */
+  color: string;
   title: string;
   content: string;
   author: string;
@@ -36,6 +37,9 @@ export interface StickyNote {
   isAiGenerated?: boolean;
   rationale?: string;
   confidence?: number;
+  /** Character offsets within the paragraph text, for notes anchored to a precise selection. */
+  start?: number;
+  end?: number;
 }
 
 export interface AISuggestion {
@@ -57,6 +61,9 @@ export interface ThemeInsight {
   mentions: number;
   selected?: boolean;
   color: string;
+  excerpts?: string[];
+  keyQuote?: string;
+  matchedParagraphIndices?: number[];
 }
 
 export interface MetaphorPattern {

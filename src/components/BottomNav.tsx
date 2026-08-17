@@ -7,12 +7,14 @@ interface BottomNavProps {
   currentScreen: Screen;
   onNavigate: (screen: Screen, transition?: TransitionType) => void;
   isDark?: boolean;
+  hasActiveDocument?: boolean;
 }
 
 export const BottomNav: React.FC<BottomNavProps> = ({
   currentScreen,
   onNavigate,
-  isDark = false
+  isDark = false,
+  hasActiveDocument = true
 }) => {
   const { scrollY } = useScroll();
   const [hidden, setHidden] = useState(false);
@@ -88,23 +90,29 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       <div className="flex items-center justify-around max-w-sm mx-auto w-full">
         {tabs.map((tab) => {
           const Icon = tab.icon;
+          const isDisabled = tab.id === 'reader' && !hasActiveDocument;
           return (
             <button
               key={tab.id}
               type="button"
+              disabled={isDisabled}
               onClick={() => {
-                if (currentScreen !== tab.screen) {
+                if (!isDisabled && currentScreen !== tab.screen) {
                   onNavigate(tab.screen, tab.transition);
                 }
               }}
-              className={`flex items-center justify-center transition-all duration-200 cursor-pointer ${
-                tab.isActive
-                  ? 'bg-[#435c52] text-white p-2.5 rounded-full shadow-md active:scale-95'
-                  : 'p-2.5 rounded-full text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-black/5 dark:hover:bg-white/5 active:scale-95'
+              className={`flex items-center justify-center transition-all duration-200 ${
+                isDisabled
+                  ? 'p-2.5 rounded-full text-stone-300 dark:text-stone-700 cursor-not-allowed'
+                  : `cursor-pointer ${
+                      tab.isActive
+                        ? 'bg-[#435c52] text-white p-2.5 rounded-full shadow-md active:scale-95'
+                        : 'p-2.5 rounded-full text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-black/5 dark:hover:bg-white/5 active:scale-95'
+                    }`
               }`}
-              title={tab.label}
+              title={isDisabled ? 'Upload a document to start reading' : tab.label}
             >
-              <Icon className={`w-5 h-5 shrink-0 ${tab.isActive ? 'text-white' : ''}`} />
+              <Icon className={`w-5 h-5 shrink-0 ${tab.isActive && !isDisabled ? 'text-white' : ''}`} />
             </button>
           );
         })}

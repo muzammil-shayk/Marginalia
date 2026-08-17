@@ -22,9 +22,9 @@ interface HomeScreenProps {
   onNavigate: (screen: Screen, transition?: TransitionType) => void;
   isDark?: boolean;
   activeDocument?: { title: string; text: string } | null;
-  uploadedLibrary?: Array<{ id: string; title: string; text: string; date: string; wordCount: number }>;
+  uploadedLibrary?: Array<{ id: string; title: string; text: string; date: string; wordCount: number; format?: string }>;
   cachedAnalysis?: CachedAnalysis | null;
-  onSelectDocumentForAnalysis?: (title: string, text: string) => void;
+  onSelectDocumentForAnalysis?: (title: string, text: string, format?: string) => void;
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
@@ -254,7 +254,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                       key={doc.id}
                       onClick={() => {
                         if (onSelectDocumentForAnalysis) {
-                          onSelectDocumentForAnalysis(doc.title, doc.text);
+                          onSelectDocumentForAnalysis(doc.title, doc.text, doc.format);
                         }
                         onNavigate('analysis', 'push');
                       }}
@@ -304,7 +304,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             {/* Title */}
             <div className="space-y-2">
               <h2 className="font-serif text-[28px] md:text-[34px] font-bold tracking-tight text-stone-900 dark:text-white">
-                Start Your Analysis
+                Start Annotating
               </h2>
               <p className="text-[14px] text-stone-500 dark:text-stone-400 leading-relaxed max-w-sm mx-auto">
                 Upload a document or paste text to unlock AI-powered thematic analysis, insights, and annotation tools.
@@ -377,7 +377,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                       key={doc.id}
                       onClick={() => {
                         if (onSelectDocumentForAnalysis) {
-                          onSelectDocumentForAnalysis(doc.title, doc.text);
+                          onSelectDocumentForAnalysis(doc.title, doc.text, doc.format);
                         }
                         onNavigate('analysis', 'push');
                       }}

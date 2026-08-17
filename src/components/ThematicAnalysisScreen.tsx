@@ -17,8 +17,11 @@ import {
   ExternalLink,
   FileText
 } from 'lucide-react';
-import { Screen, TransitionType, ThemeInsight, MetaphorPattern } from '../types';
-import { DocumentInspectionPanel, getThemeMentionNodes } from './DocumentInspectionPanel';
+import { Screen, TransitionType, ThemeInsight, MetaphorPattern, StickyNote } from '../types';
+import { DocumentInspectionPanel } from './DocumentInspectionPanel';
+import { CustomFormat, SymbolPattern, VocabularyTerm } from '../utils/documentExporter';
+import { analysisCacheKey } from '../utils/cacheKeys';
+import { countThemeMentions } from '../utils/themeMatching';
 import { AnalysisSkeleton } from './SkeletonLoaders';
 
 interface ThematicAnalysisScreenProps {
@@ -26,31 +29,50 @@ interface ThematicAnalysisScreenProps {
   isDark?: boolean;
   documentTitle?: string;
   documentText?: string;
+  /** True when the source upload was a real PDF, whose paragraph chunks are native PDF pages rather than prose paragraphs. */
+  isPdfSource?: boolean;
+  notes: StickyNote[];
+  onNotesChange: (updater: (prev: StickyNote[]) => StickyNote[]) => void;
+  formats: CustomFormat[];
+  onFormatsChange: (updater: (prev: CustomFormat[]) => CustomFormat[]) => void;
+  authorName?: string;
 }
 
+/**
+ * Client-side fallback for a theme's mention count. The backend now overrides `mentions`
+ * with the true, exact match count right after generating the analysis, so this only
+ * matters for analyses cached before that fix — anything fresh already carries the
+ * correct number straight from the server.
+ */
 function calculateActualMentionCount(theme: any, documentText?: string): number {
+  if (typeof theme.mentions === 'number' && theme.mentions > 0) return theme.mentions;
   if (!documentText || !documentText.trim()) return theme.mentions || 1;
-  const paragraphs = documentText.split(/\n\n+/).map((p) => p.trim()).filter((p) => p.length > 0);
-  const nodes = getThemeMentionNodes(
-    theme.excerpts || [],
-    theme.keyQuote || theme.description || theme.rationale,
-    paragraphs,
-    theme.title || theme.name || ''
+  return countThemeMentions(
+    { title: theme.title || theme.name, excerpts: theme.excerpts, keyQuote: theme.keyQuote || theme.description || theme.rationale },
+    documentText
   );
-  return nodes.length || 1;
 }
 
 export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
   onNavigate,
   isDark = false,
   documentTitle = '',
-  documentText
+  documentText,
+  isPdfSource = false,
+  notes,
+  onNotesChange,
+  formats,
+  onFormatsChange,
+  authorName
 }) => {
   const [themes, setThemes] = useState<ThemeInsight[]>([]);
   const [metaphors, setMetaphors] = useState<MetaphorPattern[]>([]);
   const [selectedThemeId, setSelectedThemeId] = useState<string>('');
   const [executiveSummary, setExecutiveSummary] = useState<string>('');
   const [synthesisQuote, setSynthesisQuote] = useState<string>('');
+  const [symbols, setSymbols] = useState<SymbolPattern[]>([]);
+  const [favoriteQuotes, setFavoriteQuotes] = useState<string[]>([]);
+  const [vocabulary, setVocabulary] = useState<VocabularyTerm[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [aiSource, setAiSource] = useState<string>('gemini-flash');
 
@@ -67,7 +89,7 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
     const textToAnalyze = documentText || '';
     if (!textToAnalyze.trim()) return;
     
-    const cacheKey = `marginalia_analysis_${documentTitle.replace(/[^a-zA-Z0-9]/g, '_')}`;
+    const cacheKey = analysisCacheKey(documentTitle);
     
     if (!forceReanalyze) {
       const cached = sessionStorage.getItem(cacheKey);
@@ -82,6 +104,9 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
             if (parsed.metaphorPatterns) setMetaphors(parsed.metaphorPatterns);
             if (parsed.executiveSummary) setExecutiveSummary(parsed.executiveSummary);
             if (parsed.synthesisQuote) setSynthesisQuote(parsed.synthesisQuote);
+            setSymbols(parsed.symbols || []);
+            setFavoriteQuotes(parsed.favoriteQuotes || []);
+            setVocabulary(parsed.vocabulary || []);
             setAiSource(parsed.source || 'gemini-flash');
             return;
           }
@@ -127,6 +152,9 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
       if (data.synthesisQuote) {
         setSynthesisQuote(data.synthesisQuote);
       }
+      setSymbols(data.symbols || []);
+      setFavoriteQuotes(data.favoriteQuotes || []);
+      setVocabulary(data.vocabulary || []);
       setAiSource(data.source || 'gemini-flash');
     } catch (err) {
       console.warn('Gemini Flash analysis fallback:', err);
@@ -149,7 +177,7 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
   const hasSplitView = Boolean(themes.length > 0 && documentText && documentText.trim().length > 0);
 
   return (
-    <main className={`flex-1 flex w-full mx-auto h-full overflow-hidden transition-all duration-500 ease-out ${isPreviewModalOpen ? 'max-w-[1600px]' : 'max-w-3xl'}`}>
+    <main className={`flex-1 flex w-full mx-auto h-full overflow-hidden transition-all duration-500 ease-out ${isPreviewModalOpen ? 'max-w-[1600px] lg:max-h-screen' : 'max-w-3xl'}`}>
       {/* Left Pane */}
       <div className={`w-full transition-all duration-500 ease-in-out ${isPreviewModalOpen ? 'lg:w-100 xl:w-112.5 shrink-0 border-r border-stone-200/60 dark:border-stone-800/60 lg:h-full lg:overflow-y-auto' : 'max-w-3xl mx-auto'} px-4 sm:px-6 py-4 pb-24 md:pb-8`}>
         <div className="space-y-8">
@@ -203,7 +231,7 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
         
         {executiveSummary && (
           <div className="space-y-2">
-            <div className="text-[11px] font-bold text-stone-500 uppercase tracking-wider">AI Executive Summary</div>
+            <div className="text-[11px] font-bold text-stone-500 uppercase tracking-wider">AI Summary</div>
             <p className="text-[13px] text-stone-700 dark:text-stone-300 leading-relaxed italic bg-emerald-500/5 dark:bg-emerald-950/20 p-3.5 rounded-xl border border-emerald-500/20 dark:border-emerald-900/40">
               &ldquo;{executiveSummary}&rdquo;
             </p>
@@ -255,7 +283,10 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
               <div
                 key={theme.id}
                 id={`theme-card-${theme.id}`}
-                onClick={() => setSelectedThemeId(theme.id)}
+                onClick={() => {
+                  setSelectedThemeId(theme.id);
+                  setIsPreviewModalOpen(true);
+                }}
                 className={`p-4 rounded-2xl border transition-all cursor-pointer ${
                   isSelected
                     ? isDark
@@ -267,7 +298,10 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
                 }`}
               >
                 <div className="flex items-start justify-between gap-2 mb-1.5">
-                  <h3 className="font-serif text-[17px] font-semibold text-stone-900 dark:text-white">
+                  <h3 
+                    className="font-serif text-[17px] font-semibold"
+                    style={{ color: theme.color || '#8b5cf6' }}
+                  >
                     {theme.title}
                   </h3>
                   {isSelected ? (
@@ -281,66 +315,39 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
                   {theme.description}
                 </p>
 
-                {/* Key Excerpt Mentions Box (Dynamically Color-Matched to theme.color) */}
-                {(() => {
-                  const cardThemeColor = theme.color || '#8b5cf6';
-                  return (
-                    <div className="mt-3 pt-3 border-t border-stone-200 dark:border-stone-800 space-y-2.5 text-[12px] animate-in fade-in duration-150">
-                      <div
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openMentionPreview(theme);
-                        }}
-                        className="p-3.5 rounded-2xl space-y-2.5 transition-all cursor-pointer group shadow-2xs"
-                        style={{
-                          backgroundColor: `${cardThemeColor}10`,
-                          borderLeft: `4px solid ${cardThemeColor}`,
-                          borderTop: `1px solid ${cardThemeColor}20`,
-                          borderRight: `1px solid ${cardThemeColor}20`,
-                          borderBottom: `1px solid ${cardThemeColor}20`
-                        }}
-                      >
-                        <div className="flex items-center justify-between text-[11px] font-semibold">
-                          <span className="flex items-center gap-1.5" style={{ color: cardThemeColor }}>
-                            <Quote className="w-3.5 h-3.5" />
-                            <span>Key Document Excerpts</span>
-                          </span>
-                          <span
-                            className="text-[10px] font-bold px-2 py-0.5 rounded-full text-white"
-                            style={{ backgroundColor: cardThemeColor }}
-                          >
-                            {theme.excerpts?.length || 3} key quotes
-                          </span>
-                        </div>
-
-                        {/* Render 2-3 Quote Snippets */}
-                        <div className="space-y-1.5 pt-0.5">
-                          {(theme.excerpts && theme.excerpts.length > 0
-                            ? theme.excerpts.slice(0, 3)
-                            : [theme.keyQuote || theme.description]
-                          ).map((excerpt: string, qIdx: number) => (
-                            <p
-                              key={qIdx}
-                              className="italic text-[12px] text-stone-700 dark:text-stone-300 leading-snug pl-2.5"
-                              style={{ borderLeft: `2px solid ${cardThemeColor}60` }}
-                            >
-                              &ldquo;{excerpt}&rdquo;
-                            </p>
-                          ))}
-                        </div>
-
-                        {/* CTA Button */}
-                        <div
-                          className="pt-1 flex items-center justify-between text-[11px] font-bold transition-colors"
-                          style={{ color: cardThemeColor }}
-                        >
-                          <span>Inspect all {cardActualMentions} mentions in document</span>
-                          <ExternalLink className="w-3.5 h-3.5" />
-                        </div>
-                      </div>
+                {/* Key Excerpt Mentions Box */}
+                <div className="mt-3 pt-3 border-t border-stone-200 dark:border-stone-800 space-y-2.5 text-[12px] animate-in fade-in duration-150">
+                  <div
+                    className={`p-3.5 rounded-2xl space-y-2.5 transition-all shadow-2xs ${
+                      isDark ? 'bg-[#1b201d] border border-stone-800' : 'bg-stone-50 border border-stone-200'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-[11px] font-semibold">
+                      <span className="flex items-center gap-1.5 text-stone-700 dark:text-stone-300">
+                        <Quote className="w-3.5 h-3.5" />
+                        <span>Key Document Excerpts</span>
+                      </span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-stone-200 text-stone-700 dark:bg-stone-800 dark:text-stone-300">
+                        {theme.excerpts?.length || 3} key quotes
+                      </span>
                     </div>
-                  );
-                })()}
+
+                    {/* Render 2-3 Quote Snippets */}
+                    <div className="space-y-1.5 pt-0.5">
+                      {(theme.excerpts && theme.excerpts.length > 0
+                        ? theme.excerpts.slice(0, 3)
+                        : [theme.keyQuote || theme.description]
+                      ).map((excerpt: string, qIdx: number) => (
+                        <p
+                          key={qIdx}
+                          className="italic text-[12px] text-stone-700 dark:text-stone-300 leading-snug pl-2.5 border-l-2 border-stone-300 dark:border-stone-700"
+                        >
+                          &ldquo;{excerpt}&rdquo;
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                </div>
 
                 <div className="flex items-center justify-between text-[12px] pt-2 mt-1">
                   <div className="flex items-center gap-1.5">
@@ -456,15 +463,25 @@ export const ThematicAnalysisScreen: React.FC<ThematicAnalysisScreenProps> = ({
       
       {/* Right Pane (Desktop side-by-side) OR Mobile Overlay */}
       {isPreviewModalOpen && (
-        <div className="lg:flex-1 lg:h-full lg:relative">
+        <div className="lg:flex-1 lg:h-full lg:relative flex flex-col min-w-0 min-h-0 overflow-hidden">
           <DocumentInspectionPanel
             themes={themes as any}
             activeThemeId={selectedThemeId || (themes.length > 0 ? themes[0].id : '')}
             documentTitle={documentTitle}
             documentText={documentText}
+            isPdfSource={isPdfSource}
             isDark={isDark}
             onClose={() => setIsPreviewModalOpen(false)}
             isDesktopSplit={hasSplitView && !isPreviewModalOpen}
+            notes={notes}
+            onNotesChange={onNotesChange}
+            formats={formats}
+            onFormatsChange={onFormatsChange}
+            authorName={authorName}
+            executiveSummary={executiveSummary}
+            symbols={symbols}
+            favoriteQuotes={favoriteQuotes}
+            vocabulary={vocabulary}
           />
         </div>
       )}

@@ -26,12 +26,13 @@ import {
 } from 'lucide-react';
 import { Screen, TransitionType, StickyNote, AISuggestion, UserSettings } from '../types';
 
-import { 
-  exportToPDF, 
-  generateMarkdown, 
-  generatePlainText, 
+import {
+  exportToPDF,
+  generateMarkdown,
+  generatePlainText,
   downloadTextFile,
-  ExportOptions 
+  getFilteredAnnotations,
+  ExportOptions
 } from '../utils/exportAnnotations';
 
 interface ReaderScreenProps {
@@ -40,14 +41,21 @@ interface ReaderScreenProps {
   isDark?: boolean;
   documentText?: string;
   documentTitle?: string;
+  /** Notes for the active document, lifted to App so they survive navigating away and back. */
+  notes: StickyNote[];
+  onNotesChange: (updater: (prev: StickyNote[]) => StickyNote[]) => void;
 }
+
+const NAMED_NOTE_COLORS = ['yellow', 'purple', 'teal', 'rose'];
 
 export const ReaderScreen: React.FC<ReaderScreenProps> = ({
   settings,
   onNavigate,
   isDark = false,
   documentText,
-  documentTitle
+  documentTitle,
+  notes,
+  onNotesChange
 }) => {
   // Derive paragraphs strictly from custom document text
   const displayParagraphs = React.useMemo(() => {
@@ -63,10 +71,10 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
 
   const displayTitle = documentTitle || (documentText ? 'Uploaded Document' : 'No Document Selected');
   const displayAuthor = documentText ? 'User Uploaded Text' : '';
-  const [stickyNotes, setStickyNotes] = useState<StickyNote[]>([]);
   const [activeParagraphIndex, setActiveParagraphIndex] = useState<number | null>(null);
   const [showNotesDrawer, setShowNotesDrawer] = useState<boolean>(true);
   const [selectedThemeFilter, setSelectedThemeFilter] = useState<string>('All');
+  const [exportTypeFilter, setExportTypeFilter] = useState<'all' | 'manual' | 'ai'>('all');
   
   const TAB_INDEXES: Record<'notes' | 'add' | 'ai' | 'export', number> = {
     notes: 0,
@@ -112,7 +120,6 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
 
   // Note Modal state (for both creating & editing)
   const [isNoteModalOpen, setIsNoteModalOpen] = useState<boolean>(false);
-  const [isExportModalOpen, setIsExportModalOpen] = useState<boolean>(false);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteFormTitle, setNoteFormTitle] = useState<string>('');
   const [noteFormText, setNoteFormText] = useState<string>('');
@@ -273,7 +280,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
       rationale: suggestion.rationale
     };
 
-    setStickyNotes((prev) => [newNote, ...prev]);
+    onNotesChange((prev) => [newNote, ...prev]);
     // Remove from unpinned suggestions
     setAiSuggestions((prev) => prev.filter((s) => s.title !== suggestion.title));
   };
@@ -298,7 +305,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
 
     if (editingNoteId) {
       // Update existing
-      setStickyNotes((prev) =>
+      onNotesChange((prev) =>
         prev.map((n) =>
           n.id === editingNoteId
             ? {
@@ -327,14 +334,14 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
         themeTag: noteFormTheme,
         isAiGenerated: isNoteAiGenerated
       };
-      setStickyNotes((prev) => [newNote, ...prev]);
+      onNotesChange((prev) => [newNote, ...prev]);
     }
 
     setIsNoteModalOpen(false);
   };
 
   const handleDeleteNote = (id: string) => {
-    setStickyNotes((prev) => prev.filter((n) => n.id !== id));
+    onNotesChange((prev) => prev.filter((n) => n.id !== id));
   };
 
   const toggleHighlight = (idx: number) => {
@@ -343,11 +350,12 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     );
   };
 
-  const filteredNotes = selectedThemeFilter === 'All'
-    ? stickyNotes
-    : stickyNotes.filter((n) => n.themeTag === selectedThemeFilter);
+  // Notes as scoped by the Export tab's filter controls (type + theme).
+  const exportableNotes = getFilteredAnnotations(notes, exportTypeFilter, selectedThemeFilter);
 
-  const getNoteColorClass = (color: StickyNote['color']) => {
+  // Named palette colors map to Tailwind classes; arbitrary hex colors (e.g. notes pinned
+  // from the Analysis Inspection Panel's color picker) fall back to an inline style instead.
+  const getNoteColorClass = (color: string) => {
     switch (color) {
       case 'yellow':
         return 'bg-[#fef9c3] dark:bg-[#3d381e] border-amber-300 dark:border-amber-700/60 text-amber-950 dark:text-amber-100';
@@ -357,7 +365,14 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
         return 'bg-[#ccfbf1] dark:bg-[#133d37] border-teal-300 dark:border-teal-700/60 text-teal-950 dark:text-teal-100';
       case 'rose':
         return 'bg-[#ffe4e6] dark:bg-[#431823] border-rose-300 dark:border-rose-700/60 text-rose-950 dark:text-rose-100';
+      default:
+        return '';
     }
+  };
+
+  const getNoteColorStyle = (color: string): React.CSSProperties | undefined => {
+    if (NAMED_NOTE_COLORS.includes(color)) return undefined;
+    return { backgroundColor: `${color}26`, borderColor: `${color}90`, color: 'inherit' };
   };
 
   return (
@@ -489,12 +504,12 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                 ? 'bg-[#435c52] text-white px-3 py-1.5 rounded-xl font-semibold shadow-xs animate-in fade-in zoom-in-95'
                 : 'p-2 rounded-xl bg-black/5 dark:bg-white/5 hover:bg-black/10 text-stone-700 dark:text-stone-300'
             }`}
-            title={`Sticky Notes (${stickyNotes.length})`}
+            title={`Sticky Notes (${notes.length})`}
           >
             <StickyNoteIcon className="w-4 h-4" />
             {activeControlTab === 'notes' && (
               <span className="whitespace-nowrap animate-in fade-in duration-150">
-                Notes ({stickyNotes.length})
+                Notes ({notes.length})
               </span>
             )}
           </button>
@@ -612,7 +627,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                 </div>
 
                 {displayParagraphs.map((para, idx) => {
-                  const notesForThisPara = stickyNotes.filter((n) => n.paragraphIndex === idx);
+                  const notesForThisPara = notes.filter((n) => n.paragraphIndex === idx);
                   const isHighlighted = highlightedParagraphs.includes(idx);
 
                   return (
@@ -700,7 +715,8 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                             <div
                               key={note.id}
                               id={`sticky-note-${note.id}`}
-                              className={`p-3.5 rounded-xl border shadow-xs transition-all ${getNoteColorClass(note.color)}`}
+                              className={`p-3.5 rounded-xl border shadow-xs transition-all ${getNoteColorClass(note.color) || 'text-stone-900 dark:text-stone-100'}`}
+                              style={getNoteColorStyle(note.color)}
                             >
                               <div className="flex items-start justify-between gap-2 mb-1.5">
                                 <div className="flex items-center gap-1.5">
@@ -1094,29 +1110,72 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                         {displayTitle}
                       </h4>
                       <p className="text-[12px] text-stone-500">
-                        {stickyNotes.length} total annotations ready to export
+                        {exportableNotes.length} of {notes.length} annotations match the filters below
                       </p>
                     </div>
                     <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg bg-[#435c52] text-white">
-                      {stickyNotes.length} Notes
+                      {exportableNotes.length} Notes
                     </span>
+                  </div>
+
+                  {/* Filter Controls */}
+                  <div className="space-y-2.5">
+                    <div className="flex items-center gap-1.5 p-1 bg-stone-100 dark:bg-stone-800/70 rounded-xl text-[12px]">
+                      {([
+                        { key: 'all', label: 'All' },
+                        { key: 'manual', label: 'Manual' },
+                        { key: 'ai', label: 'AI-Assisted' }
+                      ] as const).map((opt) => (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => setExportTypeFilter(opt.key)}
+                          className={`flex-1 py-1.5 rounded-lg font-medium transition-all cursor-pointer ${
+                            exportTypeFilter === opt.key
+                              ? 'bg-[#435c52] text-white shadow-xs'
+                              : 'text-stone-600 dark:text-stone-400 hover:bg-stone-200/60 dark:hover:bg-stone-700/50'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5">
+                      {['All', ...settings.activeThemes.map((t) => t.name)].map((themeName) => (
+                        <button
+                          key={themeName}
+                          type="button"
+                          onClick={() => setSelectedThemeFilter(themeName)}
+                          className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all cursor-pointer ${
+                            selectedThemeFilter === themeName
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-200'
+                          }`}
+                        >
+                          {themeName}
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <button
                       type="button"
+                      disabled={exportableNotes.length === 0}
                       onClick={() => {
                         const opts: ExportOptions = {
                           bookTitle: displayTitle,
                           bookAuthor: displayAuthor,
-                          filterType: 'all',
+                          filterType: exportTypeFilter,
+                          themeFilter: selectedThemeFilter,
                           format: 'pdf',
                           includeQuotes: true,
                           includeAiDetails: true
                         };
-                        exportToPDF(stickyNotes, opts);
+                        exportToPDF(exportableNotes, opts);
                       }}
-                      className="p-4 rounded-2xl border border-stone-200 dark:border-stone-700 hover:border-[#435c52] dark:hover:border-emerald-500 text-left space-y-2 transition-all cursor-pointer group"
+                      className="p-4 rounded-2xl border border-stone-200 dark:border-stone-700 hover:border-[#435c52] dark:hover:border-emerald-500 text-left space-y-2 transition-all cursor-pointer group disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-stone-200 dark:disabled:hover:border-stone-700"
                     >
                       <Download className="w-5 h-5 text-[#435c52] group-hover:scale-110 transition-transform" />
                       <div>
@@ -1127,19 +1186,21 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
 
                     <button
                       type="button"
+                      disabled={exportableNotes.length === 0}
                       onClick={() => {
                         const opts: ExportOptions = {
                           bookTitle: displayTitle,
                           bookAuthor: displayAuthor,
-                          filterType: 'all',
+                          filterType: exportTypeFilter,
+                          themeFilter: selectedThemeFilter,
                           format: 'markdown',
                           includeQuotes: true,
                           includeAiDetails: true
                         };
-                        const content = generateMarkdown(stickyNotes, opts);
+                        const content = generateMarkdown(exportableNotes, opts);
                         downloadTextFile(content, `${displayTitle}-annotations.md`, 'text/markdown');
                       }}
-                      className="p-4 rounded-2xl border border-stone-200 dark:border-stone-700 hover:border-[#435c52] dark:hover:border-emerald-500 text-left space-y-2 transition-all cursor-pointer group"
+                      className="p-4 rounded-2xl border border-stone-200 dark:border-stone-700 hover:border-[#435c52] dark:hover:border-emerald-500 text-left space-y-2 transition-all cursor-pointer group disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-stone-200 dark:disabled:hover:border-stone-700"
                     >
                       <Download className="w-5 h-5 text-[#435c52] group-hover:scale-110 transition-transform" />
                       <div>
@@ -1150,19 +1211,21 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
 
                     <button
                       type="button"
+                      disabled={exportableNotes.length === 0}
                       onClick={() => {
                         const opts: ExportOptions = {
                           bookTitle: displayTitle,
                           bookAuthor: displayAuthor,
-                          filterType: 'all',
+                          filterType: exportTypeFilter,
+                          themeFilter: selectedThemeFilter,
                           format: 'txt',
                           includeQuotes: true,
                           includeAiDetails: true
                         };
-                        const content = generatePlainText(stickyNotes, opts);
+                        const content = generatePlainText(exportableNotes, opts);
                         downloadTextFile(content, `${displayTitle}-annotations.txt`, 'text/plain');
                       }}
-                      className="p-4 rounded-2xl border border-stone-200 dark:border-stone-700 hover:border-[#435c52] dark:hover:border-emerald-500 text-left space-y-2 transition-all cursor-pointer group"
+                      className="p-4 rounded-2xl border border-stone-200 dark:border-stone-700 hover:border-[#435c52] dark:hover:border-emerald-500 text-left space-y-2 transition-all cursor-pointer group disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-stone-200 dark:disabled:hover:border-stone-700"
                     >
                       <Download className="w-5 h-5 text-[#435c52] group-hover:scale-110 transition-transform" />
                       <div>

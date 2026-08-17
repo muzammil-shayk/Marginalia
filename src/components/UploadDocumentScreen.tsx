@@ -6,8 +6,8 @@ import { parseFile } from '../utils/fileParser';
 interface UploadDocumentScreenProps {
   onNavigate: (screen: Screen, transition?: TransitionType) => void;
   isDark?: boolean;
-  onSelectDocumentForAnalysis?: (title: string, text: string) => void;
-  uploadedLibrary?: Array<{ id: string; title: string; text: string; date: string; wordCount: number }>;
+  onSelectDocumentForAnalysis?: (title: string, text: string, format?: string) => void;
+  uploadedLibrary?: Array<{ id: string; title: string; text: string; date: string; wordCount: number; format?: string }>;
 }
 
 export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
@@ -21,12 +21,14 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
   const [isDragging, setIsDragging] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
   const [parsedText, setParsedText] = useState<string | null>(null);
+  const [parsedFormat, setParsedFormat] = useState<string | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleStartAnalysis = (title?: string, text?: string) => {
+  const handleStartAnalysis = (title?: string, text?: string, format?: string) => {
     const finalTitle = title || (selectedFile ? selectedFile.name.replace(/\.[^/.]+$/, "") : "Custom Document Analysis");
     const finalText = text || parsedText || pastedText || '';
+    const finalFormat = format || parsedFormat || (!selectedFile && pastedText.trim() ? 'TXT' : undefined);
 
     if (!finalText.trim()) {
       setParseError('Please upload a file or paste some text before starting analysis.');
@@ -34,7 +36,7 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
     }
 
     if (onSelectDocumentForAnalysis) {
-      onSelectDocumentForAnalysis(finalTitle, finalText);
+      onSelectDocumentForAnalysis(finalTitle, finalText, finalFormat);
     }
     onNavigate('analysis', 'push');
   };
@@ -50,6 +52,7 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
     try {
       const extractedText = await parseFile(file);
       setParsedText(extractedText.text);
+      setParsedFormat(extractedText.format);
     } catch (err: any) {
       console.error('File parsing error:', err);
       setParseError(err.message || 'Failed to read file contents.');
@@ -80,6 +83,7 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
     try {
       const extractedText = await parseFile(file);
       setParsedText(extractedText.text);
+      setParsedFormat(extractedText.format);
     } catch (err: any) {
       console.error('File parsing error:', err);
       setParseError(err.message || 'Failed to read file contents.');
@@ -211,7 +215,7 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
             {uploadedLibrary.map((doc) => (
               <div
                 key={doc.id}
-                onClick={() => handleStartAnalysis(doc.title, doc.text)}
+                onClick={() => handleStartAnalysis(doc.title, doc.text, doc.format)}
                 className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between cursor-pointer hover:shadow-xs ${
                   isDark
                     ? 'bg-[#1b201d] border-stone-800 hover:bg-[#232a26]'

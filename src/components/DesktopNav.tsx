@@ -6,12 +6,14 @@ interface DesktopNavProps {
   currentScreen: Screen;
   onNavigate: (screen: Screen, transition?: TransitionType) => void;
   isDark?: boolean;
+  hasActiveDocument?: boolean;
 }
 
 export const DesktopNav: React.FC<DesktopNavProps> = ({
   currentScreen,
   onNavigate,
-  isDark = false
+  isDark = false,
+  hasActiveDocument = true
 }) => {
   const tabs: Array<{
     id: Screen;
@@ -55,24 +57,29 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const active = isActive(tab);
+          const isDisabled = tab.id === 'reader' && !hasActiveDocument;
           return (
             <button
               key={tab.id}
               type="button"
+              disabled={isDisabled}
               onClick={() => {
-                if (currentScreen !== tab.screen) {
+                if (!isDisabled && currentScreen !== tab.screen) {
                   onNavigate(tab.screen, tab.transition);
                 }
               }}
-              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[13px] font-medium transition-all cursor-pointer active:scale-[0.97] ${
-                active
-                  ? isDark
-                    ? 'bg-[#435c52] text-white shadow-sm'
-                    : 'bg-[#435c52] text-white shadow-sm'
-                  : isDark
-                    ? 'text-stone-400 hover:text-stone-200 hover:bg-white/5'
-                    : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100/80'
+              className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-[13px] font-medium transition-all active:scale-[0.97] ${
+                isDisabled
+                  ? 'cursor-not-allowed text-stone-300 dark:text-stone-700'
+                  : `cursor-pointer ${
+                      active
+                        ? 'bg-[#435c52] text-white shadow-sm'
+                        : isDark
+                          ? 'text-stone-400 hover:text-stone-200 hover:bg-white/5'
+                          : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100/80'
+                    }`
               }`}
+              title={isDisabled ? 'Upload a document to start reading' : undefined}
             >
               <Icon className="w-4 h-4 shrink-0" />
               <span>{tab.label}</span>

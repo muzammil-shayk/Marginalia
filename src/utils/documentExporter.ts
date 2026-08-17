@@ -17,8 +17,10 @@ export interface CustomFormat {
   paragraphIndex: number;
   start: number;
   end: number;
-  type: 'bold' | 'highlight' | 'underline';
+  type: 'bold' | 'highlight' | 'underline' | 'circle' | 'remove-bold' | 'remove-underline' | 'remove-highlight';
   color?: string;
+  /** Border thickness in px, only meaningful for the 'circle' type. */
+  thickness?: number;
 }
 
 export interface PreviewTheme {
@@ -28,7 +30,18 @@ export interface PreviewTheme {
   excerpts: string[];
   keyQuote?: string;
   mentionsCount?: number;
+  matchedParagraphIndices?: number[];
   confidenceLabel?: string;
+}
+
+export interface SymbolPattern {
+  name: string;
+  description: string;
+}
+
+export interface VocabularyTerm {
+  term: string;
+  definition: string;
 }
 
 export async function exportAnnotatedDocument(payload: {
@@ -37,6 +50,12 @@ export async function exportAnnotatedDocument(payload: {
   themes?: PreviewTheme[];
   annotations: UserAnnotation[];
   customFormats?: CustomFormat[];
+  executiveSummary?: string;
+  symbols?: SymbolPattern[];
+  favoriteQuotes?: string[];
+  vocabulary?: VocabularyTerm[];
+  /** True when the source upload was a real PDF, whose paragraph chunks are native PDF pages rather than prose paragraphs. */
+  isPdfSource?: boolean;
   format: 'pdf' | 'txt' | 'html' | 'docx';
 }) {
   try {

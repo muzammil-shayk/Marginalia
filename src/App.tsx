@@ -5,8 +5,10 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Screen, TransitionType, UserSettings } from './types';
+import { Screen, TransitionType, UserSettings, StickyNote } from './types';
 import { initialSettings } from './data/mockData';
+import { analysisCacheKey } from './utils/cacheKeys';
+import { CustomFormat } from './utils/documentExporter';
 import { Header } from './components/Header';
 import { BottomNav } from './components/BottomNav';
 import { DesktopNav } from './components/DesktopNav';
@@ -22,7 +24,6 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 // ── Storage Keys ──
 const SETTINGS_KEY = 'marginalia_settings';       // localStorage — persists across sessions
 const SESSION_KEY = 'marginalia_session';          // sessionStorage — per-tab, clears on close
-const ANALYSIS_CACHE_PREFIX = 'marginalia_analysis_'; // sessionStorage — per-document AI cache
 
 // ── Helpers ──
 function loadSettings(): UserSettings {
@@ -39,8 +40,12 @@ function saveSettings(s: UserSettings) {
 
 interface SessionState {
   currentScreen: Screen;
-  analysisDoc: { title: string; text: string };
-  uploadedLibrary: Array<{ id: string; title: string; text: string; date: string; wordCount: number }>;
+  analysisDoc: { title: string; text: string; format?: string };
+  uploadedLibrary: Array<{ id: string; title: string; text: string; date: string; wordCount: number; format?: string }>;
+  /** Sticky notes / margin annotations, keyed by document title, shared by the Reader and the Inspection Panel. */
+  documentNotes: Record<string, StickyNote[]>;
+  /** Inline bold/highlight/underline marks, keyed by document title. */
+  documentFormats: Record<string, CustomFormat[]>;
 }
 
 function loadSession(): SessionState | null {
@@ -58,8 +63,7 @@ function saveSession(s: SessionState) {
 /** Load cached AI analysis for a document (from sessionStorage) */
 function loadCachedAnalysis(docTitle: string): any | null {
   try {
-    const key = ANALYSIS_CACHE_PREFIX + docTitle.replace(/[^a-zA-Z0-9]/g, '_');
-    const raw = sessionStorage.getItem(key);
+    const raw = sessionStorage.getItem(analysisCacheKey(docTitle));
     if (raw) return JSON.parse(raw);
   } catch (e) { /* ignore */ }
   return null;
@@ -77,12 +81,29 @@ export default function App() {
   const [transitionType, setTransitionType] = useState<TransitionType>('push');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [analysisDoc, setAnalysisDoc] = useState<{ title: string; text: string }>(
+  const [analysisDoc, setAnalysisDoc] = useState<{ title: string; text: string; format?: string }>(
     savedSession?.analysisDoc || { title: '', text: '' }
   );
   const [uploadedLibrary, setUploadedLibrary] = useState<
-    Array<{ id: string; title: string; text: string; date: string; wordCount: number }>
+    Array<{ id: string; title: string; text: string; date: string; wordCount: number; format?: string }>
   >(savedSession?.uploadedLibrary || []);
+
+  // Per-document notes/formats, shared by the Reader screen and the Analysis Inspection Panel,
+  // and persisted so they survive navigating away and back within the same session.
+  const [documentNotes, setDocumentNotes] = useState<Record<string, StickyNote[]>>(
+    savedSession?.documentNotes || {}
+  );
+  const [documentFormats, setDocumentFormats] = useState<Record<string, CustomFormat[]>>(
+    savedSession?.documentFormats || {}
+  );
+
+  const updateDocumentNotes = useCallback((docTitle: string, updater: (prev: StickyNote[]) => StickyNote[]) => {
+    setDocumentNotes((prev) => ({ ...prev, [docTitle]: updater(prev[docTitle] || []) }));
+  }, []);
+
+  const updateDocumentFormats = useCallback((docTitle: string, updater: (prev: CustomFormat[]) => CustomFormat[]) => {
+    setDocumentFormats((prev) => ({ ...prev, [docTitle]: updater(prev[docTitle] || []) }));
+  }, []);
 
   // Cached analysis for home screen (read from sessionStorage)
   const [cachedAnalysis, setCachedAnalysis] = useState<any>(null);
@@ -102,8 +123,8 @@ export default function App() {
 
   // ── Persist session to sessionStorage ──
   useEffect(() => {
-    saveSession({ currentScreen, analysisDoc, uploadedLibrary });
-  }, [currentScreen, analysisDoc, uploadedLibrary]);
+    saveSession({ currentScreen, analysisDoc, uploadedLibrary, documentNotes, documentFormats });
+  }, [currentScreen, analysisDoc, uploadedLibrary, documentNotes, documentFormats]);
 
   const isDark = settings.darkMode;
 
@@ -113,16 +134,17 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, []);
 
-  const handleSelectDocumentForAnalysis = useCallback((title: string, text: string) => {
+  const handleSelectDocumentForAnalysis = useCallback((title: string, text: string, format?: string) => {
     const newDoc = {
       id: `doc-${Date.now()}`,
       title: title || 'Uploaded Document',
       text,
       date: new Date().toLocaleDateString(),
-      wordCount: text.split(/\s+/).filter(Boolean).length
+      wordCount: text.split(/\s+/).filter(Boolean).length,
+      format
     };
     setUploadedLibrary((prev) => [newDoc, ...prev.filter((d) => d.title !== title)]);
-    setAnalysisDoc({ title, text });
+    setAnalysisDoc({ title, text, format });
   }, []);
 
   const getTransitionVariants = () => {
@@ -160,6 +182,7 @@ export default function App() {
   };
 
   const variants = getTransitionVariants();
+  const hasActiveDocument = Boolean(analysisDoc.text?.trim());
 
   return (
     <div
@@ -173,6 +196,7 @@ export default function App() {
         currentScreen={currentScreen}
         onNavigate={navigate}
         isDark={isDark}
+        hasActiveDocument={hasActiveDocument}
       />
 
       {/* Main Content Area */}
@@ -183,6 +207,9 @@ export default function App() {
           onClose={() => setIsSearchOpen(false)}
           onNavigate={navigate}
           isDark={isDark}
+          uploadedLibrary={uploadedLibrary}
+          documentNotes={documentNotes}
+          onSelectDocumentForAnalysis={handleSelectDocumentForAnalysis}
         />
 
         {/* Sidebar Drawer (mobile menu) */}
@@ -201,6 +228,8 @@ export default function App() {
             isDark={isDark}
             documentText={analysisDoc.text}
             documentTitle={analysisDoc.title}
+            notes={documentNotes[analysisDoc.title] || []}
+            onNotesChange={(updater) => updateDocumentNotes(analysisDoc.title, updater)}
           />
         ) : (
           <div className="flex-1 flex flex-col min-h-screen">
@@ -244,6 +273,12 @@ export default function App() {
                         isDark={isDark}
                         documentTitle={analysisDoc.title}
                         documentText={analysisDoc.text}
+                        isPdfSource={analysisDoc.format === 'PDF'}
+                        notes={documentNotes[analysisDoc.title] || []}
+                        onNotesChange={(updater) => updateDocumentNotes(analysisDoc.title, updater)}
+                        formats={documentFormats[analysisDoc.title] || []}
+                        onFormatsChange={(updater) => updateDocumentFormats(analysisDoc.title, updater)}
+                        authorName={settings.name}
                       />
                     )}
 
@@ -276,6 +311,7 @@ export default function App() {
           currentScreen={currentScreen}
           onNavigate={navigate}
           isDark={isDark}
+          hasActiveDocument={hasActiveDocument}
         />
       </div>
     </div>
