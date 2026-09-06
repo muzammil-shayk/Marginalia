@@ -34,9 +34,11 @@ import {
   fontStack,
   dashArray,
   isMovable,
+  isReaction,
   newAnnotationId,
   pointToFraction,
   pointsToPolyline,
+  reactionChar,
   rectStyle,
   scaleAnnotation,
   translateAnnotation
@@ -555,6 +557,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       isMovable(a) &&
       a.kind !== 'note' &&
       a.kind !== 'text' &&
+      !isReaction(a.kind) &&
       tool !== 'erase' &&
       !capturesDrag
   );
@@ -948,6 +951,46 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
         })}
 
       {/*
+        Quick reactions — ?, *, ! — a single glyph reacting to a passage rather than a style
+        tinting it. Rendered like a tiny sticky note: its own `box` (draggable), sized from
+        `fontSize` the same way a text box is, resized through the same size picker rather than a
+        corner handle since there is nothing to resize but the one character.
+      */}
+      {annotations
+        .filter((a) => isReaction(a.kind) && a.box)
+        .map((raw) => {
+          const a = live(raw);
+          const lifted = selectedId === a.id || hoveredId === a.id;
+          const dragging = gestureRef.current?.id === a.id;
+          const size = Math.max(8, (a.fontSize ?? DEFAULT_TEXT_SIZE) * pageWidth);
+          return (
+            <div
+              key={a.id}
+              {...gestureHandlers(raw, 'move')}
+              onMouseEnter={() => onHover(a.id)}
+              onMouseLeave={() => onHover(null)}
+              onClick={(e) => handleMarkClick(e, raw)}
+              data-mark-ui=""
+              title="Drag to move"
+              className="absolute flex items-center justify-center select-none"
+              style={{
+                ...rectStyle(a.box!),
+                pointerEvents: 'auto',
+                cursor: dragging ? 'grabbing' : 'grab',
+                touchAction: 'none',
+                borderRadius: '9999px',
+                background: lifted ? withAlpha(a.color, 0.16) : 'transparent',
+                outline: lifted ? `1px solid ${a.color}` : 'none'
+              }}
+            >
+              <span style={{ fontSize: size, fontWeight: 800, lineHeight: 1, color: a.color }}>
+                {reactionChar(a.kind)}
+              </span>
+            </div>
+          );
+        })}
+
+      {/*
         Handles for the selected shape.
 
         Shapes are drawn in SVG and have no body to grab — a one-pixel line is not a drag target,
@@ -1048,9 +1091,9 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
         );
       })()}
 
-      {/* The passage a hovered note was written about, lit up on its own page. */}
+      {/* The passage a hovered note or reaction was made about, lit up on its own page. */}
       {annotations
-        .filter((a) => a.kind === 'note' && hoveredId === a.id && a.anchorRects?.length)
+        .filter((a) => (a.kind === 'note' || isReaction(a.kind)) && hoveredId === a.id && a.anchorRects?.length)
         .flatMap((a) =>
           a.anchorRects!.map((rect, index) => (
             <span

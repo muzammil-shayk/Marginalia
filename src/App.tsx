@@ -7,14 +7,13 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Screen, TransitionType, UserSettings, StickyNote } from './types';
 import { initialSettings } from './data/mockData';
-import { analysisCacheKey } from './utils/cacheKeys';
 import { fetchDocumentText, StoredDocumentMeta } from './utils/documentStorage';
 import { CustomFormat } from './utils/documentExporter';
+import { usePlainTextAnnotations } from './hooks/usePlainTextAnnotations';
 import { Header } from './components/Header';
 import { BottomNav } from './components/BottomNav';
 import { DesktopNav } from './components/DesktopNav';
 import { HomeScreen } from './components/HomeScreen';
-import { ThematicAnalysisScreen } from './components/ThematicAnalysisScreen';
 import { SettingsScreen } from './components/SettingsScreen';
 import { UploadDocumentScreen } from './components/UploadDocumentScreen';
 import { ReaderScreen } from './components/ReaderScreen';
@@ -114,15 +113,6 @@ function saveSession(s: SessionState) {
   } catch (e) { /* ignore */ }
 }
 
-/** Load cached AI analysis for a document (from sessionStorage) */
-function loadCachedAnalysis(docTitle: string): any | null {
-  try {
-    const raw = sessionStorage.getItem(analysisCacheKey(docTitle));
-    if (raw) return JSON.parse(raw);
-  } catch (e) { /* ignore */ }
-  return null;
-}
-
 export default function App() {
   // ── Hydrate state ──
   const [settings, setSettings] = useState<UserSettings>(() => loadSettings());
@@ -175,6 +165,13 @@ export default function App() {
     []
   );
 
+  /**
+   * Server-backed notes/formats for the plain-text/EPUB reader, once a document has a `docId` to
+   * key them on — the title-keyed `documentNotes`/`documentFormats` session maps above remain
+   * only as the fallback for text that was never saved (see the ReaderScreen render below).
+   */
+  const plainTextAnnotations = usePlainTextAnnotations(analysisDoc.docId);
+
   // The library panel reads from disk rather than from `uploadedLibrary`, so it can show
   // documents stored in earlier sessions that this one has never opened. `libraryRefreshToken`
   // is bumped after an upload to pull the newly stored document into that list.
@@ -201,18 +198,6 @@ export default function App() {
     return () => { cancelled = true; };
   }, [analysisDoc.docId, analysisDoc.text, analysisDoc.title]);
 
-  // Cached analysis for home screen (read from sessionStorage)
-  const [cachedAnalysis, setCachedAnalysis] = useState<any>(null);
-
-  // Load cached analysis whenever analysisDoc changes
-  useEffect(() => {
-    if (analysisDoc.title && analysisDoc.text) {
-      const cached = loadCachedAnalysis(analysisDoc.title);
-      setCachedAnalysis(cached);
-    } else {
-      setCachedAnalysis(null);
-    }
-  }, [analysisDoc.title, analysisDoc.text]);
 
   // ── Persist settings to localStorage ──
   useEffect(() => { saveSettings(settings); }, [settings]);
@@ -303,10 +288,10 @@ export default function App() {
       ]);
       setIsLibraryOpen(false);
       // Only a document stored as a paginated PDF has pages to annotate — an uploaded PDF, or
-      // an HTML book that was printed to one on import. Anything else is text-only and belongs
-      // on the analysis screen.
+      // an HTML book that was printed to one on import. Anything else is text-only and opens in
+      // the plain-text reader instead.
       navigate(
-        isAnnotatableFormat(meta.format) && meta.originalBytes > 0 ? 'workspace' : 'analysis',
+        isAnnotatableFormat(meta.format) && meta.originalBytes > 0 ? 'workspace' : 'reader',
         'push'
       );
     },
@@ -405,6 +390,13 @@ export default function App() {
         {currentScreen === 'workspace' && analysisDoc.docId ? (
           <ErrorBoundary onGoHome={() => navigate('home', 'push_back')}>
             <PdfWorkspace
+              // Forces a full remount per document rather than reusing one instance across a
+              // docId prop change. Without this, switching straight from one book to another
+              // (e.g. via search, without passing back through Home) let a save already in
+              // flight for the OLD book's stale, not-yet-reset state fire against the NEW book's
+              // docId in the brief window before its own load effect had caught up — the exact
+              // shape of "a book's tags vanish after opening another one and tagging it."
+              key={analysisDoc.docId}
               docId={analysisDoc.docId}
               documentTitle={analysisDoc.title}
               settings={settings}
@@ -414,20 +406,32 @@ export default function App() {
           </ErrorBoundary>
         ) : currentScreen === 'reader' ? (
           <ReaderScreen
+            // Same reasoning as `PdfWorkspace` above — one fresh instance per document, not one
+            // instance whose docId prop silently changes underneath it.
+            key={analysisDoc.docId ?? analysisDoc.title}
             settings={settings}
             onNavigate={navigate}
             isDark={isDark}
             documentText={analysisDoc.text}
             documentTitle={analysisDoc.title}
-            notes={documentNotes[analysisDoc.title] || []}
-            onNotesChange={(updater) => updateDocumentNotes(analysisDoc.title, updater)}
+            notes={analysisDoc.docId ? plainTextAnnotations.notes : documentNotes[analysisDoc.title] || []}
+            onNotesChange={
+              analysisDoc.docId
+                ? plainTextAnnotations.setNotes
+                : (updater) => updateDocumentNotes(analysisDoc.title, updater)
+            }
+            formats={analysisDoc.docId ? plainTextAnnotations.formats : documentFormats[analysisDoc.title] || []}
+            onFormatsChange={
+              analysisDoc.docId
+                ? plainTextAnnotations.setFormats
+                : (updater) => updateDocumentFormats(analysisDoc.title, updater)
+            }
           />
         ) : (
           <div className="flex-1 flex flex-col min-h-screen">
             {/* Shared Header for Non-Reader Screens — mobile only since desktop has sidebar */}
             <div className="md:hidden">
               <Header
-                currentScreen={currentScreen}
                 onNavigate={navigate}
                 onOpenMenu={() => setIsSidebarOpen(true)}
                 onOpenSearch={() => setIsSearchOpen(true)}
@@ -465,9 +469,10 @@ export default function App() {
                       <HomeScreen
                         onNavigate={navigate}
                         isDark={isDark}
+                        settings={settings}
+                        onUpdateSettings={setSettings}
                         activeDocument={analysisDoc.text ? analysisDoc : null}
                         uploadedLibrary={uploadedLibrary}
-                        cachedAnalysis={cachedAnalysis}
                         onSelectDocumentForAnalysis={handleSelectDocumentForAnalysis}
                         onOpenLibraryDocument={handleOpenLibraryDocument}
                         onOpenStoredDocument={handleOpenStoredDocument}
@@ -476,21 +481,6 @@ export default function App() {
                         onDocumentDeleted={handleStoredDocumentDeleted}
                         onDocumentRenamed={handleStoredDocumentRenamed}
                         refreshToken={libraryRefreshToken}
-                      />
-                    )}
-
-                    {currentScreen === 'analysis' && (
-                      <ThematicAnalysisScreen
-                        onNavigate={navigate}
-                        isDark={isDark}
-                        documentTitle={analysisDoc.title}
-                        documentText={analysisDoc.text}
-                        isPdfSource={isAnnotatableFormat(analysisDoc.format)}
-                        notes={documentNotes[analysisDoc.title] || []}
-                        onNotesChange={(updater) => updateDocumentNotes(analysisDoc.title, updater)}
-                        formats={documentFormats[analysisDoc.title] || []}
-                        onFormatsChange={(updater) => updateDocumentFormats(analysisDoc.title, updater)}
-                        authorName={settings.name}
                       />
                     )}
 

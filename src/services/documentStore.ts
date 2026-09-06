@@ -16,7 +16,7 @@
 import { DocumentBackend, RETENTION_DAYS } from './storage/types';
 import { LocalDocumentBackend } from './storage/localBackend';
 
-export type { DocumentMeta, StoredDocument, StoredAnnotation, ThemeTags, UpdateDocumentParams } from './storage/types';
+export type { DocumentMeta, StoredDocument, StoredAnnotation, UpdateDocumentParams } from './storage/types';
 export { RETENTION_DAYS } from './storage/types';
 
 /** How often the sweeper runs, when retention is enabled at all. */

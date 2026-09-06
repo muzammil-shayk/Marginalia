@@ -14,7 +14,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Upload,
-  Sparkles,
   ArrowRight,
   FileText,
   Search,
@@ -25,11 +24,14 @@ import {
   X,
   Loader2,
   Type,
-  Highlighter
+  Highlighter,
+  Palette,
+  Sparkles
 } from 'lucide-react';
 import { isAnnotatableFormat } from '../utils/annotatableFormats';
 import { motion } from 'motion/react';
-import { Screen, TransitionType } from '../types';
+import { Screen, TransitionType, UserSettings } from '../types';
+import { initialSettings } from '../data/mockData';
 import { documentThumbnail } from '../utils/documentThumbnail';
 import {
   StoredDocumentMeta,
@@ -38,24 +40,11 @@ import {
   renameStoredDocument
 } from '../utils/documentStorage';
 
-interface CachedAnalysis {
-  documentTitle?: string;
-  executiveSummary?: string;
-  extractedThemes?: Array<{
-    id: string;
-    title: string;
-    description: string;
-    confidence: number;
-    confidenceLabel: string;
-    mentions: number;
-    color: string;
-  }>;
-  synthesisQuote?: string;
-}
-
 interface HomeScreenProps {
   onNavigate: (screen: Screen, transition?: TransitionType) => void;
   isDark?: boolean;
+  settings: UserSettings;
+  onUpdateSettings?: (updater: (prev: UserSettings) => UserSettings) => void;
   activeDocument?: { title: string; text: string } | null;
   /**
    * `text` is optional and `docId` new: document bodies live on disk now and are fetched by id
@@ -70,7 +59,6 @@ interface HomeScreenProps {
     format?: string;
     docId?: string;
   }>;
-  cachedAnalysis?: CachedAnalysis | null;
   onSelectDocumentForAnalysis?: (title: string, text: string, format?: string, docId?: string) => void;
   /** Reopens a stored document, fetching its text from disk first. */
   onOpenLibraryDocument?: (doc: {
@@ -163,8 +151,9 @@ const DocumentCover: React.FC<{ doc: StoredDocumentMeta }> = ({ doc }) => {
 export const HomeScreen: React.FC<HomeScreenProps> = ({
   onNavigate,
   isDark = false,
+  settings,
+  onUpdateSettings,
   activeDocument = null,
-  cachedAnalysis = null,
   onOpenStoredDocument,
   onContinueAnnotating,
   canAnnotateActive = false,
@@ -173,7 +162,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   refreshToken = 0
 }) => {
   const hasActiveDoc = Boolean(activeDocument?.text?.trim());
-  const themes = cachedAnalysis?.extractedThemes || [];
 
   const [stored, setStored] = useState<StoredDocumentMeta[]>([]);
   const [isLoadingLibrary, setIsLoadingLibrary] = useState(true);
@@ -227,6 +215,38 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   const totalWords = useMemo(() => stored.reduce((sum, d) => sum + d.wordCount, 0), [stored]);
   const totalMarks = useMemo(() => stored.reduce((sum, d) => sum + (d.annotationCount || 0), 0), [stored]);
+
+  /** Which books, across the whole library, are tagged with each theme — read straight off the
+   *  same `listStoredDocuments()` call the shelf grid already makes, rather than fetching twice. */
+  const booksByTheme = useMemo(() => {
+    const map = new Map<string, StoredDocumentMeta[]>();
+    for (const theme of settings.activeThemes) {
+      map.set(theme.id, stored.filter((d) => d.themeIds?.includes(theme.id)));
+    }
+    return map;
+  }, [settings.activeThemes, stored]);
+
+  /** True only while the reader has never touched the three starter themes at all — id, name AND
+   *  colour all still match what a fresh install ships with — so the callout disappears the
+   *  moment any real customization happens, not just once it's explicitly dismissed. */
+  const themesAreUntouched = useMemo(() => {
+    const defaults = initialSettings.activeThemes;
+    if (settings.activeThemes.length !== defaults.length) return false;
+    return settings.activeThemes.every((t, i) => {
+      const d = defaults[i];
+      return d && t.id === d.id && t.name === d.name && t.color === d.color;
+    });
+  }, [settings.activeThemes]);
+  const showThemeCta = themesAreUntouched && !settings.themeCtaDismissed;
+
+  const goToThemeSettings = () => {
+    onNavigate('settings', 'push');
+    // A settings screen mounted this same tick has nothing to scroll to yet — this fires after
+    // the transition most of the app already uses (`transition={{ duration: 0.3 }}`), not before.
+    window.setTimeout(() => {
+      document.getElementById('settings-active-themes-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 350);
+  };
 
   const card = (doc: StoredDocumentMeta, index: number) => {
     const isRenaming = renamingId === doc.id;
@@ -447,6 +467,50 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </div>
       </header>
 
+      {/* First-run nudge: themes exist and already colour-code marks across every book, but that
+          only means anything once the reader has actually chosen what each colour stands for. */}
+      {showThemeCta && (
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+          id="theme-setup-cta"
+          className={`mb-6 rounded-2xl border p-4 md:p-5 flex flex-wrap items-center gap-4 ${
+            isDark ? 'bg-[#232a26] border-[#3d5147]' : 'bg-[#eef2ee] border-[#c7d6c9]'
+          }`}
+        >
+          <div className="w-10 h-10 rounded-xl bg-[#435c52] text-white flex items-center justify-center shrink-0">
+            <Palette className="w-4.5 h-4.5" />
+          </div>
+          <div className="flex-1 min-w-50">
+            <h2 className="text-[14px] font-semibold text-stone-900 dark:text-white">
+              Tag Your Themes
+            </h2>
+            <p className="text-[12.5px] text-stone-600 dark:text-stone-400 mt-0.5">
+              Each colour tags a theme across every book — say what green means once, and every
+              highlight, underline and note in that colour is filed under it from then on.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={goToThemeSettings}
+              className="px-3.5 py-2 rounded-xl bg-[#435c52] hover:bg-[#374c43] text-white text-[12.5px] font-semibold transition-all active:scale-[0.97] cursor-pointer"
+            >
+              Set up theme colours
+            </button>
+            <button
+              type="button"
+              onClick={() => onUpdateSettings?.((prev) => ({ ...prev, themeCtaDismissed: true }))}
+              title="Dismiss"
+              className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </motion.div>
+      )}
+
       {/* The document already in hand, across the full width — the one thing more likely to be
           wanted than anything on the shelf below it. */}
       {hasActiveDoc && (
@@ -469,19 +533,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             <h2 className="font-serif text-[20px] md:text-[24px] font-bold tracking-tight text-stone-900 dark:text-white truncate mt-0.5">
               {activeDocument!.title || 'Uploaded document'}
             </h2>
-            {themes.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {themes.slice(0, 4).map((theme) => (
-                  <span
-                    key={theme.id}
-                    className="flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-white/70 dark:bg-white/5 text-stone-700 dark:text-stone-300"
-                  >
-                    <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: theme.color }} />
-                    {theme.title}
-                  </span>
-                ))}
-              </div>
-            )}
           </div>
           <div className="flex flex-wrap gap-2.5">
             <button
@@ -495,19 +546,68 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               <Pencil className="w-4 h-4" />
               Continue annotating
             </button>
-            <button
-              id="view-analysis-btn"
-              type="button"
-              onClick={() => onNavigate('analysis', 'push')}
-              className={`py-2.5 px-5 rounded-xl font-semibold text-[13px] transition-all flex items-center gap-2 cursor-pointer active:scale-[0.97] border ${
-                isDark ? 'border-stone-700 text-stone-200 hover:bg-stone-800' : 'border-stone-300 text-stone-700 hover:bg-white'
-              }`}
-            >
-              <Sparkles className="w-4 h-4" />
-              View analysis
-            </button>
           </div>
         </motion.section>
+      )}
+
+      {/* Themes: a dashboard reading of the same colour-coding used everywhere marks are made —
+          which books, across the whole library, touch each theme. Secondary to the shelf below
+          it, so it stays visually quieter than the active-document card above it. */}
+      {settings.activeThemes.length > 0 && (
+        <section
+          id="themes-dashboard-section"
+          className={`mb-7 rounded-2xl border p-5 ${
+            isDark ? 'bg-[#1b201d] border-stone-800' : 'bg-white border-stone-200/80 shadow-xs'
+          }`}
+        >
+          <div className="flex items-center gap-1.5 mb-3.5">
+            <Sparkles className="w-3.5 h-3.5 text-stone-500" />
+            <span className="text-[11px] font-semibold tracking-wider text-stone-500 uppercase">
+              Themes
+            </span>
+          </div>
+          <div className="space-y-3">
+            {settings.activeThemes.map((theme) => {
+              const books = booksByTheme.get(theme.id) ?? [];
+              return (
+                <div key={theme.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1.5">
+                  <span className="flex items-center gap-2 shrink-0 w-40">
+                    <span
+                      className="w-3 h-3 rounded-full shrink-0 border border-black/10"
+                      style={{ backgroundColor: theme.color }}
+                    />
+                    <span className="text-[13px] font-medium text-stone-800 dark:text-stone-200 truncate">
+                      {theme.name}
+                    </span>
+                  </span>
+                  {books.length === 0 ? (
+                    <span className="text-[12px] text-stone-400 dark:text-stone-500 italic">
+                      No books tagged yet
+                    </span>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {books.map((doc) => (
+                        <button
+                          key={doc.id}
+                          type="button"
+                          onClick={() => onOpenStoredDocument?.(doc)}
+                          title={`Open ${doc.title}`}
+                          className={`px-2 py-0.5 rounded-full text-[12px] font-medium cursor-pointer transition-colors ${
+                            isDark
+                              ? 'bg-stone-800 text-stone-300 hover:bg-stone-700'
+                              : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                          }`}
+                        >
+                          {doc.title}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       {/* The shelf. Tracks size themselves, so the same page is full on a laptop and on a wide
@@ -536,7 +636,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             </h2>
             <p className="text-[13px] text-stone-500 dark:text-stone-400 mt-1.5 max-w-md">
               Add a PDF, an HTML book, a DOCX, an EPUB or plain text. Everything stays on this
-              computer, and nothing is sent anywhere unless you ask for an analysis.
+              computer, and nothing is ever sent anywhere.
             </p>
           </div>
           <span className="flex items-center gap-1.5 text-[13px] font-semibold text-[#435c52] dark:text-emerald-300">

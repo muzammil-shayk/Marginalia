@@ -20,6 +20,7 @@ import {
   fontStack
 } from './annotationModel';
 import { UserSettings } from '../../types';
+import { HoverTooltip } from '../HoverTooltip';
 
 /** Neutral colours for marks that are not thematic — a correction, a stray arrow. */
 export const NEUTRAL_COLORS = ['#1c1917', '#6b7280', '#dc2626'];
@@ -45,55 +46,65 @@ export const Divider: React.FC<{ isDark: boolean }> = ({ isDark }) => (
  * The theme colours, the reader's own, the neutrals, and a full picker for anything else.
  *
  * The reader's colours sit between the themes and the neutrals rather than behind a submenu,
- * because the point of defining them is to reach them in one press.
- *
- * `onlyCustomColors` narrows this down to just the reader's own palette from Settings (plus the
- * manual picker, so an arbitrary colour is still reachable) — for the compact strip beside a
- * selected mark, where themes and neutrals would crowd out the colours the reader actually curated.
+ * because the point of defining them is to reach them in one press. Every mark kind — including a
+ * sticky note, wherever it's recoloured — shows the same theme set first, kept to colour alone
+ * (name on hover) so a reader with several themes still sees the whole row at once; the dividers
+ * are what keep "theme", "your own colour" and "plain, untagged colour" from blurring together.
  */
 export const ColorPalette: React.FC<{
   color: string;
   themes: UserSettings['activeThemes'];
   customColors?: string[];
-  onlyCustomColors?: boolean;
-  onChange: (color: string) => void;
-}> = ({ color, themes, customColors = [], onlyCustomColors = false, onChange }) => {
-  const swatch = (value: string, title: string) => (
-    <button
-      key={value}
-      type="button"
-      // Keeps a live text selection alive — pressing this must not discard what the reader is
-      // about to mark.
-      onMouseDown={(e) => e.preventDefault()}
-      onClick={() => onChange(value)}
-      title={title}
-      className={`w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 cursor-pointer shrink-0 ${
-        color.toLowerCase() === value.toLowerCase() ? 'border-stone-800 dark:border-white' : 'border-transparent'
-      }`}
-      style={{ backgroundColor: value }}
-    />
+  /**
+   * Fires with the theme's own id when a theme swatch is picked, `null` for anything else (a
+   * custom colour, a neutral, or the free picker). Colour and theme have to change together — a
+   * mark's `color` is decorative, `themeId` is what the tagging system and the cross-document
+   * dashboard actually count, and the two silently drifting apart (a mark visibly recoloured to
+   * match a theme whose id it was never given) is exactly the "book vanished from its theme" bug
+   * this shape exists to rule out.
+   */
+  onChange: (color: string, themeId: string | null) => void;
+}> = ({ color, themes, customColors = [], onChange }) => {
+  const swatch = (value: string, label: string, themeId: string | null = null) => (
+    <HoverTooltip key={value} label={label}>
+      <button
+        type="button"
+        // Keeps a live text selection alive — pressing this must not discard what the reader is
+        // about to mark.
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => onChange(value, themeId)}
+        className={`w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 cursor-pointer shrink-0 ${
+          color.toLowerCase() === value.toLowerCase() ? 'border-stone-800 dark:border-white' : 'border-transparent'
+        }`}
+        style={{ backgroundColor: value }}
+      />
+    </HoverTooltip>
   );
 
   return (
     <div className="flex items-center gap-1">
-      {!onlyCustomColors && themes.map((theme) => swatch(theme.color, theme.name))}
-      {!onlyCustomColors && customColors.length > 0 && (
+      {themes.map((theme) => swatch(theme.color, theme.name, theme.id))}
+      {themes.length > 0 && customColors.length > 0 && (
         <span className="w-px h-4 bg-stone-200 dark:bg-stone-700 mx-0.5 shrink-0" aria-hidden />
       )}
       {customColors.map((c) => swatch(c, 'Your colour'))}
-      {!onlyCustomColors && NEUTRAL_COLORS.map((c) => swatch(c, 'Untagged colour'))}
-      <label
-        title="Custom colour"
-        className="w-5 h-5 rounded-full border border-black/15 dark:border-white/25 cursor-pointer overflow-hidden shrink-0"
-        style={{ background: 'conic-gradient(#ef4444,#eab308,#22c55e,#3b82f6,#a855f7,#ef4444)' }}
-      >
-        <input
-          type="color"
-          value={color}
-          onChange={(e) => onChange(e.target.value)}
-          className="opacity-0 w-full h-full cursor-pointer"
-        />
-      </label>
+      {customColors.length > 0 && (
+        <span className="w-px h-4 bg-stone-200 dark:bg-stone-700 mx-0.5 shrink-0" aria-hidden />
+      )}
+      {NEUTRAL_COLORS.map((c) => swatch(c, 'Untagged colour'))}
+      <HoverTooltip label="Custom colour">
+        <label
+          className="w-5 h-5 rounded-full border border-black/15 dark:border-white/25 cursor-pointer overflow-hidden shrink-0"
+          style={{ background: 'conic-gradient(#ef4444,#eab308,#22c55e,#3b82f6,#a855f7,#ef4444)' }}
+        >
+          <input
+            type="color"
+            value={color}
+            onChange={(e) => onChange(e.target.value, null)}
+            className="opacity-0 w-full h-full cursor-pointer"
+          />
+        </label>
+      </HoverTooltip>
     </div>
   );
 };

@@ -1,15 +1,22 @@
 import { jsPDF } from 'jspdf';
 import { StickyNote } from '../types';
 
+/** The global theme list, just enough of it to resolve an id to a display name. */
+export type ThemeRef = { id: string; name: string };
+
 export interface ExportOptions {
   bookTitle: string;
   bookAuthor: string;
   bookChapter?: string;
-  filterType: 'all' | 'manual' | 'ai';
+  /** A theme id, or 'All' — filtering is by id so a later rename doesn't silently break it. */
   themeFilter?: string;
+  themes: ThemeRef[];
   format: 'pdf' | 'markdown' | 'txt';
   includeQuotes: boolean;
-  includeAiDetails: boolean;
+}
+
+function themeName(themeId: string | null | undefined, themes: ThemeRef[]): string {
+  return themes.find((t) => t.id === themeId)?.name || 'General';
 }
 
 /**
@@ -17,15 +24,10 @@ export interface ExportOptions {
  */
 export function getFilteredAnnotations(
   notes: StickyNote[],
-  filterType: 'all' | 'manual' | 'ai',
   themeFilter: string = 'All'
 ): StickyNote[] {
   return notes.filter((note) => {
-    // Type match
-    if (filterType === 'manual' && note.isAiGenerated) return false;
-    if (filterType === 'ai' && !note.isAiGenerated) return false;
-    // Theme match
-    if (themeFilter !== 'All' && note.themeTag !== themeFilter) return false;
+    if (themeFilter !== 'All' && note.themeId !== themeFilter) return false;
     return true;
   });
 }
@@ -48,18 +50,14 @@ export function generatePlainText(notes: StickyNote[], options: ExportOptions): 
   if (options.bookChapter) output += `Chapter:  ${options.bookChapter}\n`;
   output += `Exported: ${dateStr}\n`;
   output += `Total:    ${notes.length} annotation(s)\n`;
-  output += `Filter:   ${options.filterType.toUpperCase()} | Theme: ${options.themeFilter || 'All'}\n\n`;
+  output += `Theme:    ${!options.themeFilter || options.themeFilter === 'All' ? 'All' : themeName(options.themeFilter, options.themes)}\n\n`;
   output += `-----------------------------------------------------------------\n\n`;
 
   notes.forEach((note, idx) => {
-    const typeLabel = note.isAiGenerated ? '[AI-ASSISTED NOTE]' : '[MANUAL NOTE]';
-    output += `${idx + 1}. ${note.title} ${typeLabel}\n`;
-    output += `   Theme:     ${note.themeTag || 'General'}\n`;
-    output += `   Author:    ${note.author || (note.isAiGenerated ? 'AI Assistant' : 'Reader')}\n`;
+    output += `${idx + 1}. ${note.title}\n`;
+    output += `   Theme:     ${themeName(note.themeId, options.themes)}\n`;
+    output += `   Author:    ${note.author || 'Reader'}\n`;
     output += `   Date:      ${note.timestamp}\n`;
-    if (note.confidence && options.includeAiDetails) {
-      output += `   Confidence: ${Math.round(note.confidence * 100)}%\n`;
-    }
 
     if (note.quote && options.includeQuotes) {
       output += `\n   Passage Excerpt:\n`;
@@ -68,10 +66,6 @@ export function generatePlainText(notes: StickyNote[], options: ExportOptions): 
 
     output += `\n   Annotation Note:\n`;
     output += `   ${note.content}\n`;
-
-    if (note.rationale && options.includeAiDetails) {
-      output += `\n   AI Rationale:\n   ${note.rationale}\n`;
-    }
 
     output += `\n-----------------------------------------------------------------\n\n`;
   });
@@ -93,17 +87,13 @@ export function generateMarkdown(notes: StickyNote[], options: ExportOptions): s
   md += `**Author:** ${options.bookAuthor}  \n`;
   if (options.bookChapter) md += `**Chapter:** ${options.bookChapter}  \n`;
   md += `**Export Date:** ${dateStr}  \n`;
-  md += `**Total Annotations:** ${notes.length} (${notes.filter(n => n.isAiGenerated).length} AI-assisted, ${notes.filter(n => !n.isAiGenerated).length} manual)  \n\n`;
+  md += `**Total Annotations:** ${notes.length}  \n\n`;
   md += `---\n\n`;
 
   notes.forEach((note, idx) => {
-    const badge = note.isAiGenerated ? '`✨ AI-Assisted`' : '`✍️ Manual`';
-    md += `### ${idx + 1}. ${note.title} ${badge}\n\n`;
-    md += `- **Theme:** ${note.themeTag || 'General'}\n`;
-    md += `- **Author:** ${note.author || (note.isAiGenerated ? 'AI Assistant' : 'Reader')} (${note.timestamp})\n`;
-    if (note.confidence && options.includeAiDetails) {
-      md += `- **AI Confidence:** ${Math.round(note.confidence * 100)}%\n`;
-    }
+    md += `### ${idx + 1}. ${note.title}\n\n`;
+    md += `- **Theme:** ${themeName(note.themeId, options.themes)}\n`;
+    md += `- **Author:** ${note.author || 'Reader'} (${note.timestamp})\n`;
     md += `\n`;
 
     if (note.quote && options.includeQuotes) {
@@ -111,10 +101,6 @@ export function generateMarkdown(notes: StickyNote[], options: ExportOptions): s
     }
 
     md += `${note.content}\n\n`;
-
-    if (note.rationale && options.includeAiDetails) {
-      md += `*💡 Rationale:* ${note.rationale}\n\n`;
-    }
 
     md += `---\n\n`;
   });
@@ -183,13 +169,7 @@ export function exportToPDF(notes: StickyNote[], options: ExportOptions): void {
     month: 'short',
     day: 'numeric',
   });
-  const manualCount = notes.filter((n) => !n.isAiGenerated).length;
-  const aiCount = notes.filter((n) => n.isAiGenerated).length;
-  doc.text(
-    `Exported: ${dateStr}  |  Total Notes: ${notes.length} (${manualCount} Manual, ${aiCount} AI-Assisted)`,
-    margin,
-    y
-  );
+  doc.text(`Exported: ${dateStr}  |  Total Notes: ${notes.length}`, margin, y);
   y += 4;
 
   // Divider line
@@ -214,25 +194,20 @@ export function exportToPDF(notes: StickyNote[], options: ExportOptions): void {
       ? doc.splitTextToSize(`"${note.quote}"`, contentWidth - 8)
       : [];
     const contentLines = doc.splitTextToSize(note.content, contentWidth - 4);
-    const rationaleLines = note.rationale && options.includeAiDetails
-      ? doc.splitTextToSize(`Rationale: ${note.rationale}`, contentWidth - 8)
-      : [];
 
     const estimatedHeight =
-      12 + // title and badge
+      12 + // title
       6 + // meta tags
       (quoteLines.length * 4.5 + (quoteLines.length > 0 ? 4 : 0)) +
       (contentLines.length * 5 + 4) +
-      (rationaleLines.length * 4 + (rationaleLines.length > 0 ? 4 : 0)) +
       8; // padding and spacing
 
     addNewPageIfNeeded(estimatedHeight);
 
     // Note Card Background Box
     const cardTop = y;
-    const cardColor = note.isAiGenerated ? [243, 248, 246] : [250, 249, 246]; // slight warm tint
-    doc.setFillColor(cardColor[0], cardColor[1], cardColor[2]);
-    doc.setDrawColor(note.isAiGenerated ? 139 : 210, note.isAiGenerated ? 170 : 205, note.isAiGenerated ? 160 : 195);
+    doc.setFillColor(250, 249, 246);
+    doc.setDrawColor(210, 205, 195);
     doc.setLineWidth(0.3);
 
     // Note Title
@@ -242,21 +217,13 @@ export function exportToPDF(notes: StickyNote[], options: ExportOptions): void {
     const titleText = `${index + 1}. ${note.title}`;
     doc.text(titleText, margin + 3, y + 5);
 
-    // Type Badge (AI or Manual)
-    const badgeText = note.isAiGenerated ? 'AI-ASSISTED' : 'MANUAL';
-    const badgeColor = note.isAiGenerated ? [67, 92, 82] : [120, 110, 95];
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(badgeColor[0], badgeColor[1], badgeColor[2]);
-    doc.text(badgeText, pageWidth - margin - 3, y + 5, { align: 'right' });
-
     y += 9;
 
     // Meta line (Theme Tag, Author, Timestamp)
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.5);
     doc.setTextColor(100, 100, 100);
-    const themeLabel = `Theme: ${note.themeTag || 'General'}  •  Author: ${note.author || 'Reader'}  •  ${note.timestamp}`;
+    const themeLabel = `Theme: ${themeName(note.themeId, options.themes)}  •  Author: ${note.author || 'Reader'}  •  ${note.timestamp}`;
     doc.text(themeLabel, margin + 3, y);
     y += 5;
 
@@ -264,7 +231,7 @@ export function exportToPDF(notes: StickyNote[], options: ExportOptions): void {
     if (note.quote && options.includeQuotes) {
       doc.setFillColor(235, 233, 227);
       doc.rect(margin + 2, y, contentWidth - 4, quoteLines.length * 4.5 + 2, 'F');
-      
+
       doc.setDrawColor(67, 92, 82);
       doc.setLineWidth(1);
       doc.line(margin + 2, y, margin + 2, y + quoteLines.length * 4.5 + 2);
@@ -282,15 +249,6 @@ export function exportToPDF(notes: StickyNote[], options: ExportOptions): void {
     doc.setTextColor(30, 30, 30);
     doc.text(contentLines, margin + 3, y + 2);
     y += contentLines.length * 5 + 4;
-
-    // AI Rationale (if applicable)
-    if (note.rationale && options.includeAiDetails) {
-      doc.setFont('helvetica', 'italic');
-      doc.setFontSize(8.5);
-      doc.setTextColor(67, 92, 82);
-      doc.text(rationaleLines, margin + 3, y);
-      y += rationaleLines.length * 4 + 3;
-    }
 
     // Draw outline of box
     const cardHeight = y - cardTop;

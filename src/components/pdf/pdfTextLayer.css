@@ -56,16 +56,21 @@
 /*
  * Selection appearance.
  *
- * `color: transparent` is the important half. The text layer's glyphs are invisible and sit on
- * top of the canvas image of the page — but a browser paints selected text in its own selection
- * foreground colour, which made those invisible glyphs appear and doubled every selected word
- * against the canvas underneath. Forcing the colour to stay transparent leaves only the tint.
+ * `color: transparent` is the important half, always. The text layer's glyphs are invisible and
+ * sit on top of the canvas image of the page — but a browser paints selected text in its own
+ * selection foreground colour, which made those invisible glyphs appear and doubled every
+ * selected word against the canvas underneath. Forcing the colour to stay transparent leaves only
+ * the tint.
  *
- * Grey rather than coloured, because a selection is now just a selection: what happens to it is
- * chosen afterwards from the toolbar.
+ * The BACKGROUND, though, is left transparent too, deliberately. pdf.js lays out one span per
+ * text run — often per word — so painting `::selection` here tints each span's own tight box and
+ * nothing else, leaving the (often stretched, in justified text) gaps between words uncovered: a
+ * broken row of tiles instead of a straight bar. `LiveSelectionOverlay` draws the real tint,
+ * merged into one rectangle per line from the same pass a finished highlight's geometry uses, so
+ * this rule only has to make sure the native, word-chunked one never shows through underneath it.
  */
 .marginalia-text-layer ::selection {
-  background: rgb(120 113 108 / 0.3);
+  background: transparent;
   color: transparent;
 }
 
