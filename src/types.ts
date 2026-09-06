@@ -1,6 +1,5 @@
 export type Screen =
   | 'home'
-  | 'analysis'
   | 'settings'
   | 'upload'
   | 'reader'
@@ -34,58 +33,13 @@ export interface StickyNote {
   content: string;
   author: string;
   timestamp: string;
-  themeTag?: string;
+  /** References `UserSettings.activeThemes[].id`, or `null` when untagged. An id rather than a
+   *  name so renaming a theme in Settings never orphans a note tagged with it. */
+  themeId: string | null;
   quote?: string;
-  isAiGenerated?: boolean;
-  rationale?: string;
-  confidence?: number;
   /** Character offsets within the paragraph text, for notes anchored to a precise selection. */
   start?: number;
   end?: number;
-}
-
-export interface AISuggestion {
-  title: string;
-  themeTag: string;
-  quote?: string;
-  content: string;
-  color: 'yellow' | 'purple' | 'teal' | 'rose';
-  confidence?: number;
-  rationale?: string;
-}
-
-export interface ThemeInsight {
-  id: string;
-  title: string;
-  description: string;
-  confidence: number;
-  confidenceLabel: string;
-  mentions: number;
-  selected?: boolean;
-  color: string;
-  excerpts?: string[];
-  keyQuote?: string;
-  matchedParagraphIndices?: number[];
-}
-
-/** A recurring symbol the analysis identified, with the meaning the model assigned it. */
-export interface SymbolPattern {
-  name: string;
-  description: string;
-}
-
-/** A notable term from the document, with its definition in context. */
-export interface VocabularyTerm {
-  term: string;
-  definition: string;
-}
-
-export interface MetaphorPattern {
-  name: string;
-  percentage: number;
-  colorClass: string;
-  /** The model's justification for the pattern, surfaced when a metaphor is inspected. */
-  rationale?: string;
 }
 
 /**
@@ -112,4 +66,6 @@ export interface UserSettings {
    * own greens and greys to hand without inventing a theme to justify each one.
    */
   customColors?: string[];
+  /** Dismisses the Home screen's first-run callout prompting the reader to assign theme colours. */
+  themeCtaDismissed?: boolean;
 }

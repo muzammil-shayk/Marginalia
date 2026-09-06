@@ -93,7 +93,7 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
 
       onDocumentStored?.();
       onSelectDocumentForAnalysis?.(finalTitle, finalText, finalFormat, meta.id);
-      onNavigate(isAnnotatableFormat(finalFormat) ? 'workspace' : 'analysis', 'push');
+      onNavigate(isAnnotatableFormat(finalFormat) ? 'workspace' : 'reader', 'push');
     } catch (err: any) {
       console.error('Could not store the document.', err);
       setParseError(
@@ -329,7 +329,7 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
                 key={doc.id}
                 onClick={() => {
                   onOpenLibraryDocument?.(doc);
-                  onNavigate(isAnnotatableFormat(doc.format) ? 'workspace' : 'analysis', 'push');
+                  onNavigate(isAnnotatableFormat(doc.format) ? 'workspace' : 'reader', 'push');
                 }}
                 className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between cursor-pointer hover:shadow-xs ${
                   isDark

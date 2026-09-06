@@ -12,7 +12,9 @@
 
 import React, { useRef } from 'react';
 import { Highlighter, Underline, Strikethrough, StickyNote, X } from 'lucide-react';
-import { AnnotationKind } from './annotationModel';
+import { AnnotationKind, REACTION_KINDS, reactionChar } from './annotationModel';
+import { UserSettings } from '../../types';
+import { HoverTooltip } from '../HoverTooltip';
 import { useDismiss } from './useDismiss';
 import { useAnchoredPanel } from './useAnchoredPanel';
 
@@ -28,9 +30,22 @@ interface SelectionPopoverProps {
   isDark?: boolean;
   /** Colour each text tool will use, so the menu shows what it is about to do. */
   toolColors: Record<string, string>;
+  themes: UserSettings['activeThemes'];
+  activeThemeId: string | null;
+  /** Switches which theme every action below files under — same effect as the toolbar's own
+   *  theme strip, just reachable without leaving the passage the reader is about to mark. */
+  onThemeChange: (id: string) => void;
   onMark: (kind: AnnotationKind) => void;
   onCreateNote: () => void;
   onDismiss: () => void;
+  /**
+   * The X button specifically. Unlike `onDismiss` (outside click / Escape, which must leave the
+   * selection intact for whatever the reader is reaching for next), pressing X means "I'm done
+   * with this passage" — so it also clears the selection, the same as Mark and Sticky note do.
+   * Without that, the global mouseup listener that re-opens this menu on an active selection would
+   * see the selection was never cleared and pop the menu right back open.
+   */
+  onClose: () => void;
 }
 
 const ACTIONS: { kind: AnnotationKind; label: string; icon: React.ElementType }[] = [
@@ -39,13 +54,28 @@ const ACTIONS: { kind: AnnotationKind; label: string; icon: React.ElementType }[
   { kind: 'strikeout', label: 'Strikeout', icon: Strikethrough }
 ];
 
+/**
+ * Question mark, asterisk and exclamation mark — a one-tap reaction to a passage rather than a
+ * style applied to it. Icon-only, unlike the marks above: `title` still carries the name for a
+ * hover tooltip and for screen readers, but the button itself shows only the symbol.
+ */
+const REACTION_LABELS: Record<string, string> = {
+  question: 'Question mark',
+  star: 'Asterisk',
+  exclamation: 'Exclamation mark'
+};
+
 export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
   anchor,
   isDark = false,
   toolColors,
+  themes,
+  activeThemeId,
+  onThemeChange,
   onMark,
   onCreateNote,
-  onDismiss
+  onDismiss,
+  onClose
 }) => {
   const ref = useRef<HTMLDivElement>(null);
   // Any press outside, or Escape, takes the menu away — the same rule every floating surface in
@@ -65,6 +95,24 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
       // Pressing anything here must not clear the selection it is about to act on.
       onMouseDown={(e) => e.preventDefault()}
     >
+      {themes.length > 0 && (
+        <>
+          {themes.map((theme) => (
+            <HoverTooltip key={theme.id} label={theme.name}>
+              <button
+                type="button"
+                onClick={() => onThemeChange(theme.id)}
+                className={`w-5 h-5 rounded-full border-2 shrink-0 transition-transform hover:scale-110 cursor-pointer ${
+                  activeThemeId === theme.id ? 'border-stone-800 dark:border-white' : 'border-transparent'
+                }`}
+                style={{ backgroundColor: theme.color }}
+              />
+            </HoverTooltip>
+          ))}
+          <div className={`w-px h-5 mx-0.5 ${isDark ? 'bg-stone-700' : 'bg-stone-200'}`} />
+        </>
+      )}
+
       {ACTIONS.map(({ kind, label, icon: Icon }) => (
         <button
           key={kind}
@@ -75,6 +123,25 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
         >
           <Icon className="w-3.5 h-3.5" style={{ color: toolColors[kind] }} />
           <span className="hidden sm:inline">{label}</span>
+        </button>
+      ))}
+
+      <div className={`w-px h-5 mx-0.5 ${isDark ? 'bg-stone-700' : 'bg-stone-200'}`} />
+
+      {REACTION_KINDS.map((kind) => (
+        <button
+          key={kind}
+          type="button"
+          onClick={() => onMark(kind)}
+          title={REACTION_LABELS[kind]}
+          className="flex items-center justify-center w-8 h-8 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
+        >
+          <span
+            className="text-[16px] font-extrabold leading-none"
+            style={{ color: toolColors[kind] }}
+          >
+            {reactionChar(kind)}
+          </span>
         </button>
       ))}
 
@@ -92,7 +159,7 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
 
       <button
         type="button"
-        onClick={onDismiss}
+        onClick={onClose}
         title="Dismiss"
         className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer"
       >

@@ -52,8 +52,8 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
   ];
 
   const isActive = (tab: typeof tabs[number]) => {
-    // Reading and analysis both belong to a document opened from the library.
-    if (tab.id === 'home') return currentScreen === 'home' || currentScreen === 'reader' || currentScreen === 'analysis';
+    // Reading a document opened from the library still belongs to the Library tab.
+    if (tab.id === 'home') return currentScreen === 'home' || currentScreen === 'reader';
     return currentScreen === tab.id;
   };
 

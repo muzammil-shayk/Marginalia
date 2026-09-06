@@ -29,6 +29,13 @@ export interface DocumentMeta {
   expiresAt: string | null;
   /** How many annotations are stored, so the library can show a count without loading them. */
   annotationCount: number;
+  /**
+   * The distinct set of theme ids tagged anywhere in this document's annotations, so a
+   * cross-document "which books touch theme X" view doesn't have to load every document's full
+   * annotation list just to find out. Recomputed from `annotations` on every write; see
+   * `computeThemeIds`.
+   */
+  themeIds: string[];
 }
 
 /**
@@ -48,21 +55,22 @@ export interface StoredAnnotation {
   [key: string]: unknown;
 }
 
-/**
- * Which theme each annotation belongs to, keyed by annotation id.
- *
- * Kept beside the annotations rather than inside them for two reasons. The editor owns the
- * annotation objects and round-trips them verbatim, so writing app fields into them risks being
- * dropped or colliding with a future version of its schema. And a theme has to survive the mark's
- * colour being changed later — tagging by id rather than inferring from colour is what makes that
- * possible.
- */
-export type ThemeTags = Record<string, string>;
-
 export interface StoredDocument extends DocumentMeta {
   text: string;
   annotations: StoredAnnotation[];
-  themeTags: ThemeTags;
+}
+
+/**
+ * The distinct, non-null `themeId` values found across a document's own annotations, sorted for
+ * a stable diff/compare. Each annotation is opaque to the store ({id: string; [key: string]:
+ * unknown}), so `themeId` is read defensively rather than assumed to exist or be well-typed.
+ */
+export function computeThemeIds(annotations: StoredAnnotation[]): string[] {
+  const ids = new Set<string>();
+  for (const a of annotations) {
+    if (typeof a.themeId === 'string' && a.themeId) ids.add(a.themeId);
+  }
+  return Array.from(ids).sort();
 }
 
 export interface SaveDocumentParams {
@@ -76,7 +84,6 @@ export interface SaveDocumentParams {
 export interface UpdateDocumentParams {
   title?: string;
   annotations?: StoredAnnotation[];
-  themeTags?: ThemeTags;
 }
 
 export interface DocumentBackend {
@@ -142,6 +149,7 @@ export function buildMeta(id: string, params: SaveDocumentParams): DocumentMeta 
     createdAt: now.toISOString(),
     updatedAt: now.toISOString(),
     expiresAt: RETENTION_DAYS > 0 ? new Date(now.getTime() + RETENTION_DAYS * 864e5).toISOString() : null,
-    annotationCount: 0
+    annotationCount: 0,
+    themeIds: []
   };
 }

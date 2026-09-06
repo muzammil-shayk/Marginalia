@@ -24,6 +24,8 @@ export interface StoredDocumentMeta {
   /** Null when retention is off, which is the default — the document is kept until deleted. */
   expiresAt: string | null;
   annotationCount: number;
+  /** The distinct theme ids tagged anywhere in this document, for the Home screen's theme dashboard. */
+  themeIds: string[];
   retentionDays?: number;
 }
 
@@ -178,25 +180,18 @@ export function originalDocumentUrl(id: string, disposition: 'inline' | 'attachm
   return `/api/documents/${id}/original${disposition === 'inline' ? '?disposition=inline' : ''}`;
 }
 
-/** Which theme each annotation belongs to, keyed by annotation id. */
-export type ThemeTags = Record<string, string>;
-
 export interface StoredAnnotationSet {
   annotations: Annotation[];
-  themeTags: ThemeTags;
 }
 
 export async function fetchAnnotations(id: string): Promise<StoredAnnotationSet> {
   try {
     const res = await fetch(`/api/documents/${id}/annotations`);
-    if (!res.ok) return { annotations: [], themeTags: {} };
+    if (!res.ok) return { annotations: [] };
     const body = await res.json();
-    return {
-      annotations: Array.isArray(body.annotations) ? body.annotations : [],
-      themeTags: body.themeTags && typeof body.themeTags === 'object' ? body.themeTags : {}
-    };
+    return { annotations: Array.isArray(body.annotations) ? body.annotations : [] };
   } catch {
-    return { annotations: [], themeTags: {} };
+    return { annotations: [] };
   }
 }
 
@@ -207,17 +202,12 @@ export async function fetchAnnotations(id: string): Promise<StoredAnnotationSet>
  * little wasteful per keystroke — which is why callers debounce — but it removes any chance of
  * the on-disk set drifting out of sync with what the reader can see.
  */
-export async function saveAnnotations(
-  id: string,
-  annotations: Annotation[],
-  themeTags: ThemeTags = {}
-): Promise<boolean> {
+export async function saveAnnotations(id: string, annotations: Annotation[]): Promise<boolean> {
   try {
     const res = await fetch(`/api/documents/${id}/annotations`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      // Tags go with the annotations they describe, in one write, so the two cannot drift apart.
-      body: JSON.stringify({ annotations, themeTags })
+      body: JSON.stringify({ annotations })
     });
     return res.ok;
   } catch {

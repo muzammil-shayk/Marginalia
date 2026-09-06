@@ -161,6 +161,11 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [newThemeName, setNewThemeName] = useState('');
   const [newThemeColor, setNewThemeColor] = useState('#52796f');
   const [selectedPaletteTab, setSelectedPaletteTab] = useState<'mindful' | 'vibrant' | 'soft'>('mindful');
+  /** A theme being renamed inline, and the draft text for it — separate from `editingThemeId`
+   *  (the colour editor), since the two can't sensibly be open at once but are triggered
+   *  independently. */
+  const [renamingThemeId, setRenamingThemeId] = useState<string | null>(null);
+  const [draftThemeName, setDraftThemeName] = useState('');
 
   const handleAddTheme = (e: React.FormEvent) => {
     e.preventDefault();
@@ -196,6 +201,26 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       activeThemes: prev.activeThemes.filter((t) => t.id !== id)
     }));
     if (editingThemeId === id) setEditingThemeId(null);
+  };
+
+  const startRenamingTheme = (id: string, currentName: string) => {
+    setRenamingThemeId(id);
+    setDraftThemeName(currentName);
+  };
+
+  /**
+   * Only ever touches `name` — every mark now references a theme by `id`, never by name, so
+   * renaming here can never orphan a tag the way it would have before that migration.
+   */
+  const commitThemeRename = () => {
+    const id = renamingThemeId;
+    const name = draftThemeName.trim();
+    setRenamingThemeId(null);
+    if (!id || !name) return;
+    onUpdateSettings((prev) => ({
+      ...prev,
+      activeThemes: prev.activeThemes.map((t) => (t.id === id ? { ...t, name } : t))
+    }));
   };
 
   /**
@@ -359,17 +384,9 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </p>
           )}
 
-          {/*
-            Precise about the one exception. Storage really is local, but "nothing is sent
-            anywhere" was not true of the whole app: Run AI Analysis posts the document's text to
-            Google's Gemini API. Saying so here, next to the storage promise, is the honest place
-            for it — a privacy claim that quietly excludes a feature is worse than no claim.
-          */}
           <p className="text-[12px] text-stone-500 dark:text-stone-400 leading-snug pt-1 border-t border-stone-200 dark:border-stone-700/50">
             Everything — documents, their original files and your annotations — is kept in this
-            folder on this computer, and reading and annotating never leave it. The one exception
-            is <span className="font-semibold">Run AI Analysis</span>, which sends the document's
-            text to Google's Gemini API to extract themes. Leave it unused and nothing goes out.
+            folder on this computer. Reading, annotating and tagging never leave it.
             {storage && storage.retentionDays > 0 && (
               <> Documents are deleted automatically after {storage.retentionDays} days.</>
             )}
@@ -590,9 +607,33 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                       />
                     </button>
                     <div>
-                      <span className="text-[14px] text-stone-800 dark:text-stone-200 font-medium block">
-                        {theme.name}
-                      </span>
+                      {renamingThemeId === theme.id ? (
+                        <input
+                          type="text"
+                          autoFocus
+                          value={draftThemeName}
+                          onChange={(e) => setDraftThemeName(e.target.value)}
+                          onBlur={commitThemeRename}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') { e.preventDefault(); commitThemeRename(); }
+                            if (e.key === 'Escape') setRenamingThemeId(null);
+                          }}
+                          className={`text-[14px] font-medium px-1.5 py-0.5 -mx-1.5 rounded-md border outline-none ${
+                            isDark
+                              ? 'bg-[#1b201d] border-stone-600 text-stone-100'
+                              : 'bg-white border-stone-300 text-stone-900'
+                          }`}
+                        />
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => startRenamingTheme(theme.id, theme.name)}
+                          title="Click to rename"
+                          className="text-[14px] text-stone-800 dark:text-stone-200 font-medium block text-left cursor-pointer hover:underline decoration-dotted underline-offset-2"
+                        >
+                          {theme.name}
+                        </button>
+                      )}
                     </div>
                   </div>
 

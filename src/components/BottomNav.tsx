@@ -43,7 +43,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       icon: BookOpen,
       screen: 'home',
       transition: 'push_back',
-      isActive: currentScreen === 'home' || currentScreen === 'reader' || currentScreen === 'analysis'
+      isActive: currentScreen === 'home' || currentScreen === 'reader'
     },
     {
       id: 'upload',

@@ -37,7 +37,17 @@ import {
   rgb
 } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
-import { Annotation, DEFAULT_TEXT_SIZE, FractionRect, StrokeStyle, TextAlign, bracketPoints } from './annotationModel';
+import {
+  Annotation,
+  DEFAULT_TEXT_SIZE,
+  FractionRect,
+  StrokeStyle,
+  TextAlign,
+  bracketPoints,
+  fontStack,
+  isReaction,
+  reactionChar
+} from './annotationModel';
 
 /**
  * The reader's own three webfaces, as static TTFs pdf-lib can embed directly.
@@ -127,6 +137,91 @@ function isDarkFill(r: number, g: number, b: number): boolean {
 }
 
 /**
+ * Rasterizes a note's or text box's own words through the BROWSER's text engine, rather than
+ * through `@pdf-lib/fontkit`'s.
+ *
+ * `@pdf-lib/fontkit` was found — against this exact bundled font file, verified glyph-by-glyph —
+ * to mis-shape Caveat's cursive contextual-alternate glyphs: wrong, wildly uneven spacing and a
+ * scrambled text-extraction mapping, with no feature flag able to turn the substitution off.
+ * Chromium (what both the app's own on-screen note and, packaged, the desktop build itself render
+ * with) shapes the very same font file correctly. Canvas text goes through that same engine, so
+ * what gets embedded is guaranteed to match what the reader actually made — at the cost of the
+ * text becoming a baked image rather than a selectable PDF text object. For a handwritten margin
+ * note that is the right trade: the annotation object registered alongside it (see `common`)
+ * still carries the real text for a reader's sidebar and search, and a font that shapes wrongly is
+ * a worse loss than one that cannot be copy-pasted from the page itself.
+ *
+ * Draws in a coordinate space of 1 canvas unit = 1 PDF point, upscaled by `scale` for a crisp
+ * result under zoom, so the returned size can be handed straight to `page.drawImage`.
+ */
+async function rasterizeText(
+  text: string,
+  options: {
+    fontCss: string;
+    color: string;
+    align: TextAlign;
+    widthPt: number;
+    lineHeightPt: number;
+    maxLines: number;
+    scale?: number;
+  }
+): Promise<{ bytes: Uint8Array; widthPt: number; heightPt: number } | null> {
+  const trimmed = text.trim();
+  if (!trimmed || options.widthPt <= 0) return null;
+
+  // Loading is usually already a no-op by export time — the reader had to see the note rendered
+  // on screen, in this same font, before they could get to the export button — but a font that is
+  // not yet ready would silently measure and draw in a fallback face, so it is awaited explicitly.
+  try {
+    await Promise.all([document.fonts.load(options.fontCss, trimmed), document.fonts.ready]);
+  } catch {
+    // A font load failure here just means the canvas falls back to its default face; still better
+    // than throwing away the reader's words.
+  }
+
+  const measure = document.createElement('canvas').getContext('2d');
+  if (!measure) return null;
+  measure.font = options.fontCss;
+
+  const lines: string[] = [];
+  for (const paragraph of trimmed.split(/\n/)) {
+    let line = '';
+    for (const word of paragraph.split(/\s+/).filter(Boolean)) {
+      const candidate = line ? `${line} ${word}` : word;
+      if (measure.measureText(candidate).width > options.widthPt && line) {
+        lines.push(line);
+        line = word;
+      } else {
+        line = candidate;
+      }
+    }
+    lines.push(line);
+  }
+  const shown = lines.slice(0, Math.max(1, options.maxLines));
+  if (shown.length === 0) return null;
+
+  const scale = options.scale ?? 4;
+  const heightPt = shown.length * options.lineHeightPt;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.ceil(options.widthPt * scale));
+  canvas.height = Math.max(1, Math.ceil(heightPt * scale));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+  ctx.scale(scale, scale);
+  ctx.font = options.fontCss;
+  ctx.fillStyle = options.color;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = options.align === 'center' ? 'center' : options.align === 'right' ? 'right' : 'left';
+  const x = options.align === 'center' ? options.widthPt / 2 : options.align === 'right' ? options.widthPt : 0;
+  shown.forEach((line, index) => ctx.fillText(line, x, index * options.lineHeightPt));
+
+  const blob: Blob | null = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  if (!blob) return null;
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  return { bytes, widthPt: options.widthPt, heightPt };
+}
+
+/**
  * The dash pattern for a stroke, in PDF points.
  *
  * The same ratios `annotationModel`'s `dashArray` uses for the screen, so a dashed or dotted mark
@@ -173,6 +268,10 @@ export async function exportAnnotatedPdf(
     embeddedFontCache.set(url, font);
     return font;
   };
+
+  /** Bold Helvetica for reaction glyphs (?, *, !) — a fixed face, since these are marks, not prose. */
+  let reactionFontPromise: Promise<PDFFont> | null = null;
+  const reactionFont = () => (reactionFontPromise ??= pdfDoc.embedFont(StandardFonts.HelveticaBold));
 
   const monoFontCache = new Map<string, PDFFont>();
   const textFontFor = async (a: Annotation): Promise<PDFFont> => {
@@ -248,13 +347,48 @@ export async function exportAnnotatedPdf(
     const page = pages[pageNumber - 1];
     if (!page) continue;
 
-    const { width: pw, height: ph } = page.getSize();
-    /** Page fraction (top-left origin) to PDF points (bottom-left origin). */
-    const toPdf = (x: number, y: number): [number, number] => [x * pw, ph - y * ph];
+    /**
+     * `page.getSize()` returns the raw, UNROTATED MediaBox — but a mark's x/y/w/h fractions are
+     * relative to the page as the reader actually SAW it, which is what pdf.js's `getViewport`
+     * (and so `PdfPage`'s `pageWidth`/`pageHeight`) reports, rotation already applied. For a page
+     * with no `/Rotate` the two agree; for one rotated 90 or 270 degrees they are transposed, and
+     * using the raw MediaBox size for width/weight fractions or as the coordinate transform's
+     * width/height would size marks by the wrong axis and place them somewhere the reader never
+     * put them. `pw` below is the VISUAL width every width/weight fraction in the model is
+     * relative to; `mw`/`mh` stay the raw MediaBox, needed only by `toPdf` itself.
+     */
+    const rotation = ((page.getRotation().angle % 360) + 360) % 360;
+    const { width: mw, height: mh } = page.getSize();
+    const pw = rotation === 90 || rotation === 270 ? mh : mw;
+
+    /**
+     * Page fraction (top-left origin, rotation already applied — i.e. VISUAL space) to PDF points
+     * in the page's own UNROTATED content space (bottom-left origin) — content is always drawn in
+     * that native space, with `/Rotate` applied by the viewer afterward purely for display.
+     *
+     * Derived empirically against pdf.js's own `viewport.convertToPdfPoint`, per rotation angle,
+     * rather than reasoned out freehand — a rotation transform is exactly the kind of thing that
+     * LOOKS right from first principles while being off by a flip or a swapped axis.
+     */
+    const toPdf = (x: number, y: number): [number, number] => {
+      switch (rotation) {
+        case 90:
+          return [y * mw, x * mh];
+        case 180:
+          return [(1 - x) * mw, y * mh];
+        case 270:
+          return [(1 - y) * mw, (1 - x) * mh];
+        default:
+          return [x * mw, (1 - y) * mh];
+      }
+    };
     const rectToPdf = (r: FractionRect): [number, number, number, number] => {
-      const [x1, y1] = toPdf(r.x, r.y + r.h);
-      const [x2, y2] = toPdf(r.x + r.w, r.y);
-      return [x1, y1, x2, y2];
+      const [ax, ay] = toPdf(r.x, r.y + r.h);
+      const [bx, by] = toPdf(r.x + r.w, r.y);
+      // Rotation can swap which visual corner ends up the native min or max on either axis — a
+      // rectangle stays axis-aligned under a 90-degree-multiple rotation, but which of these two
+      // opposite corners is smaller does not, so the two are min/max-ed rather than assumed.
+      return [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)];
     };
 
     const context = pdfDoc.context;
@@ -345,6 +479,29 @@ export async function exportAnnotatedPdf(
           ),
           QuadPoints: context.obj(quads)
         });
+        continue;
+      }
+
+      if (isReaction(a.kind) && a.box) {
+        // A single glyph centred in its own box, sized from `fontSize` the same way a text box
+        // is — matching AnnotationLayer's on-screen badge, which the reader may have dragged or
+        // resized away from where the passage that made it originally sat.
+        const [x1, y1, x2, y2] = rectToPdf(a.box);
+        const char = reactionChar(a.kind);
+        const size = Math.max(8, (a.fontSize ?? DEFAULT_TEXT_SIZE) * pw);
+        const font = await reactionFont();
+        const x = x1 + (x2 - x1 - font.widthOfTextAtSize(char, size)) / 2;
+        const y = y1 + (y2 - y1 - size) / 2;
+        page.drawText(char, { x, y, size, font, color: rgb(r, g, b) });
+        common(
+          a,
+          [x1, y1, x2, y2],
+          {
+            Subtype: PDFName.of('FreeText'),
+            DA: PDFString.of(`${r.toFixed(3)} ${g.toFixed(3)} ${b.toFixed(3)} rg /HelvB ${size.toFixed(1)} Tf`)
+          },
+          { bakedOntoPage: true }
+        );
         continue;
       }
 
@@ -497,24 +654,41 @@ export async function exportAnnotatedPdf(
         const [x1, y1, x2, y2] = rectToPdf(a.box);
         const boxWidth = x2 - x1;
         const boxHeight = y2 - y1;
-        const font = await textFontFor(a);
         const lineHeight = size * 1.25;
         const text = (a.text || '').trim();
         if (text) {
-          const lines = wrapText(font, text, size, boxWidth);
-          const maxLines = Math.max(1, Math.floor(boxHeight / lineHeight));
-          lines.slice(0, maxLines).forEach((line, index) => {
-            const lineWidth = font.widthOfTextAtSize(line, size);
-            const x =
-              align === 'center' ? x1 + (boxWidth - lineWidth) / 2 : align === 'right' ? x2 - lineWidth : x1;
-            page.drawText(line, {
-              x,
-              y: y2 - size * 0.85 - index * lineHeight,
-              size,
-              font,
-              color: rgb(r, g, b)
-            });
+          const bold = a.bold ? 'bold ' : '';
+          const italic = a.italic ? 'italic ' : '';
+          const rasterized = await rasterizeText(text, {
+            fontCss: `${italic}${bold}${size}px ${fontStack(a.font)}`,
+            color: a.color,
+            align,
+            widthPt: boxWidth,
+            lineHeightPt: lineHeight,
+            maxLines: Math.max(1, Math.floor(boxHeight / lineHeight))
           });
+          if (rasterized) {
+            const image = await pdfDoc.embedPng(rasterized.bytes);
+            page.drawImage(image, { x: x1, y: y2 - rasterized.heightPt, width: rasterized.widthPt, height: rasterized.heightPt });
+          } else {
+            // Canvas rasterization is unavailable — fall back to native PDF text rather than
+            // silently dropping the reader's words.
+            const font = await textFontFor(a);
+            const lines = wrapText(font, text, size, boxWidth);
+            const maxLines = Math.max(1, Math.floor(boxHeight / lineHeight));
+            lines.slice(0, maxLines).forEach((line, index) => {
+              const lineWidth = font.widthOfTextAtSize(line, size);
+              const x =
+                align === 'center' ? x1 + (boxWidth - lineWidth) / 2 : align === 'right' ? x2 - lineWidth : x1;
+              page.drawText(line, {
+                x,
+                y: y2 - size * 0.85 - index * lineHeight,
+                size,
+                font,
+                color: rgb(r, g, b)
+              });
+            });
+          }
         }
         // `Q` is PDF's quadding: 0 left, 1 centred, 2 right.
         const quadding = align === 'center' ? 1 : align === 'right' ? 2 : 0;
@@ -567,20 +741,42 @@ export async function exportAnnotatedPdf(
           const lineHeight = size * 1.25;
           const padX = boxWidth * 0.05;
           const padY = boxHeight * 0.04;
-          const lines = wrapText(noteFont, text, size, boxWidth - padX * 2 - edge);
+          const textWidth = boxWidth - padX * 2 - edge;
           const maxLines = Math.max(1, Math.floor((boxHeight - padY * 2) / lineHeight));
-          // Ink chosen against the fill, the same rule the app uses, so a dark note stays
-          // readable instead of printing black on near-black.
-          const ink = noteStyle === 'solid' && isDarkFill(r, g, b) ? rgb(1, 253 / 255, 245 / 255) : rgb(0.11, 0.09, 0.09);
-          lines.slice(0, maxLines).forEach((line, index) => {
-            page.drawText(line, {
-              x: x1 + edge + padX,
-              y: y2 - padY - size * 0.85 - index * lineHeight,
-              size,
-              font: noteFont,
-              color: ink
-            });
+          // Ink chosen against the fill, the same rule `AnnotationLayer` uses (and the same exact
+          // hex values), so a dark note stays readable instead of printing black on near-black.
+          const inkHex = noteStyle === 'solid' && isDarkFill(r, g, b) ? '#fffdf5' : '#1c1917';
+          const rasterized = await rasterizeText(text, {
+            fontCss: `${size}px ${fontStack('hand')}`,
+            color: inkHex,
+            align: 'left',
+            widthPt: textWidth,
+            lineHeightPt: lineHeight,
+            maxLines
           });
+          if (rasterized) {
+            const image = await pdfDoc.embedPng(rasterized.bytes);
+            page.drawImage(image, {
+              x: x1 + edge + padX,
+              y: y2 - padY - rasterized.heightPt,
+              width: rasterized.widthPt,
+              height: rasterized.heightPt
+            });
+          } else {
+            // Canvas rasterization is unavailable — fall back to native PDF text rather than
+            // silently dropping the reader's words.
+            const ink = noteStyle === 'solid' && isDarkFill(r, g, b) ? rgb(1, 253 / 255, 245 / 255) : rgb(0.11, 0.09, 0.09);
+            const lines = wrapText(noteFont, text, size, textWidth);
+            lines.slice(0, maxLines).forEach((line, index) => {
+              page.drawText(line, {
+                x: x1 + edge + padX,
+                y: y2 - padY - size * 0.85 - index * lineHeight,
+                size,
+                font: noteFont,
+                color: ink
+              });
+            });
+          }
         }
 
         // Registered as a real annotation too, so the note is also selectable and its full text

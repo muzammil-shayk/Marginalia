@@ -4,7 +4,6 @@ import { Screen } from '../types';
 import { motion, useScroll, useMotionValueEvent } from 'motion/react';
 
 interface HeaderProps {
-  currentScreen: Screen;
   onNavigate: (screen: Screen, transition?: 'push' | 'push_back' | 'slide_up' | 'none') => void;
   onOpenMenu?: () => void;
   onOpenSearch?: () => void;
@@ -12,7 +11,6 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({
-  currentScreen,
   onNavigate,
   onOpenMenu,
   onOpenSearch,
@@ -36,11 +34,7 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   const handleSearchClick = () => {
-    if (currentScreen === 'analysis') {
-      onNavigate('home', 'push_back');
-    } else if (onOpenSearch) {
-      onOpenSearch();
-    }
+    onOpenSearch?.();
   };
 
   return (

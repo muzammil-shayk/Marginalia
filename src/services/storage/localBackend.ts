@@ -20,9 +20,9 @@ import {
   DocumentMeta,
   SaveDocumentParams,
   StoredDocument,
-  ThemeTags,
   UpdateDocumentParams,
   buildMeta,
+  computeThemeIds,
   countWords,
   isValidId,
   safeExtension
@@ -68,7 +68,7 @@ export class LocalDocumentBackend implements DocumentBackend {
   async saveDocument(params: SaveDocumentParams): Promise<DocumentMeta> {
     await this.ensureDirs();
     const meta = buildMeta(crypto.randomBytes(16).toString('hex'), params);
-    await this.write({ ...meta, text: params.text, annotations: [], themeTags: {} });
+    await this.write({ ...meta, text: params.text, annotations: [] });
     return meta;
   }
 
@@ -94,10 +94,6 @@ export class LocalDocumentBackend implements DocumentBackend {
     try {
       const raw = JSON.parse(await fs.readFile(this.docPath(id), 'utf-8')) as Partial<StoredDocument>;
       const annotations = Array.isArray(raw.annotations) ? raw.annotations : [];
-      // Records written before theme tagging existed have no map; an absent one is simply
-      // "nothing tagged yet" rather than an error.
-      const themeTags: ThemeTags =
-        raw.themeTags && typeof raw.themeTags === 'object' ? (raw.themeTags as ThemeTags) : {};
       return {
         id,
         title: raw.title || 'Untitled Document',
@@ -109,9 +105,12 @@ export class LocalDocumentBackend implements DocumentBackend {
         updatedAt: raw.updatedAt || raw.createdAt || new Date().toISOString(),
         expiresAt: raw.expiresAt ?? null,
         annotationCount: annotations.length,
+        // Records written before theme tagging existed have no field; an absent one is simply
+        // "nothing tagged yet" rather than an error. Recomputed rather than trusted from disk in
+        // case an older record's cached value has drifted from its own annotations.
+        themeIds: computeThemeIds(annotations),
         text: raw.text || '',
-        annotations,
-        themeTags
+        annotations
       };
     } catch {
       return null;
@@ -138,7 +137,7 @@ export class LocalDocumentBackend implements DocumentBackend {
       if (!entry.endsWith('.json')) continue;
       const doc = await this.getDocument(entry.replace(/\.json$/, ''));
       if (!doc) continue;
-      const { text, annotations, themeTags, ...meta } = doc;
+      const { text, annotations, ...meta } = doc;
       metas.push(meta);
     }
     return metas.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -153,13 +152,13 @@ export class LocalDocumentBackend implements DocumentBackend {
       ...doc,
       title: params.title?.trim() ? params.title.trim() : doc.title,
       annotations,
-      themeTags: params.themeTags ?? doc.themeTags,
       annotationCount: annotations.length,
+      themeIds: computeThemeIds(annotations),
       updatedAt: new Date().toISOString()
     };
     await this.write(updated);
 
-    const { text, annotations: _a, themeTags: _t, ...meta } = updated;
+    const { text, annotations: _a, ...meta } = updated;
     return meta;
   }
 

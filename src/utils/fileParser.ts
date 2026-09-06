@@ -91,10 +91,8 @@ async function parsePdf(file: File, title: string): Promise<ParseResult> {
 
   // Note: page boundaries are intentionally NOT embedded as their own
   // "--- Page N ---" text blocks here. Paragraph indices computed from this
-  // text (by the reader, the inspection panel, and the Gemini thematic
-  // analysis prompt) all rely on splitting on blank lines, and a divider
-  // block would silently shift every paragraph index after it out of sync
-  // between what the AI counted and what the UI renders.
+  // text (by the reader) rely on splitting on blank lines, and a divider
+  // block would silently shift every paragraph index after it out of sync.
   const textParts: string[] = [];
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);

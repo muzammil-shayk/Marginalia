@@ -18,6 +18,9 @@ export type AnnotationKind =
   | 'highlight'
   | 'underline'
   | 'strikeout'
+  | 'question'
+  | 'star'
+  | 'exclamation'
   | 'ink'
   | 'note'
   | 'rect'
@@ -26,6 +29,27 @@ export type AnnotationKind =
   | 'line'
   | 'bracket'
   | 'text';
+
+/**
+ * Quick reaction marks — a single glyph reacting to a passage, rather than a style tinting it.
+ *
+ * Placed next to the start of the passage when made from the selection menu, but from then on
+ * they behave like a sticky note: their own `box` (draggable, and sized from `fontSize` the same
+ * way a text box is), plus `anchorRects` recording the passage they were made about, purely so
+ * hovering one can light that passage back up. Unlike highlight/underline/strikeout, moving one
+ * does not contradict anything — the reaction is to the passage, not a claim about which exact
+ * words it covers.
+ */
+export const REACTION_KINDS: readonly AnnotationKind[] = ['question', 'star', 'exclamation'];
+
+export function isReaction(kind: AnnotationKind): boolean {
+  return REACTION_KINDS.includes(kind);
+}
+
+/** The literal character a reaction kind stamps. */
+export function reactionChar(kind: AnnotationKind): string {
+  return kind === 'question' ? '?' : kind === 'star' ? '*' : '!';
+}
 
 /**
  * How a stroked mark is dashed.
@@ -188,7 +212,9 @@ export function isStroked(kind: AnnotationKind): boolean {
  * Text-anchored marks are deliberately excluded. A highlight means "these words", and its
  * geometry is a record of where those words were — dragging one somewhere else would leave a
  * mark whose position contradicts the passage it claims to cover. Everything the reader drew
- * themselves, on the other hand, was placed by eye and should be adjustable by eye.
+ * themselves, on the other hand, was placed by eye and should be adjustable by eye. Reaction
+ * marks are movable for the same reason notes are: they carry their passage in `anchorRects`
+ * rather than in their own position, so nudging one does not falsify anything.
  */
 export const MOVABLE_KINDS: readonly AnnotationKind[] = [
   'ink',
@@ -198,7 +224,10 @@ export const MOVABLE_KINDS: readonly AnnotationKind[] = [
   'line',
   'bracket',
   'note',
-  'text'
+  'text',
+  'question',
+  'star',
+  'exclamation'
 ];
 
 export function isMovable(a: Annotation): boolean {
@@ -232,6 +261,41 @@ export const DEFAULT_TEXT_SIZE = 0.024;
 /** Ids only have to be unique within one document, so this stays dependency-free. */
 export function newAnnotationId(): string {
   return `an-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Merges the per-word rectangles a text selection produces into one rectangle per LINE.
+ *
+ * pdf.js lays out a separate span for each text item — often each word, and in justified text
+ * each with its own stretched gap to the next — so `Range.getClientRects()` returns a rectangle
+ * per word rather than per line. Marking, or even just highlighting, those directly is what makes
+ * a selection look like a broken row of tiles with the gaps between words left uncovered, instead
+ * of one straight bar. Rectangles are grouped by vertical overlap (robust to the small baseline
+ * differences between words in a line) and each group becomes a single rectangle spanning from
+ * the leftmost to the rightmost edge, so the spaces between words are covered too.
+ *
+ * Shared between the live selection overlay (drawn while dragging) and the finished mark's own
+ * geometry, so a highlight looks exactly like the selection it was made from.
+ */
+export function mergeRectsIntoLines(rects: DOMRect[]): DOMRect[] {
+  const lines: DOMRect[][] = [];
+  for (const rect of [...rects].sort((a, b) => a.top - b.top || a.left - b.left)) {
+    const line = lines.find((group) => {
+      const ref = group[0];
+      const overlap = Math.min(ref.bottom, rect.bottom) - Math.max(ref.top, rect.top);
+      // More than half the shorter rectangle's height in common means the same line.
+      return overlap > Math.min(ref.height, rect.height) * 0.5;
+    });
+    if (line) line.push(rect);
+    else lines.push([rect]);
+  }
+  return lines.map((group) => {
+    const left = Math.min(...group.map((r) => r.left));
+    const top = Math.min(...group.map((r) => r.top));
+    const right = Math.max(...group.map((r) => r.right));
+    const bottom = Math.max(...group.map((r) => r.bottom));
+    return new DOMRect(left, top, right - left, bottom - top);
+  });
 }
 
 const clamp01 = (n: number) => Math.min(1, Math.max(0, n));

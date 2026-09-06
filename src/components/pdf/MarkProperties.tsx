@@ -22,6 +22,7 @@ import {
   StrokeStyle,
   TextAlign,
   TextFont,
+  isReaction,
   isStroked,
   isTextAnchored
 } from './annotationModel';
@@ -47,7 +48,7 @@ interface MarkPropertiesProps {
   rect: { left: number; top: number; right: number; bottom: number };
   settings: UserSettings;
   isDark?: boolean;
-  onColorChange: (color: string) => void;
+  onColorChange: (color: string, themeId: string | null) => void;
   onWeightChange: (weight: number) => void;
   onStrokeStyleChange: (style: StrokeStyle) => void;
   onNoteStyleChange: (style: NoteStyle) => void;
@@ -93,6 +94,8 @@ export const MarkProperties: React.FC<MarkPropertiesProps> = ({
   // Highlights fill rather than stroke, so they have no thickness or dash pattern to set.
   const showsStroke = isStroked(mark.kind);
   const showsText = mark.kind === 'note' || mark.kind === 'text' || isTextAnchored(mark.kind);
+  // A reaction is just a glyph — no font, alignment or emphasis to set, only how big it reads.
+  const showsSize = mark.kind === 'text' || isReaction(mark.kind);
 
   // Measured rather than guessed: the strip's width depends on which controls its kind needs, so
   // the kind is what re-triggers the measurement.
@@ -119,7 +122,6 @@ export const MarkProperties: React.FC<MarkPropertiesProps> = ({
         color={mark.color}
         themes={settings.activeThemes}
         customColors={settings.customColors}
-        onlyCustomColors
         onChange={onColorChange}
       />
 
@@ -157,8 +159,18 @@ export const MarkProperties: React.FC<MarkPropertiesProps> = ({
             onBoldChange={onTextBoldChange}
             onItalicChange={onTextItalicChange}
           />
+        </>
+      )}
+
+      {showsSize && (
+        <>
           <Divider isDark={isDark} />
           <TextSizePicker value={mark.fontSize} color={mark.color} onChange={onTextSizeChange} />
+        </>
+      )}
+
+      {mark.kind === 'text' && (
+        <>
           <Divider isDark={isDark} />
           <AlignPicker value={mark.align} color={mark.color} onChange={onTextAlignChange} />
         </>

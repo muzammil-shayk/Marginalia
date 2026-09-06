@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, X, BookOpen, Sparkles, FileText, ArrowRight, StickyNote as StickyNoteIcon } from 'lucide-react';
+import { Search, X, BookOpen, FileText, ArrowRight, StickyNote as StickyNoteIcon } from 'lucide-react';
 import { Screen, TransitionType, StickyNote } from '../types';
-import { analysisCacheKey } from '../utils/cacheKeys';
 
 /**
  * `text` is optional and `docId` new: document bodies live on disk now and are fetched by id when
@@ -27,12 +26,6 @@ interface SearchModalProps {
   onSelectDocumentForAnalysis?: (title: string, text: string, format?: string, docId?: string) => void;
   /** Reopens a stored document, fetching its text from disk first. */
   onOpenLibraryDocument?: (doc: LibraryDoc) => void;
-}
-
-interface ThemeMatch {
-  docTitle: string;
-  title: string;
-  description: string;
 }
 
 export const SearchModal: React.FC<SearchModalProps> = ({
@@ -72,38 +65,11 @@ export const SearchModal: React.FC<SearchModalProps> = ({
     return results;
   }, [q, documentNotes]);
 
-  const matchingThemes = useMemo(() => {
-    if (!q) return [];
-    const results: ThemeMatch[] = [];
-    uploadedLibrary.forEach((doc) => {
-      try {
-        const raw = sessionStorage.getItem(analysisCacheKey(doc.title));
-        if (!raw) return;
-        const parsed = JSON.parse(raw);
-        (parsed.extractedThemes || []).forEach((theme: any) => {
-          const haystack = `${theme.title || ''} ${theme.description || ''}`.toLowerCase();
-          if (haystack.includes(q)) {
-            results.push({ docTitle: doc.title, title: theme.title, description: theme.description });
-          }
-        });
-      } catch {
-        // Cache entry missing or malformed — just skip it, not a search failure.
-      }
-    });
-    return results;
-  }, [q, uploadedLibrary]);
-
-  const hasResults = matchingDocs.length > 0 || matchingNotes.length > 0 || matchingThemes.length > 0;
+  const hasResults = matchingDocs.length > 0 || matchingNotes.length > 0;
   const isSearching = q.length > 0;
 
   const findDocText = (title: string) => uploadedLibrary.find((d) => d.title === title)?.text || '';
   const findDocFormat = (title: string) => uploadedLibrary.find((d) => d.title === title)?.format;
-
-  const goToAnalysis = (title: string, text: string, format?: string) => {
-    onClose();
-    if (onSelectDocumentForAnalysis) onSelectDocumentForAnalysis(title, text, format);
-    onNavigate('analysis', 'push');
-  };
 
   const goToReader = (title: string, text: string, format?: string) => {
     onClose();
@@ -149,36 +115,12 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                     {matchingDocs.map((doc) => (
                       <div
                         key={doc.id}
-                        onClick={() => goToAnalysis(doc.title, doc.text, doc.format)}
+                        onClick={() => goToReader(doc.title, doc.text, doc.format)}
                         className="flex items-center justify-between p-2.5 rounded-xl hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
                           <FileText className="w-4 h-4 text-emerald-600 shrink-0" />
                           <p className="text-[13px] font-medium truncate">{doc.title}</p>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-stone-400 shrink-0" />
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {matchingThemes.length > 0 && (
-                  <div className="space-y-1.5">
-                    <div className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider">
-                      Themes
-                    </div>
-                    {matchingThemes.map((match, idx) => (
-                      <div
-                        key={`${match.docTitle}-${idx}`}
-                        onClick={() => goToAnalysis(match.docTitle, findDocText(match.docTitle), findDocFormat(match.docTitle))}
-                        className="flex items-center justify-between p-2.5 rounded-xl hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <Sparkles className="w-4 h-4 text-purple-500 shrink-0" />
-                          <div className="min-w-0">
-                            <p className="text-[13px] font-medium truncate">{match.title}</p>
-                            <p className="text-[11px] text-stone-400 truncate">in {match.docTitle}</p>
-                          </div>
                         </div>
                         <ArrowRight className="w-4 h-4 text-stone-400 shrink-0" />
                       </div>
@@ -230,20 +172,6 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                   <div>
                     <p className="text-[13px] font-medium">Active Reading Session</p>
                     <p className="text-[11px] text-stone-400">Open active document text</p>
-                  </div>
-                </div>
-                <ArrowRight className="w-4 h-4 text-stone-400" />
-              </div>
-
-              <div
-                onClick={() => { onClose(); onNavigate('analysis', 'push'); }}
-                className="flex items-center justify-between p-2.5 rounded-xl hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
-              >
-                <div className="flex items-center gap-2.5">
-                  <Sparkles className="w-4 h-4 text-purple-500" />
-                  <div>
-                    <p className="text-[13px] font-medium">Thematic Analysis Screen</p>
-                    <p className="text-[11px] text-stone-400">AI Synthesis</p>
                   </div>
                 </div>
                 <ArrowRight className="w-4 h-4 text-stone-400" />

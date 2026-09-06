@@ -25,7 +25,9 @@ import {
   TextFont,
   annotationBounds,
   coveredFraction,
+  isReaction,
   isTextAnchored,
+  mergeRectsIntoLines,
   newAnnotationId,
   rectToFraction
 } from './annotationModel';
@@ -34,6 +36,7 @@ import { PdfPage } from './PdfPage';
 import { PdfToolbar, NEUTRAL_COLORS } from './PdfToolbar';
 import { NotesList } from './NotesList';
 import { SelectionPopover, SelectionAnchor } from './SelectionPopover';
+import { LiveSelectionOverlay } from './LiveSelectionOverlay';
 import { MarkProperties } from './MarkProperties';
 import { ScrollPageIndicator } from './ScrollPageIndicator';
 import { exportAnnotatedPdf, downloadBlob } from './exportAnnotatedPdf';
@@ -131,6 +134,9 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       highlight: pick(0),
       underline: pick(1),
       strikeout: pick(2),
+      question: pick(3),
+      star: pick(4),
+      exclamation: pick(5),
       ink: pick(0),
       note: pick(0),
       rect: pick(1),
@@ -398,36 +404,6 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       box: el.getBoundingClientRect()
     }));
 
-    /**
-     * Merges the per-word rectangles a selection produces into one rectangle per LINE.
-     *
-     * pdf.js lays out a separate span for each text item — often each word — so
-     * `getClientRects()` returns a rectangle per word, with gaps at every space. Marking those
-     * directly is what produced highlights that striped each word separately instead of covering
-     * the phrase. Rectangles are grouped by vertical overlap (robust to the small baseline
-     * differences between words in a line) and each group becomes a single rectangle spanning
-     * from the leftmost to the rightmost edge, so the spaces between words are covered too.
-     */
-    const mergeIntoLines = (rects: DOMRect[]): DOMRect[] => {
-      const lines: DOMRect[][] = [];
-      for (const rect of [...rects].sort((a, b) => a.top - b.top || a.left - b.left)) {
-        const line = lines.find((group) => {
-          const ref = group[0];
-          const overlap = Math.min(ref.bottom, rect.bottom) - Math.max(ref.top, rect.top);
-          // More than half the shorter rectangle's height in common means the same line.
-          return overlap > Math.min(ref.height, rect.height) * 0.5;
-        });
-        if (line) line.push(rect);
-        else lines.push([rect]);
-      }
-      return lines.map((group) => {
-        const left = Math.min(...group.map((r) => r.left));
-        const top = Math.min(...group.map((r) => r.top));
-        const right = Math.max(...group.map((r) => r.right));
-        const bottom = Math.max(...group.map((r) => r.bottom));
-        return new DOMRect(left, top, right - left, bottom - top);
-      });
-    };
 
     const byPageMap = new Map<number, { pageBox: DOMRect; rects: DOMRect[] }>();
     for (const rect of Array.from(range.getClientRects())) {
@@ -449,7 +425,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
 
     const groups: { page: number; rects: FractionRect[]; quote: string }[] = [];
     byPageMap.forEach(({ pageBox, rects }, page) => {
-      groups.push({ page, rects: mergeIntoLines(rects).map((r) => rectToFraction(r, pageBox)), quote });
+      groups.push({ page, rects: mergeRectsIntoLines(rects).map((r) => rectToFraction(r, pageBox)), quote });
     });
     return groups;
   }, []);
@@ -761,6 +737,55 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     window.getSelection()?.removeAllRanges();
     startEditingId(note.id, '');
   }, [pendingSelection, toolColors, activeThemeId, settings.name]);
+
+  /**
+   * Stamps a question mark, asterisk or exclamation mark next to the start of the selected
+   * passage.
+   *
+   * Placed like a note is — its own `box`, sized from `fontSize` — rather than tinted across every
+   * line the way highlight/underline/strikeout are, since the point is a reaction to a moment in
+   * the text, not a claim about which words it covers. That's also what makes it draggable,
+   * resizable and recolourable afterward through the same controls a note or text box uses.
+   */
+  const createReactionForSelection = useCallback(
+    (kind: AnnotationKind) => {
+      const groups = pendingSelection;
+      if (!groups?.length) return;
+      const group = groups[0];
+      const first = group.rects[0];
+      const fontSize = DEFAULT_TEXT_SIZE;
+      // A little larger than the glyph itself, for a comfortable click/drag target, and — since
+      // `w` reads against PAGE WIDTH while `h` reads against the taller PAGE HEIGHT — `w` needs
+      // the bigger multiplier or a "round" badge on a portrait page comes out visibly an oval.
+      const h = fontSize * 1.35;
+      const w = h * 1.3;
+      const box = {
+        x: Math.max(0, first.x - w - 0.008),
+        y: Math.min(Math.max(0, first.y + first.h / 2 - h / 2), 1 - h),
+        w,
+        h
+      };
+
+      const reaction: Annotation = {
+        id: newAnnotationId(),
+        page: group.page,
+        kind,
+        color: toolColors[kind] ?? NEUTRAL_COLORS[0],
+        themeId: activeThemeId,
+        box,
+        fontSize,
+        anchorRects: group.rects,
+        quote: group.quote,
+        author: settings.name,
+        createdAt: new Date().toISOString()
+      };
+      setAnnotations((prev) => [...prev, reaction]);
+      setSelectedId(reaction.id);
+      setSelectionAnchor(null);
+      window.getSelection()?.removeAllRanges();
+    },
+    [pendingSelection, toolColors, activeThemeId, settings.name]
+  );
 
   /**
    * A tool button was tapped.
@@ -1168,7 +1193,11 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
           rect={markRect}
           settings={settings}
           isDark={isDark}
-          onColorChange={(color) => updateAnnotation(selectedMark.id, { color })}
+          // Colour and theme change together: a theme swatch carries its id along, and anything
+          // else (a custom colour, a neutral, the free picker) carries `null` — leaving the mark's
+          // OLD themeId in place after its colour visibly stopped matching that theme is exactly
+          // the mismatch that made a retagged mark silently miscount on the cross-document dashboard.
+          onColorChange={(color, themeId) => updateAnnotation(selectedMark.id, { color, themeId })}
           onWeightChange={(weight) => updateAnnotation(selectedMark.id, { weight })}
           onStrokeStyleChange={(strokeStyle) => updateAnnotation(selectedMark.id, { strokeStyle })}
           onNoteStyleChange={(noteStyle) => updateAnnotation(selectedMark.id, { noteStyle })}
@@ -1187,16 +1216,36 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         />
       )}
 
+      <LiveSelectionOverlay />
+
       {/* The selection menu — mark the passage, or write a note about it. */}
       {!editing && (
         <SelectionPopover
           anchor={selectionAnchor}
           isDark={isDark}
           toolColors={toolColors}
+          themes={settings.activeThemes}
+          activeThemeId={activeThemeId}
+          onThemeChange={(id) => {
+            setActiveThemeId(id);
+            // Every mark this menu can make should pick up the newly chosen theme's colour, not
+            // just whichever one the reader happens to press next — there's no single "current
+            // tool" here the way the main toolbar has one.
+            const theme = settings.activeThemes.find((t) => t.id === id);
+            if (theme) {
+              (['highlight', 'underline', 'strikeout', 'question', 'star', 'exclamation', 'note'] as const).forEach(
+                (kind) => setToolColor(kind, theme.color)
+              );
+            }
+          }}
           onMark={(kind) => {
-            if (pendingSelection?.length) applyTextMark(kind, pendingSelection);
-            setSelectionAnchor(null);
-            window.getSelection()?.removeAllRanges();
+            if (isReaction(kind)) {
+              createReactionForSelection(kind);
+            } else {
+              if (pendingSelection?.length) applyTextMark(kind, pendingSelection);
+              setSelectionAnchor(null);
+              window.getSelection()?.removeAllRanges();
+            }
             // The menu acts on THIS passage and hands the workspace back in its resting state.
             // Arming the tool here would leave the next drag marking something by accident, and
             // the reader who wants to keep highlighting can say so from the toolbar.
@@ -1210,6 +1259,12 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
           // press outside — including a press on a toolbar tool — and clearing the selection
           // there would pull the passage out from under the very action being reached for.
           onDismiss={() => setSelectionAnchor(null)}
+          // The X button means "done with this passage" — clear the selection too, or the
+          // global mouseup listener above would see it's still live and reopen this menu.
+          onClose={() => {
+            setSelectionAnchor(null);
+            window.getSelection()?.removeAllRanges();
+          }}
         />
       )}
 

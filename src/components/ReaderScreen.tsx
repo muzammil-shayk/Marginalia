@@ -1,22 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { 
-  ArrowLeft, 
-  Sparkles, 
-  Settings as SettingsIcon, 
-  BookOpen, 
-  StickyNote as StickyNoteIcon, 
-  Plus, 
-  Trash2, 
-  Edit3, 
-  Check, 
-  Highlighter, 
+import {
+  ArrowLeft,
+  Settings as SettingsIcon,
+  BookOpen,
+  StickyNote as StickyNoteIcon,
+  Plus,
+  Trash2,
+  Edit3,
+  Check,
+  Highlighter,
+  Underline,
   MessageSquare,
-  Bot,
   Zap,
   Lightbulb,
   CheckCircle2,
-  RefreshCw,
   Sliders,
   Filter,
   Copy,
@@ -24,7 +22,15 @@ import {
   Download,
   X
 } from 'lucide-react';
-import { Screen, TransitionType, StickyNote, AISuggestion, UserSettings } from '../types';
+import { Screen, TransitionType, StickyNote, UserSettings } from '../types';
+import { CustomFormat } from '../utils/documentExporter';
+import { HoverTooltip } from './HoverTooltip';
+import {
+  findParagraphElement,
+  getSelectionCharacterOffsetWithin,
+  renderHighlightedText,
+  toggleFormatRange
+} from '../utils/textFormatting';
 
 import {
   exportToPDF,
@@ -44,9 +50,13 @@ interface ReaderScreenProps {
   /** Notes for the active document, lifted to App so they survive navigating away and back. */
   notes: StickyNote[];
   onNotesChange: (updater: (prev: StickyNote[]) => StickyNote[]) => void;
+  /** Inline bold/highlight/underline/circle marks for the active document. */
+  formats: CustomFormat[];
+  onFormatsChange: (updater: (prev: CustomFormat[]) => CustomFormat[]) => void;
 }
 
 const NAMED_NOTE_COLORS = ['yellow', 'purple', 'teal', 'rose'];
+const PARA_TEXT_ID_PREFIX = 'reader-para-text-';
 
 export const ReaderScreen: React.FC<ReaderScreenProps> = ({
   settings,
@@ -55,7 +65,9 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
   documentText,
   documentTitle,
   notes,
-  onNotesChange
+  onNotesChange,
+  formats,
+  onFormatsChange
 }) => {
   // Derive paragraphs strictly from custom document text
   const displayParagraphs = React.useMemo(() => {
@@ -74,19 +86,17 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
   const [activeParagraphIndex, setActiveParagraphIndex] = useState<number | null>(null);
   const [showNotesDrawer, setShowNotesDrawer] = useState<boolean>(true);
   const [selectedThemeFilter, setSelectedThemeFilter] = useState<string>('All');
-  const [exportTypeFilter, setExportTypeFilter] = useState<'all' | 'manual' | 'ai'>('all');
-  
-  const TAB_INDEXES: Record<'notes' | 'add' | 'ai' | 'export', number> = {
+
+  const TAB_INDEXES: Record<'notes' | 'add' | 'export', number> = {
     notes: 0,
     add: 1,
-    ai: 2,
-    export: 3,
+    export: 2,
   };
 
-  const [activeControlTab, setActiveControlTab] = useState<'notes' | 'add' | 'ai' | 'export'>('notes');
+  const [activeControlTab, setActiveControlTab] = useState<'notes' | 'add' | 'export'>('notes');
   const [slideDirection, setSlideDirection] = useState<number>(1);
 
-  const handleSwitchTab = (newTab: 'notes' | 'add' | 'ai' | 'export') => {
+  const handleSwitchTab = (newTab: 'notes' | 'add' | 'export') => {
     if (newTab === activeControlTab) return;
     const currentIdx = TAB_INDEXES[activeControlTab];
     const newIdx = TAB_INDEXES[newTab];
@@ -111,11 +121,30 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
       scale: 0.98,
     }),
   };
-  const [highlightedParagraphs, setHighlightedParagraphs] = useState<number[]>([]);
-  
+  /**
+   * The theme new highlights, underlines and notes are stamped with — the same "pick a colour by
+   * picking a theme" mechanic the PDF workspace uses (`PdfToolbar`'s theme strip / `activeThemeId`).
+   */
+  const [activeThemeId, setActiveThemeId] = useState<string | null>(settings.activeThemes[0]?.id ?? null);
+  const [hoveredNoteId, setHoveredNoteId] = useState<string | null>(null);
+  const themeColor = (themeId: string | null): string =>
+    settings.activeThemes.find((t) => t.id === themeId)?.color || '#8b5cf6';
+
+  // Scrolls the "Tagging as" strip so the newly active theme is visible whenever it changes, not
+  // just when the reader drags the strip themselves — picking a theme from the floating tooltip
+  // should still bring it into view here.
+  const themeStripRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!activeThemeId) return;
+    const el = themeStripRef.current?.querySelector<HTMLElement>(`[data-theme-id="${activeThemeId}"]`);
+    el?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+  }, [activeThemeId]);
+
   // Selection Popover State
   const [selectedText, setSelectedText] = useState<string>('');
   const [selectionRange, setSelectionRange] = useState<{ x: number; y: number } | null>(null);
+  /** The exact character range the floating tooltip's actions apply to, computed alongside the plain selected text. */
+  const [pendingSelection, setPendingSelection] = useState<{ paraIdx: number; start: number; end: number } | null>(null);
   const readerContentRef = useRef<HTMLDivElement>(null);
 
   // Note Modal state (for both creating & editing)
@@ -124,21 +153,8 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
   const [noteFormTitle, setNoteFormTitle] = useState<string>('');
   const [noteFormText, setNoteFormText] = useState<string>('');
   const [noteFormQuote, setNoteFormQuote] = useState<string>('');
-  // `string`, not the four palette names: StickyNote.color is documented as a palette name OR an
-  // arbitrary hex, and AI-generated notes carry a theme's hex. Narrowing it here silently
-  // rejected those when they were opened for editing.
-  const [noteFormColor, setNoteFormColor] = useState<string>('yellow');
-  const [noteFormTheme, setNoteFormTheme] = useState<string>('Hierarchical Systems');
+  const [noteFormThemeId, setNoteFormThemeId] = useState<string | null>(null);
   const [targetParagraph, setTargetParagraph] = useState<number>(0);
-  const [isNoteAiGenerated, setIsNoteAiGenerated] = useState<boolean>(false);
-
-  // AI-Assisted Suggestions Drawer / Panel
-  const [isAiPanelOpen, setIsAiPanelOpen] = useState<boolean>(false);
-  const [aiFocusMode, setAiFocusMode] = useState<'thematic' | 'metaphor' | 'critique' | 'summary'>('thematic');
-  const [aiSuggestions, setAiSuggestions] = useState<AISuggestion[]>([]);
-  const [isLoadingAi, setIsLoadingAi] = useState<boolean>(false);
-  const [aiTargetParagraph, setAiTargetParagraph] = useState<number>(0);
-  const [aiSource, setAiSource] = useState<string>('');
 
   // Handle Text Selection for floating toolbar
   useEffect(() => {
@@ -147,11 +163,19 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
       if (!selection || selection.isCollapsed || !selection.toString().trim()) {
         setSelectedText('');
         setSelectionRange(null);
+        setPendingSelection(null);
         return;
       }
 
       const text = selection.toString().trim();
       if (text.length > 3) {
+        const found = findParagraphElement(selection.anchorNode, PARA_TEXT_ID_PREFIX);
+        const offsets = found ? getSelectionCharacterOffsetWithin(found.element) : null;
+        if (!found || !offsets || offsets.start === offsets.end) {
+          setPendingSelection(null);
+          return;
+        }
+        setPendingSelection({ paraIdx: found.index, start: offsets.start, end: offsets.end });
         setSelectedText(text);
         try {
           const range = selection.getRangeAt(0);
@@ -170,74 +194,6 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     return () => document.removeEventListener('mouseup', handleMouseUp);
   }, []);
 
-  // Request AI Suggestions from Gemini Flash
-  const fetchAiSuggestions = async (paraIdx: number, customText?: string, mode: 'thematic' | 'metaphor' | 'critique' | 'summary' = aiFocusMode, forceRefresh = false) => {
-    const textToAnalyze = customText || displayParagraphs[paraIdx]?.text || displayParagraphs.map(p => p.text).join('\n\n');
-    
-    setIsAiPanelOpen(true);
-    setAiTargetParagraph(paraIdx);
-
-    if (!textToAnalyze.trim()) {
-      setAiSuggestions([]);
-      return;
-    }
-
-    const cacheKey = `marginalia_suggs_${documentTitle.replace(/[^a-zA-Z0-9]/g, '_')}_${paraIdx}_${mode}`;
-    
-    if (!forceRefresh) {
-      const cached = localStorage.getItem(cacheKey);
-      if (cached) {
-        try {
-          const parsed = JSON.parse(cached);
-          if (parsed.suggestions && parsed.suggestions.length > 0) {
-            setAiSuggestions(parsed.suggestions);
-            setAiSource(parsed.source || 'gemini-flash');
-            return;
-          }
-        } catch (e) {
-          console.warn('Failed to parse cached suggestions', e);
-        }
-      }
-    }
-
-    setIsLoadingAi(true);
-    
-    const surroundingContext = displayParagraphs.map((p, i) => `[Para ${i+1}] ${p.text}`).join('\n\n');
-
-    try {
-      const res = await fetch('/api/gemini/suggest-annotations', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: textToAnalyze,
-          context: surroundingContext,
-          mode,
-          activeThemes: settings.activeThemes.map(t => t.name)
-        })
-      });
-
-      if (!res.ok) {
-        throw new Error(`Server returned ${res.status}`);
-      }
-
-      const data = await res.json();
-      
-      if (data && data.suggestions) {
-        localStorage.setItem(cacheKey, JSON.stringify(data));
-      }
-      
-      setAiSuggestions(data.suggestions || []);
-      setAiSource(data.source || 'gemini-flash');
-    } catch (err) {
-      console.warn('AI suggestions call fallback:', err);
-      // Removed dummy data fallback; set empty array on error
-      setAiSuggestions([]);
-      setAiSource('error');
-    } finally {
-      setIsLoadingAi(false);
-    }
-  };
-
   // Open modal to create manual note
   const handleOpenManualNote = (paraIndex: number = 0, quote: string = '') => {
     setEditingNoteId(null);
@@ -245,12 +201,11 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     setNoteFormTitle('');
     setNoteFormText('');
     setNoteFormQuote(quote || selectedText);
-    setNoteFormColor('yellow');
-    setNoteFormTheme(settings.activeThemes[0]?.name || 'Hierarchical Systems');
-    setIsNoteAiGenerated(false);
+    setNoteFormThemeId(activeThemeId);
     setIsNoteModalOpen(true);
     setSelectedText('');
     setSelectionRange(null);
+    setPendingSelection(null);
   };
 
   // Open modal to edit existing note
@@ -260,44 +215,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     setNoteFormTitle(note.title);
     setNoteFormText(note.content);
     setNoteFormQuote(note.quote || '');
-    setNoteFormColor(note.color);
-    setNoteFormTheme(note.themeTag || 'Hierarchical Systems');
-    setIsNoteAiGenerated(Boolean(note.isAiGenerated));
-    setIsNoteModalOpen(true);
-  };
-
-  // Accept and Pin an AI suggestion directly to margin notes
-  const handlePinAiSuggestion = (suggestion: AISuggestion) => {
-    const newNote: StickyNote = {
-      id: `ai-note-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-      paragraphIndex: aiTargetParagraph,
-      color: suggestion.color,
-      title: suggestion.title,
-      content: suggestion.content,
-      author: 'AI Assistant',
-      timestamp: 'Just now',
-      themeTag: suggestion.themeTag,
-      quote: suggestion.quote,
-      isAiGenerated: true,
-      confidence: suggestion.confidence,
-      rationale: suggestion.rationale
-    };
-
-    onNotesChange((prev) => [newNote, ...prev]);
-    // Remove from unpinned suggestions
-    setAiSuggestions((prev) => prev.filter((s) => s.title !== suggestion.title));
-  };
-
-  // Customize an AI suggestion before pinning
-  const handleCustomizeAiSuggestion = (suggestion: AISuggestion) => {
-    setEditingNoteId(null);
-    setTargetParagraph(aiTargetParagraph);
-    setNoteFormTitle(suggestion.title);
-    setNoteFormText(suggestion.content);
-    setNoteFormQuote(suggestion.quote || '');
-    setNoteFormColor(suggestion.color);
-    setNoteFormTheme(suggestion.themeTag);
-    setIsNoteAiGenerated(true);
+    setNoteFormThemeId(note.themeId);
     setIsNoteModalOpen(true);
   };
 
@@ -317,8 +235,8 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                 title: noteFormTitle.trim() || 'Reader Note',
                 content: noteFormText.trim(),
                 quote: noteFormQuote.trim() || undefined,
-                color: noteFormColor,
-                themeTag: noteFormTheme,
+                color: themeColor(noteFormThemeId),
+                themeId: noteFormThemeId,
               }
             : n
         )
@@ -328,14 +246,13 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
       const newNote: StickyNote = {
         id: `note-${Date.now()}`,
         paragraphIndex: targetParagraph,
-        color: noteFormColor,
+        color: themeColor(noteFormThemeId),
         title: noteFormTitle.trim() || 'Reader Note',
         content: noteFormText.trim(),
         quote: noteFormQuote.trim() || undefined,
-        author: isNoteAiGenerated ? 'AI Assistant (Edited)' : settings.name,
+        author: settings.name,
         timestamp: 'Just now',
-        themeTag: noteFormTheme,
-        isAiGenerated: isNoteAiGenerated
+        themeId: noteFormThemeId
       };
       onNotesChange((prev) => [newNote, ...prev]);
     }
@@ -347,14 +264,23 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     onNotesChange((prev) => prev.filter((n) => n.id !== id));
   };
 
-  const toggleHighlight = (idx: number) => {
-    setHighlightedParagraphs((prev) =>
-      prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
-    );
+  /** Applies the currently active theme's colour to a highlight or underline over the pending selection. */
+  const applyFormatToSelection = (type: 'highlight' | 'underline') => {
+    if (!pendingSelection) return;
+    const { paraIdx, start, end } = pendingSelection;
+    onFormatsChange((prev) => toggleFormatRange(prev, paraIdx, start, end, type, themeColor(activeThemeId), activeThemeId));
+    setSelectedText('');
+    setSelectionRange(null);
+    setPendingSelection(null);
   };
 
-  // Notes as scoped by the Export tab's filter controls (type + theme).
-  const exportableNotes = getFilteredAnnotations(notes, exportTypeFilter, selectedThemeFilter);
+  /** Reassigns an existing note, highlight or underline to a different theme (and its colour). */
+  const retagNote = (id: string, themeId: string) => {
+    onNotesChange((prev) => prev.map((n) => (n.id === id ? { ...n, themeId, color: themeColor(themeId) } : n)));
+  };
+
+  // Notes as scoped by the Export tab's theme filter.
+  const exportableNotes = getFilteredAnnotations(notes, selectedThemeFilter);
 
   // Named palette colors map to Tailwind classes; arbitrary hex colors (e.g. notes pinned
   // from the Analysis Inspection Panel's color picker) fall back to an inline style instead.
@@ -391,61 +317,89 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
           className="absolute z-50 transform -translate-x-1/2 -translate-y-full mb-3 flex items-center gap-1 p-1 rounded-full bg-stone-900/95 text-white shadow-2xl backdrop-blur-xl border border-stone-700/80 text-[12px] animate-in fade-in zoom-in-95 duration-150 active:scale-[0.99]"
           style={{ left: `${selectionRange.x}px`, top: `${selectionRange.y}px` }}
         >
+          {/* Which theme Highlight/Underline/Note below will file under — reachable here too, so
+              switching themes doesn't mean leaving the passage to go find the strip above. */}
+          {settings.activeThemes.length > 0 && (
+            <>
+              {settings.activeThemes.map((theme) => (
+                <HoverTooltip key={theme.id} label={theme.name}>
+                  <button
+                    type="button"
+                    onClick={() => setActiveThemeId(theme.id)}
+                    className={`w-4 h-4 rounded-full border-2 shrink-0 transition-transform hover:scale-110 cursor-pointer ${
+                      activeThemeId === theme.id ? 'border-white' : 'border-transparent'
+                    }`}
+                    style={{ backgroundColor: theme.color }}
+                  />
+                </HoverTooltip>
+              ))}
+              <span className="w-px h-3.5 bg-stone-700 mx-0.5" />
+            </>
+          )}
+
+          <button
+            type="button"
+            onClick={() => applyFormatToSelection('highlight')}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full hover:bg-stone-800 text-stone-200 hover:text-white font-medium transition-all cursor-pointer"
+            disabled={!pendingSelection}
+          >
+            <Highlighter className="w-3.5 h-3.5 shrink-0" style={{ color: themeColor(activeThemeId) }} />
+            <span>Highlight</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => applyFormatToSelection('underline')}
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full hover:bg-stone-800 text-stone-200 hover:text-white font-medium transition-all cursor-pointer"
+            disabled={!pendingSelection}
+          >
+            <Underline className="w-3.5 h-3.5 shrink-0" style={{ color: themeColor(activeThemeId) }} />
+            <span>Underline</span>
+          </button>
+
+          <span className="w-px h-3.5 bg-stone-700 mx-0.5" />
+
           <button
             type="button"
             onClick={() => {
               handleSwitchTab('add');
-              handleOpenManualNote(activeParagraphIndex || 0, selectedText);
+              handleOpenManualNote(pendingSelection?.paraIdx ?? activeParagraphIndex ?? 0, selectedText);
             }}
-            className="flex items-center gap-1.5 px-3 py-1 rounded-full hover:bg-stone-800 text-stone-200 hover:text-white font-medium transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-2.5 py-1 rounded-full hover:bg-stone-800 text-stone-200 hover:text-white font-medium transition-all cursor-pointer"
           >
             <StickyNoteIcon className="w-3.5 h-3.5 text-amber-300 shrink-0" />
             <span>Note</span>
           </button>
-
-          <span className="w-px h-3.5 bg-stone-700 mx-0.5" />
-
-          <button
-            type="button"
-            onClick={() => {
-              handleSwitchTab('ai');
-              fetchAiSuggestions(activeParagraphIndex || 0, selectedText, 'thematic');
-            }}
-            className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition-all cursor-pointer shadow-xs"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-emerald-200 shrink-0 animate-pulse" />
-            <span>AI Suggest</span>
-          </button>
-
-          <span className="w-px h-3.5 bg-stone-700 mx-0.5" />
-
-          <button
-            type="button"
-            onClick={() => {
-              if (activeParagraphIndex !== null) toggleHighlight(activeParagraphIndex);
-              setSelectedText('');
-              setSelectionRange(null);
-            }}
-            className="p-1.5 rounded-full hover:bg-stone-800 text-stone-300 hover:text-white transition-all cursor-pointer"
-            title="Highlight selection"
-          >
-            <Highlighter className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            type="button"
-            onClick={() => {
-              handleSwitchTab('export');
-              setSelectedText('');
-              setSelectionRange(null);
-            }}
-            className="p-1.5 rounded-full hover:bg-stone-800 text-stone-300 hover:text-white transition-all cursor-pointer"
-            title="Export selection"
-          >
-            <Download className="w-3.5 h-3.5" />
-          </button>
         </div>
       )}
+
+      {/* Theme picker — which theme new highlights, underlines and notes are stamped with, the
+          same "colour is the theme" mechanic the PDF workspace uses. Scrolls horizontally with
+          snap points rather than wrapping once there are more themes than fit in one line. */}
+      <div
+        ref={themeStripRef}
+        className={`px-3 sm:px-6 py-1.5 border-b flex items-center gap-1.5 text-[11px] w-full max-w-full overflow-x-auto snap-x snap-mandatory scroll-smooth [scrollbar-width:thin] ${
+          isDark ? 'bg-[#181c1a] border-stone-800/80' : 'bg-[#f2efe9] border-stone-200'
+        }`}
+      >
+        <span className="font-semibold text-stone-500 dark:text-stone-400 shrink-0">Tagging as</span>
+        {settings.activeThemes.map((theme) => (
+          <button
+            key={theme.id}
+            data-theme-id={theme.id}
+            type="button"
+            onClick={() => setActiveThemeId(theme.id)}
+            className={`px-2 py-0.5 rounded-lg font-medium transition-all flex items-center gap-1.5 cursor-pointer shrink-0 snap-start ${
+              activeThemeId === theme.id
+                ? 'bg-stone-900 dark:bg-white text-white dark:text-stone-900 shadow-xs'
+                : 'text-stone-600 dark:text-stone-300 hover:bg-black/5 dark:hover:bg-white/10'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: theme.color }} />
+            <span className="whitespace-nowrap">{theme.name}</span>
+          </button>
+        ))}
+      </div>
 
       {/* Top Reader Navigation Bar */}
       <header className={`sticky top-0 z-40 px-3 sm:px-6 h-18 border-b flex items-center justify-between gap-2 backdrop-blur-md transition-colors w-full max-w-full overflow-hidden ${
@@ -539,28 +493,6 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
             )}
           </button>
 
-          {/* AI Suggestions Pill */}
-          <button
-            type="button"
-            onClick={() => {
-              handleSwitchTab('ai');
-              fetchAiSuggestions(activeParagraphIndex || 0);
-            }}
-            className={`flex items-center gap-1.5 transition-all duration-200 cursor-pointer shrink-0 ${
-              activeControlTab === 'ai'
-                ? 'bg-emerald-600 text-white px-3 py-1.5 rounded-xl font-semibold shadow-xs animate-in fade-in zoom-in-95'
-                : 'p-2 rounded-xl bg-emerald-600/10 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-600/20'
-            }`}
-            title="AI Suggestions"
-          >
-            <Bot className="w-4 h-4" />
-            {activeControlTab === 'ai' && (
-              <span className="whitespace-nowrap animate-in fade-in duration-150">
-                AI Suggestions
-              </span>
-            )}
-          </button>
-
           {/* Export Notes Pill */}
           <button
             id="reader-bar-export-btn"
@@ -631,7 +563,10 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
 
                 {displayParagraphs.map((para, idx) => {
                   const notesForThisPara = notes.filter((n) => n.paragraphIndex === idx);
-                  const isHighlighted = highlightedParagraphs.includes(idx);
+                  const formatsForThisPara = formats.filter((f) => f.paragraphIndex === idx);
+                  const noteAnchors = notesForThisPara
+                    .filter((n) => n.start !== undefined && n.end !== undefined)
+                    .map((n) => ({ id: n.id, start: n.start, end: n.end }));
 
                   return (
                     <div
@@ -646,9 +581,8 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                     >
                       {/* Paragraph Text */}
                       <p
-                        className={`leading-relaxed text-stone-800 dark:text-stone-200 transition-all ${
-                          isHighlighted ? 'bg-amber-100/60 dark:bg-amber-950/40 rounded-md px-1.5 py-0.5' : ''
-                        }`}
+                        id={`${PARA_TEXT_ID_PREFIX}${idx}`}
+                        className="leading-relaxed text-stone-800 dark:text-stone-200"
                         style={{
                           fontFamily: settings.typography.includes('Newsreader')
                             ? 'Newsreader, Georgia, serif'
@@ -659,10 +593,10 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                           lineHeight: '1.75'
                         }}
                       >
-                        {para.text}
+                        {renderHighlightedText(para.text, formatsForThisPara, noteAnchors, hoveredNoteId, themeColor(activeThemeId))}
                       </p>
 
-                      {/* Paragraph Action Toolbar (Manual & AI Triggers) */}
+                      {/* Paragraph Action Toolbar */}
                       <div className="mt-2 flex items-center justify-between opacity-75 group-hover:opacity-100 transition-opacity">
                         <div className="flex items-center gap-3">
                           <button
@@ -676,31 +610,6 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                           >
                             <Plus className="w-3.5 h-3.5 text-[#435c52]" />
                             <span>Manual Note</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleSwitchTab('ai');
-                              fetchAiSuggestions(idx, para.text);
-                            }}
-                            className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400 hover:text-emerald-900 dark:hover:text-emerald-200 flex items-center gap-1 cursor-pointer"
-                          >
-                            <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
-                            <span>AI Suggestion</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              toggleHighlight(idx);
-                            }}
-                            className="text-[11px] font-medium text-stone-500 hover:text-stone-800 dark:hover:text-stone-300 flex items-center gap-1 cursor-pointer"
-                          >
-                            <Highlighter className="w-3.5 h-3.5" />
-                            <span>{isHighlighted ? 'Unhighlight' : 'Highlight'}</span>
                           </button>
                         </div>
 
@@ -718,28 +627,36 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                             <div
                               key={note.id}
                               id={`sticky-note-${note.id}`}
+                              onMouseEnter={() => setHoveredNoteId(note.id)}
+                              onMouseLeave={() => setHoveredNoteId((prev) => (prev === note.id ? null : prev))}
                               className={`p-3.5 rounded-xl border shadow-xs transition-all ${getNoteColorClass(note.color) || 'text-stone-900 dark:text-stone-100'}`}
                               style={getNoteColorStyle(note.color)}
                             >
                               <div className="flex items-start justify-between gap-2 mb-1.5">
                                 <div className="flex items-center gap-1.5">
-                                  {note.isAiGenerated ? (
-                                    <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-emerald-600 text-white shrink-0">
-                                      <Sparkles className="w-2.5 h-2.5" /> AI
-                                    </span>
-                                  ) : (
-                                    <StickyNoteIcon className="w-3.5 h-3.5 shrink-0 opacity-80" />
-                                  )}
+                                  <StickyNoteIcon className="w-3.5 h-3.5 shrink-0 opacity-80" />
                                   <h4 className="font-semibold text-[13px] tracking-tight">
                                     {note.title}
                                   </h4>
                                 </div>
                                 <div className="flex items-center gap-1.5">
-                                  {note.themeTag && (
-                                    <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-black/10 dark:bg-white/10">
-                                      {note.themeTag}
-                                    </span>
-                                  )}
+                                  {/* Retag: click a theme's dot to re-file this note under it. */}
+                                  <div className="flex items-center gap-1">
+                                    {settings.activeThemes.map((theme) => (
+                                      <HoverTooltip key={theme.id} label={theme.name}>
+                                        <button
+                                          type="button"
+                                          onClick={() => retagNote(note.id, theme.id)}
+                                          className={`w-2.5 h-2.5 rounded-full shrink-0 cursor-pointer transition-transform ${
+                                            note.themeId === theme.id
+                                              ? 'ring-2 ring-offset-1 ring-stone-900 dark:ring-white scale-110'
+                                              : 'opacity-50 hover:opacity-90'
+                                          }`}
+                                          style={{ backgroundColor: theme.color }}
+                                        />
+                                      </HoverTooltip>
+                                    ))}
+                                  </div>
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -774,7 +691,6 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
 
                               <div className="flex items-center justify-between text-[10px] opacity-75 pt-1 border-t border-black/10 dark:border-white/10">
                                 <span className="font-medium flex items-center gap-1">
-                                  {note.isAiGenerated && <Bot className="w-3 h-3 text-emerald-600" />}
                                   {note.author}
                                 </span>
                                 <span>{note.timestamp}</span>
@@ -843,16 +759,16 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
 
                   <div>
                     <label className="text-[12px] font-semibold text-stone-500 dark:text-stone-400 block mb-1">
-                      Theme Tag
+                      Theme — also sets this note's colour
                     </label>
                     <div className="flex flex-wrap gap-1.5">
                       {settings.activeThemes.map((theme) => (
                         <button
                           key={theme.id}
                           type="button"
-                          onClick={() => setNoteFormTheme(theme.name)}
+                          onClick={() => setNoteFormThemeId(theme.id)}
                           className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
-                            noteFormTheme === theme.name
+                            noteFormThemeId === theme.id
                               ? 'bg-[#435c52] text-white shadow-xs'
                               : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-200'
                           }`}
@@ -863,31 +779,6 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                           />
                           <span>{theme.name}</span>
                         </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-[12px] font-semibold text-stone-500 dark:text-stone-400 block mb-1">
-                      Sticky Color
-                    </label>
-                    <div className="flex items-center gap-3">
-                      {(['yellow', 'purple', 'teal', 'rose'] as const).map((color) => (
-                        <button
-                          key={color}
-                          type="button"
-                          onClick={() => setNoteFormColor(color)}
-                          className={`w-7 h-7 rounded-full transition-transform border cursor-pointer ${
-                            color === 'yellow'
-                              ? 'bg-amber-200 border-amber-400'
-                              : color === 'purple'
-                                ? 'bg-purple-200 border-purple-400'
-                                : color === 'teal'
-                                  ? 'bg-teal-200 border-teal-400'
-                                  : 'bg-rose-200 border-rose-400'
-                          } ${noteFormColor === color ? 'scale-125 ring-2 ring-stone-900 dark:ring-white' : 'opacity-70'}`}
-                          title={color}
-                        />
                       ))}
                     </div>
                   </div>
@@ -943,140 +834,6 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
               </motion.div>
             )}
 
-            {/* TAB 3: INLINE AI SUGGESTIONS WORKSPACE */}
-            {activeControlTab === 'ai' && (
-              <motion.div
-                key="ai-tab"
-                custom={slideDirection}
-                variants={tabVariants}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-                className="py-2 space-y-4"
-              >
-                <div className="flex items-center justify-between border-b pb-3 border-stone-200 dark:border-stone-800">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-5 h-5 text-emerald-600" />
-                    <h3 className="font-serif font-bold text-[17px] text-stone-900 dark:text-white">
-                      AI Suggestions Workspace
-                    </h3>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={() => fetchAiSuggestions(activeParagraphIndex || 0, undefined, aiFocusMode, true)}
-                      disabled={isLoadingAi}
-                      className="text-[12px] font-medium text-emerald-600 hover:text-emerald-700 dark:text-emerald-500 dark:hover:text-emerald-400 flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${isLoadingAi ? 'animate-spin' : ''}`} />
-                      <span>Refresh</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleSwitchTab('notes')}
-                      className="text-[12px] font-medium text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 flex items-center gap-1 cursor-pointer"
-                    >
-                      <ArrowLeft className="w-3.5 h-3.5" />
-                      <span>Back to Reading</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-4 gap-1.5 p-1.5 bg-stone-100 dark:bg-stone-800/70 rounded-2xl text-[12px]">
-                  {(['thematic', 'metaphor', 'critique', 'summary'] as const).map((m) => (
-                    <button
-                      key={m}
-                      type="button"
-                      onClick={() => {
-                        setAiFocusMode(m);
-                        fetchAiSuggestions(activeParagraphIndex || 0, undefined, m);
-                      }}
-                      className={`py-2 rounded-xl capitalize text-center font-medium transition-all cursor-pointer ${
-                        aiFocusMode === m
-                          ? 'bg-emerald-600 text-white font-semibold shadow-xs'
-                          : 'text-stone-600 dark:text-stone-400 hover:bg-stone-200/60 dark:hover:bg-stone-700/50'
-                      }`}
-                    >
-                      {m}
-                    </button>
-                  ))}
-                </div>
-
-                {isLoadingAi ? (
-                  <div className="py-12 text-center space-y-3">
-                    <RefreshCw className="w-7 h-7 animate-spin mx-auto text-[#435c52]" />
-                    <p className="text-[13px] text-stone-500 font-medium">Generating AI annotations...</p>
-                  </div>
-                ) : aiSuggestions.length === 0 ? (
-                  <div className="py-12 text-center space-y-3">
-                    <Bot className="w-8 h-8 mx-auto text-stone-400" />
-                    <p className="text-[13px] text-stone-500">
-                      No suggestions generated yet. Click below to analyze passage.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => fetchAiSuggestions(activeParagraphIndex || 0)}
-                      className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-[12px] font-semibold transition-all cursor-pointer shadow-xs inline-flex items-center gap-1.5"
-                    >
-                      <Sparkles className="w-4 h-4" />
-                      <span>Generate AI Suggestions</span>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {aiSuggestions.map((sug, i) => (
-                      <div
-                        key={i}
-                        className={`p-4 rounded-2xl border space-y-2.5 transition-all ${getNoteColorClass(sug.color)}`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <h4 className="font-bold text-[14px]">{sug.title}</h4>
-                          <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-black/10 dark:bg-white/10 shrink-0">
-                            {sug.themeTag}
-                          </span>
-                        </div>
-                        {sug.quote && (
-                          <p className="text-[12px] italic opacity-80 border-l-2 border-current pl-2">
-                            &ldquo;{sug.quote}&rdquo;
-                          </p>
-                        )}
-                        <p className="text-[13px] leading-relaxed">{sug.content}</p>
-                        {sug.rationale && (
-                          <p className="text-[11px] opacity-80 bg-black/5 dark:bg-white/5 p-2 rounded-xl">
-                            💡 {sug.rationale}
-                          </p>
-                        )}
-                        <div className="pt-2 flex justify-end gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleCustomizeAiSuggestion(sug);
-                              handleSwitchTab('add');
-                            }}
-                            className="text-[12px] font-medium px-3 py-1.5 rounded-xl bg-black/5 dark:bg-white/10 hover:bg-black/10 cursor-pointer"
-                          >
-                            Customize
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handlePinAiSuggestion(sug);
-                              handleSwitchTab('notes');
-                            }}
-                            className="text-[12px] font-semibold px-4 py-1.5 rounded-xl bg-[#435c52] hover:bg-[#374c43] text-white flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                            <span>Pin Note to Margin</span>
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </motion.div>
-            )}
-
             {/* TAB 4: INLINE EXPORT WORKSPACE */}
             {activeControlTab === 'export' && (
               <motion.div
@@ -1123,40 +880,19 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
 
                   {/* Filter Controls */}
                   <div className="space-y-2.5">
-                    <div className="flex items-center gap-1.5 p-1 bg-stone-100 dark:bg-stone-800/70 rounded-xl text-[12px]">
-                      {([
-                        { key: 'all', label: 'All' },
-                        { key: 'manual', label: 'Manual' },
-                        { key: 'ai', label: 'AI-Assisted' }
-                      ] as const).map((opt) => (
-                        <button
-                          key={opt.key}
-                          type="button"
-                          onClick={() => setExportTypeFilter(opt.key)}
-                          className={`flex-1 py-1.5 rounded-lg font-medium transition-all cursor-pointer ${
-                            exportTypeFilter === opt.key
-                              ? 'bg-[#435c52] text-white shadow-xs'
-                              : 'text-stone-600 dark:text-stone-400 hover:bg-stone-200/60 dark:hover:bg-stone-700/50'
-                          }`}
-                        >
-                          {opt.label}
-                        </button>
-                      ))}
-                    </div>
-
                     <div className="flex flex-wrap gap-1.5">
-                      {['All', ...settings.activeThemes.map((t) => t.name)].map((themeName) => (
+                      {[{ id: 'All', name: 'All' }, ...settings.activeThemes].map((theme) => (
                         <button
-                          key={themeName}
+                          key={theme.id}
                           type="button"
-                          onClick={() => setSelectedThemeFilter(themeName)}
+                          onClick={() => setSelectedThemeFilter(theme.id)}
                           className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all cursor-pointer ${
-                            selectedThemeFilter === themeName
+                            selectedThemeFilter === theme.id
                               ? 'bg-emerald-600 text-white shadow-xs'
                               : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-200'
                           }`}
                         >
-                          {themeName}
+                          {theme.name}
                         </button>
                       ))}
                     </div>
@@ -1170,11 +906,10 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                         const opts: ExportOptions = {
                           bookTitle: displayTitle,
                           bookAuthor: displayAuthor,
-                          filterType: exportTypeFilter,
                           themeFilter: selectedThemeFilter,
+          themes: settings.activeThemes,
                           format: 'pdf',
-                          includeQuotes: true,
-                          includeAiDetails: true
+                          includeQuotes: true
                         };
                         exportToPDF(exportableNotes, opts);
                       }}
@@ -1194,11 +929,10 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                         const opts: ExportOptions = {
                           bookTitle: displayTitle,
                           bookAuthor: displayAuthor,
-                          filterType: exportTypeFilter,
                           themeFilter: selectedThemeFilter,
+          themes: settings.activeThemes,
                           format: 'markdown',
-                          includeQuotes: true,
-                          includeAiDetails: true
+                          includeQuotes: true
                         };
                         const content = generateMarkdown(exportableNotes, opts);
                         downloadTextFile(content, `${displayTitle}-annotations.md`, 'text/markdown');
@@ -1219,11 +953,10 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                         const opts: ExportOptions = {
                           bookTitle: displayTitle,
                           bookAuthor: displayAuthor,
-                          filterType: exportTypeFilter,
                           themeFilter: selectedThemeFilter,
+          themes: settings.activeThemes,
                           format: 'txt',
-                          includeQuotes: true,
-                          includeAiDetails: true
+                          includeQuotes: true
                         };
                         const content = generatePlainText(exportableNotes, opts);
                         downloadTextFile(content, `${displayTitle}-annotations.txt`, 'text/plain');

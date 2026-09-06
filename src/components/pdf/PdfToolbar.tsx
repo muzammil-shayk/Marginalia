@@ -157,7 +157,7 @@ const ToolChip: React.FC<{
   color: string;
   themes: UserSettings['activeThemes'];
   customColors?: string[];
-  onColorChange: (color: string) => void;
+  onColorChange: (color: string, themeId: string | null) => void;
   isDark: boolean;
   label: string;
   /** Present only for tools that stroke; a highlight fills its line box and has no thickness. */
@@ -403,6 +403,16 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
     onScaleChange(ZOOM_STEPS[next]);
   };
 
+  // Scrolls the newly active theme into view whenever it changes — not just when the reader drags
+  // the strip themselves. A theme picked from elsewhere (the selection popover, a retag) should
+  // still bring itself into view here rather than leaving the reader to go hunt for it.
+  const themeStripRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!activeThemeId) return;
+    const el = themeStripRef.current?.querySelector<HTMLElement>(`[data-theme-id="${activeThemeId}"]`);
+    el?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+  }, [activeThemeId]);
+
   return (
     <div
       className={`flex flex-col shrink-0 border-b ${
@@ -453,7 +463,14 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
                       color={toolColors[id] ?? NEUTRAL_COLORS[0]}
                       themes={settings.activeThemes}
                       customColors={settings.customColors}
-                      onColorChange={(c) => onToolColorChange(id, c)}
+                      onColorChange={(c, themeId) => {
+                        onToolColorChange(id, c);
+                        // Picking a theme's own swatch here should be indistinguishable from
+                        // picking that theme in the strip below — both set what this tool draws
+                        // AND what new marks get filed under, so a mark made right after never
+                        // ends up coloured like one theme while tagged as another.
+                        if (themeId) onThemeChange(themeId);
+                      }}
                       isDark={isDark}
                       label={label}
                       weight={strokes ? toolWeights[id] : undefined}
@@ -579,19 +596,26 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
       </div>
 
       {/* Themes. The per-tool chips above set style; this row sets which theme a new mark is
-          FILED under, and as a convenience recolours the current tool to match. */}
+          FILED under, and as a convenience recolours the current tool to match. Scrolls
+          horizontally with snap points, rather than wrapping across lines, once there are more
+          themes than fit — a name beside every dot is worth the width; the row just stops
+          claiming a second line of the toolbar to fit them all at once. */}
       <div
-        className={`flex items-center gap-1.5 px-3 py-1.5 flex-wrap border-t text-[11.5px] ${
+        ref={themeStripRef}
+        className={`flex items-center gap-1.5 px-3 py-1.5 border-t text-[11.5px] overflow-x-auto snap-x snap-mandatory scroll-smooth [scrollbar-width:thin] ${
           isDark ? 'border-stone-800' : 'border-stone-100'
         }`}
       >
-        <span className="text-[10px] font-semibold tracking-wider uppercase text-stone-400 mr-1">Theme</span>
+        <span className="text-[10px] font-semibold tracking-wider uppercase text-stone-400 mr-1 shrink-0">
+          Theme
+        </span>
 
         {settings.activeThemes.map((theme) => {
           const isActive = activeThemeId === theme.id;
           return (
             <button
               key={theme.id}
+              data-theme-id={theme.id}
               type="button"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
@@ -599,7 +623,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
                 if (tool !== 'erase' && tool !== 'select') onToolColorChange(tool, theme.color);
               }}
               title={`File new marks under "${theme.name}"`}
-              className={`flex items-center gap-1.5 px-2 py-1 rounded-lg font-medium transition-all cursor-pointer ${
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-lg font-medium transition-all cursor-pointer shrink-0 snap-start ${
                 isActive
                   ? 'bg-stone-200/90 dark:bg-stone-700 text-stone-900 dark:text-white'
                   : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
@@ -609,7 +633,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
                 className="w-3 h-3 rounded-full border border-black/10 shrink-0"
                 style={{ backgroundColor: theme.color }}
               />
-              <span>{theme.name}</span>
+              <span className="whitespace-nowrap">{theme.name}</span>
             </button>
           );
         })}
@@ -619,7 +643,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => onThemeChange(null)}
           title="New marks are not filed under any theme"
-          className={`px-2 py-1 rounded-lg font-medium transition-all cursor-pointer ${
+          className={`px-2 py-1 rounded-lg font-medium transition-all cursor-pointer shrink-0 snap-start whitespace-nowrap ${
             activeThemeId === null
               ? 'bg-stone-200/90 dark:bg-stone-700 text-stone-900 dark:text-white'
               : 'text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800'

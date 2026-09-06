@@ -25,10 +25,22 @@ import {
 import { Annotation, AnnotationKind } from './annotationModel';
 import { UserSettings } from '../../types';
 
+/** A reaction's icon is the literal mark it stamps, not a lookalike glyph. */
+const charIcon =
+  (char: string): React.FC<{ className?: string }> =>
+  ({ className }) => (
+    <span className={`${className ?? ''} inline-flex items-center justify-center text-[13px] font-extrabold leading-none`}>
+      {char}
+    </span>
+  );
+
 const KIND_ICONS: Record<AnnotationKind, React.ElementType> = {
   highlight: Highlighter,
   underline: Underline,
   strikeout: Strikethrough,
+  question: charIcon('?'),
+  star: charIcon('*'),
+  exclamation: charIcon('!'),
   ink: PenLine,
   note: StickyNote,
   rect: Square,
