@@ -99,7 +99,15 @@ export function fontStack(font: TextFont | undefined): string {
 }
 
 /** Tools that act on existing marks rather than creating one. */
-export type PdfTool = AnnotationKind | 'select' | 'erase';
+/**
+ * `terminology` and `mask` are toolbar-level tools only, never stored `AnnotationKind`s:
+ * - `terminology` marks a passage as an ordinary `kind: 'highlight'` flagged `isTerminology: true`
+ *   (see `Annotation.isTerminology`), reusing highlight's rendering and export path.
+ * - `mask` draws an ordinary `kind: 'ink'` stroke — already fully opaque on screen and in export,
+ *   unlike a highlight's translucent tint — just with its own much thicker default weight and a
+ *   default black colour, so a drag actually blots a line out rather than tinting it.
+ */
+export type PdfTool = AnnotationKind | 'select' | 'erase' | 'terminology' | 'mask';
 
 export interface FractionPoint {
   x: number;
@@ -121,6 +129,16 @@ export interface Annotation {
   color: string;
   /** Which theme this mark belongs to, or null when it is not thematic. */
   themeId: string | null;
+  /**
+   * `highlight` only: a marked-up term or piece of jargon rather than a thematic passage.
+   *
+   * Always rendered and exported using the LIVE `UserSettings.terminologyColor` rather than this
+   * mark's own `color` field — `color` is kept in sync at creation time as a reasonable fallback,
+   * but the setting is the actual source of truth, so recoloring it in Settings updates every
+   * terminology mark ever made, not just new ones. Independent of `themeId`: a term can also be
+   * filed under a theme.
+   */
+  isTerminology?: boolean;
   /** Text-anchored kinds: one rect per line the selection covered. */
   rects?: FractionRect[];
   /** `ink`: the freehand stroke. */
@@ -177,11 +195,13 @@ export interface Annotation {
   createdAt: string;
 }
 
-/** Kinds built from a text selection rather than from dragging on the page. */
-export const TEXT_ANCHORED: readonly AnnotationKind[] = ['highlight', 'underline', 'strikeout'];
+/** Kinds built from a text selection rather than from dragging on the page. `terminology` is the
+ *  toolbar tool, not a stored kind — see `PdfTool` — but it acts on a selection exactly like
+ *  `highlight` does, so it belongs in this list too. */
+export const TEXT_ANCHORED: readonly PdfTool[] = ['highlight', 'underline', 'strikeout', 'terminology'];
 
-export function isTextAnchored(kind: AnnotationKind): boolean {
-  return TEXT_ANCHORED.includes(kind);
+export function isTextAnchored(tool: PdfTool): boolean {
+  return TEXT_ANCHORED.includes(tool);
 }
 
 /** Kinds drawn by dragging a box out on the page. */
@@ -190,9 +210,13 @@ export const BOX_KINDS: readonly AnnotationKind[] = ['rect', 'ellipse', 'text', 
 /** Kinds drawn by dragging from one point to another. */
 export const LINE_KINDS: readonly AnnotationKind[] = ['arrow', 'line'];
 
-/** Kinds stroked with a pen rather than filled, and so the only ones with a dash pattern. */
-export const STROKED_KINDS: readonly AnnotationKind[] = [
+/** Kinds stroked with a pen rather than filled, and so the only ones with a dash pattern.
+ *  `mask` is the toolbar tool, not a stored kind — see `PdfTool` — but it draws exactly like
+ *  `ink` (an opaque, thick stroke meant to blot content out) and needs the same weight and dash
+ *  controls in its chip. */
+export const STROKED_KINDS: readonly PdfTool[] = [
   'ink',
+  'mask',
   'rect',
   'ellipse',
   'arrow',
@@ -202,8 +226,8 @@ export const STROKED_KINDS: readonly AnnotationKind[] = [
   'strikeout'
 ];
 
-export function isStroked(kind: AnnotationKind): boolean {
-  return STROKED_KINDS.includes(kind);
+export function isStroked(tool: PdfTool): boolean {
+  return STROKED_KINDS.includes(tool);
 }
 
 /**

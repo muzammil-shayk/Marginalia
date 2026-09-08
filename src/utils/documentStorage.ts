@@ -26,6 +26,8 @@ export interface StoredDocumentMeta {
   annotationCount: number;
   /** The distinct theme ids tagged anywhere in this document, for the Home screen's theme dashboard. */
   themeIds: string[];
+  /** How many annotations in this document are marked terminology, for the Home screen's Terminologies section. */
+  terminologyCount: number;
   retentionDays?: number;
 }
 
@@ -215,6 +217,92 @@ export async function saveAnnotations(id: string, annotations: Annotation[]): Pr
   }
 }
 
+export type PageInsertPlacement = 'before' | 'after' | 'both-ends';
+export type PageInsertHeight = 'full' | 'header' | 'notes';
+
+export interface PageInsertResult {
+  /** 1-based page numbers the new blank page(s) landed at, in the NEW numbering. */
+  insertedPages: number[];
+  pageCount: number;
+}
+
+/**
+ * Inserts a real blank page into this document's own stored PDF, relative to `anchorPage`
+ * (ignored for `'both-ends'`, which adds one at the very start and one at the very end). Existing
+ * annotations are renumbered server-side to match — see server.ts's handler for exactly how.
+ *
+ * Returns null on failure (a non-PDF document, a missing file, or a malformed PDF).
+ */
+export async function insertPage(
+  id: string,
+  placement: PageInsertPlacement,
+  height: PageInsertHeight,
+  anchorPage: number
+): Promise<PageInsertResult | null> {
+  try {
+    const res = await fetch(`/api/documents/${id}/pages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ placement, height, anchorPage })
+    });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Removes one page — inserted or original — from this document's own stored PDF, discarding any
+ * annotation on it and shifting every later page down by one. Returns null on failure (the last
+ * remaining page, an out-of-range page number, or a non-PDF document).
+ */
+export async function deletePage(id: string, pageNumber: number): Promise<{ pageCount: number } | null> {
+  try {
+    const res = await fetch(`/api/documents/${id}/pages/${pageNumber}`, { method: 'DELETE' });
+    if (!res.ok) return null;
+    return res.json();
+  } catch {
+    return null;
+  }
+}
+
+/** Where the reader left off in a document's PDF workspace — zoom, page, single/spread view. */
+export interface ReadingState {
+  scale: number;
+  page: number;
+  viewMode: 'single' | 'spread';
+}
+
+/**
+ * The reader's last position in this document, or null if it has never been opened in the PDF
+ * workspace. Kept on the server rather than in localStorage — see `ReadingState`'s definition on
+ * the server side (server.ts) for why that matters for the desktop build specifically.
+ */
+export async function fetchReadingState(id: string): Promise<ReadingState | null> {
+  try {
+    const res = await fetch(`/api/documents/${id}/reading-state`);
+    if (!res.ok) return null;
+    const body = await res.json();
+    return body.readingState ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export async function saveReadingState(id: string, readingState: ReadingState): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/documents/${id}/reading-state`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ readingState })
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Deletes a document from this device permanently — its record, its original file and its
  * annotations. There is no undo, which is why the library panel confirms first.
@@ -238,6 +326,42 @@ export async function fetchStorageInfo(): Promise<StorageInfo | null> {
     return res.json();
   } catch {
     return null;
+  }
+}
+
+/**
+ * The reader's saved preferences (name, theme colours, palettes, typography, dark mode), or null
+ * if none have been saved yet. This is the durable copy — see `saveRemoteSettings` for why it
+ * exists alongside localStorage rather than instead of it.
+ */
+export async function fetchRemoteSettings(): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetch('/api/settings');
+    if (!res.ok) return null;
+    const body = await res.json();
+    return body.settings ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Writes the reader's preferences to disk, alongside the document library rather than only to
+ * the browser's localStorage. The desktop build's embedded server binds to a fresh random port
+ * every launch (see server.ts's PORT=0 comment), and a different port is a different origin to
+ * the browser — so localStorage alone would quietly reset every restart and every auto-update.
+ * This file lives in the OS per-user application-data directory instead, which survives both.
+ */
+export async function saveRemoteSettings(settings: Record<string, unknown>): Promise<boolean> {
+  try {
+    const res = await fetch('/api/settings', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings })
+    });
+    return res.ok;
+  } catch {
+    return false;
   }
 }
 

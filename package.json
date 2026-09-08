@@ -1,8 +1,13 @@
 {
   "name": "marginalia",
   "private": true,
-  "version": "1.0.3",
+  "version": "1.1.0",
   "type": "module",
+  "license": "MIT",
+  "author": {
+    "name": "Shama Iqbal Hussain",
+    "email": "marginaliaannotator@gmail.com"
+  },
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
@@ -27,7 +32,7 @@
     "dotenv": "^17.2.3",
     "electron-updater": "^6.8.9",
     "epubjs": "^0.3.93",
-    "express": "^4.21.2",
+    "express": "^4.22.2",
     "jspdf": "^4.2.1",
     "lucide-react": "^0.546.0",
     "mammoth": "^1.12.1",
@@ -37,6 +42,11 @@
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "vite": "^6.2.3"
+  },
+  "overrides": {
+    "epubjs": {
+      "@xmldom/xmldom": "^0.9.12"
+    }
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
@@ -77,6 +87,7 @@
       }
     ],
     "mac": {
+      "icon": "build/icon.icns",
       "category": "public.app-category.productivity",
       "target": [
         {
@@ -96,6 +107,7 @@
       ]
     },
     "win": {
+      "icon": "build/icon.png",
       "target": [
         {
           "target": "nsis",
@@ -106,6 +118,7 @@
       ]
     },
     "linux": {
+      "icon": "build/icon.png",
       "category": "Office",
       "target": [
         "AppImage",

@@ -47,9 +47,48 @@ function pdfjsWasm(): Plugin {
   };
 }
 
+/**
+ * Serves the project's own legal documents at a fixed path, the same way `pdfjsWasm` above serves
+ * binaries that live outside `src/`. Only the two long, non-prose ones go through this — the MIT
+ * license text and the full third-party notices dump — since linking out to them (opened by
+ * Electron's window-open handler in the system's default browser; see electron/main.cjs) is
+ * simpler than inlining several hundred KB into the JS bundle. The Privacy Policy and Terms of
+ * Service are short enough to import directly with Vite's `?raw` suffix instead, right where
+ * they're rendered in Settings — see SettingsScreen.tsx.
+ */
+function legalDocs(): Plugin {
+  const root = path.resolve(__dirname);
+  const FILES = ['LICENSE', 'THIRD_PARTY_NOTICES.txt'];
+  const PREFIX = '/legal/';
+
+  return {
+    name: 'marginalia:legal-docs',
+    generateBundle() {
+      for (const file of FILES) {
+        this.emitFile({
+          type: 'asset',
+          fileName: `legal/${file}`,
+          source: fs.readFileSync(path.join(root, file))
+        });
+      }
+    },
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (!req.url?.startsWith(PREFIX)) return next();
+        const file = path.join(root, decodeURIComponent(req.url.slice(PREFIX.length)));
+        if (!FILES.includes(path.basename(file)) || path.dirname(file) !== root || !fs.existsSync(file)) {
+          return next();
+        }
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        fs.createReadStream(file).pipe(res);
+      });
+    }
+  };
+}
+
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss(), pdfjsWasm()],
+    plugins: [react(), tailwindcss(), pdfjsWasm(), legalDocs()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

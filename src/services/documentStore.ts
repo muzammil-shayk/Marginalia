@@ -63,6 +63,8 @@ export const updateDocument: DocumentBackend['updateDocument'] = (id, params) =>
 export const deleteDocument: DocumentBackend['deleteDocument'] = (id) => getBackend().deleteDocument(id);
 export const sweepExpiredDocuments: DocumentBackend['sweepExpiredDocuments'] = () =>
   getBackend().sweepExpiredDocuments();
+export const getSettings: DocumentBackend['getSettings'] = () => getBackend().getSettings();
+export const saveSettings: DocumentBackend['saveSettings'] = (settings) => getBackend().saveSettings(settings);
 
 /**
  * Starts the retention sweeper, or does nothing when retention is disabled — which is the

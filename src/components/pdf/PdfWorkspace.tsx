@@ -7,9 +7,9 @@
  * third party's permission.
  */
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy } from 'pdfjs-dist';
-import { Loader2, FileWarning, ArrowLeft, PanelRightClose, PanelRightOpen, Check, StickyNote } from 'lucide-react';
+import { Loader2, FileWarning, ArrowLeft, PanelRightClose, PanelRightOpen, Check, StickyNote, X, PanelTop, PanelBottom, FileStack } from 'lucide-react';
 import { Screen, TransitionType, UserSettings } from '../../types';
 import {
   Annotation,
@@ -40,7 +40,18 @@ import { LiveSelectionOverlay } from './LiveSelectionOverlay';
 import { MarkProperties } from './MarkProperties';
 import { ScrollPageIndicator } from './ScrollPageIndicator';
 import { exportAnnotatedPdf, downloadBlob } from './exportAnnotatedPdf';
-import { fetchAnnotations, originalDocumentUrl, saveAnnotations } from '../../utils/documentStorage';
+import {
+  deletePage,
+  fetchAnnotations,
+  fetchReadingState,
+  insertPage,
+  originalDocumentUrl,
+  saveAnnotations,
+  saveReadingState,
+  PageInsertHeight,
+  PageInsertPlacement,
+  ReadingState
+} from '../../utils/documentStorage';
 
 // pdf.js parses off the main thread. Resolving the worker through `import.meta.url` lets the
 // bundler fingerprint and ship it, which is what makes this work offline in the packaged app —
@@ -63,20 +74,29 @@ const SAVE_DEBOUNCE_MS = 700;
 /** The zoom a document opens at when nothing was remembered about it yet. */
 const DEFAULT_ZOOM = 1.25;
 
+/** Wheel-zoom bounds — the same floor and ceiling `fitWidth` and the toolbar's own zoom steps
+ *  already clamp to, so scrolling to zoom never reaches a size the rest of the app disagrees with. */
+const MIN_ZOOM = 0.25;
+const MAX_ZOOM = 5;
+
 /** Where each document's last zoom level and page are remembered between sessions. */
 const DOC_STATE_PREFIX = 'marginalia_docstate_';
 
-interface StoredDocState {
-  scale: number;
-  page: number;
-}
+type StoredDocState = ReadingState;
 
+/**
+ * The fast, synchronous first read — localStorage resolves before any network round trip could,
+ * so it is what the very first render uses. It is not the durable copy: see `fetchReadingState`
+ * and the hydration effect below for why the server's copy wins once it loads.
+ */
 function loadDocState(docId: string): StoredDocState | null {
   try {
     const raw = localStorage.getItem(DOC_STATE_PREFIX + docId);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (typeof parsed.scale === 'number' && typeof parsed.page === 'number') return parsed;
+    if (typeof parsed.scale === 'number' && typeof parsed.page === 'number') {
+      return { scale: parsed.scale, page: parsed.page, viewMode: parsed.viewMode === 'spread' ? 'spread' : 'single' };
+    }
   } catch {
     /* ignore */
   }
@@ -111,6 +131,8 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   const pageCount = pdf?.numPages ?? 0;
   const [loadError, setLoadError] = useState<string | null>(null);
   const [scale, setScale] = useState(DEFAULT_ZOOM);
+  /** Single page per row, or two side by side like an open book. */
+  const [viewMode, setViewMode] = useState<'single' | 'spread'>('single');
   /** Guards the one-time fit, so re-rendering never overrides a zoom the reader chose. */
   const fittedRef = useRef<string | null>(null);
   /** Guards the one-time restore of the last page read, the same way `fittedRef` guards zoom. */
@@ -138,6 +160,8 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       star: pick(4),
       exclamation: pick(5),
       ink: pick(0),
+      // Redaction reads as black by convention, independent of whatever theme colours are active.
+      mask: '#000000',
       note: pick(0),
       rect: pick(1),
       ellipse: pick(1),
@@ -149,6 +173,9 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   /** Stroke weight per tool, so a heavy pen and a fine box can coexist. */
   const [toolWeights, setToolWeights] = useState<Record<string, number>>({
     ink: 0.0028,
+    // Much thicker than the pen by default — a mask needs to fully cover a line of text, not
+    // trace it.
+    mask: 0.02,
     rect: 0.0028,
     ellipse: 0.0028,
     arrow: 0.0028,
@@ -230,7 +257,13 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   /** Which tool's colour/thickness submenu to open next — see the selection menu below. */
   const [openSubmenuFor, setOpenSubmenuFor] = useState<string | null>(null);
 
-  const fileUrl = originalDocumentUrl(docId, 'inline');
+  /**
+   * Bumped after a page is inserted, to force the PDF to be refetched. `fileUrl` is otherwise a
+   * stable string keyed only on `docId`, and the browser (and pdf.js's own cache) would
+   * otherwise keep serving the pre-insertion bytes it already has for that exact URL.
+   */
+  const [fileVersion, setFileVersion] = useState(0);
+  const fileUrl = `${originalDocumentUrl(docId, 'inline')}&v=${fileVersion}`;
 
   // ── Document ──
   useEffect(() => {
@@ -307,15 +340,18 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   // ── Mutations ──
   const createAnnotation = useCallback(
     (annotation: Annotation) => {
-      setAnnotations((prev) => [
-        ...prev,
-        { ...annotation, author: settings.name, weight: toolWeights[annotation.kind] ?? annotation.weight }
-      ]);
+      // `annotation.weight` is already correct — AnnotationLayer sets it from the ACTIVE TOOL's
+      // own weight at the moment of drawing (see `finishDrag`). Re-deriving it here from
+      // `toolWeights[annotation.kind]` used to look equivalent, back when every tool wrote its
+      // own matching kind — but `mask` draws an ordinary `kind: 'ink'` stroke with its own much
+      // thicker weight, and looking that back up by KIND rather than by TOOL silently replaced it
+      // with the plain pen's thin default the instant the stroke was created.
+      setAnnotations((prev) => [...prev, { ...annotation, author: settings.name }]);
       // Whatever was just drawn stays selected, so its properties menu appears beside it and its
       // colour and thickness can be changed straight away — the way every drawing app behaves.
       setSelectedId(annotation.id);
     },
-    [settings.name, toolWeights]
+    [settings.name]
   );
 
   const deleteAnnotation = useCallback((id: string) => {
@@ -459,11 +495,15 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
    *
    * Extending a mark to a genuinely longer passage still works: the new lines are uncovered, so
    * the selection as a whole does not count as already marked.
+   *
+   * `isTerminology` narrows the match further: Highlight and Terminology both produce
+   * `kind: 'highlight'` marks, but they are independent tools reader-wise, so highlighting an
+   * already-terminology-tagged passage (or vice versa) must not read as "already marked."
    */
   const isAlreadyMarked = useCallback(
-    (group: { page: number; rects: FractionRect[] }, kind: AnnotationKind) => {
+    (group: { page: number; rects: FractionRect[] }, kind: AnnotationKind, isTerminology = false) => {
       const existing = annotations
-        .filter((a) => a.kind === kind && a.page === group.page && a.rects?.length)
+        .filter((a) => a.kind === kind && Boolean(a.isTerminology) === isTerminology && a.page === group.page && a.rects?.length)
         .flatMap((a) => a.rects!);
       if (existing.length === 0) return false;
       // Every line has to be substantially covered. A little slack, because a selection's
@@ -614,18 +654,24 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
    */
   const applyTextMark = useCallback(
     (
-      kind: AnnotationKind,
+      tool: PdfTool,
       groups: { page: number; rects: FractionRect[]; quote: string }[],
       colorOverride?: string
     ) => {
+      // `terminology` is a toolbar tool, not a stored kind (see PdfTool) — it produces an ordinary
+      // highlight flagged `isTerminology`, coloured from the live setting rather than a tool
+      // colour, so it is exempt from recolouring here even if one were ever passed.
+      const isTerminology = tool === 'terminology';
+      const kind: AnnotationKind = isTerminology ? 'highlight' : (tool as AnnotationKind);
       const additions = groups
-        .filter((g) => !isAlreadyMarked(g, kind))
+        .filter((g) => !isAlreadyMarked(g, kind, isTerminology))
         .map<Annotation>((g) => ({
           id: newAnnotationId(),
           page: g.page,
           kind,
-          color: colorOverride ?? toolColors[kind] ?? NEUTRAL_COLORS[0],
+          color: isTerminology ? settings.terminologyColor : colorOverride ?? toolColors[kind] ?? NEUTRAL_COLORS[0],
           themeId: activeThemeId,
+          isTerminology: isTerminology || undefined,
           rects: g.rects,
           quote: g.quote,
           weight: toolWeights[kind],
@@ -653,7 +699,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       setSelectedId(additions[0].id);
       setPendingSelection(null);
     },
-    [isAlreadyMarked, toolColors, activeThemeId, settings.name, toolWeights, setAnnotations]
+    [isAlreadyMarked, toolColors, activeThemeId, settings.name, settings.terminologyColor, toolWeights, setAnnotations]
   );
 
   /**
@@ -685,7 +731,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
           setSelectionAnchor({ left: rect.left, top: rect.top, bottom: rect.bottom });
         }
         // Marking by selection always adds — never undoes.
-        if (isTextAnchored(tool as never)) applyTextMark(tool as AnnotationKind, groups);
+        if (isTextAnchored(tool)) applyTextMark(tool, groups);
       }, 0);
 
     document.addEventListener('mouseup', handleUp);
@@ -807,9 +853,9 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         Choosing the tool FIRST and then selecting is the opposite intent: the reader is settling
         in to highlight several passages in a row, and the tool stays armed until they change it.
       */
-      const actsOnSelection = isTextAnchored(next as never) && Boolean(pendingSelection?.length);
+      const actsOnSelection = isTextAnchored(next) && Boolean(pendingSelection?.length);
       if (actsOnSelection) {
-        applyTextMark(next as AnnotationKind, pendingSelection!);
+        applyTextMark(next, pendingSelection!);
         setTool('select');
         setSelectionAnchor(null);
         setOpenSubmenuFor(null);
@@ -820,8 +866,9 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       // Picking up a tool opens its options with it. Colour and thickness are chosen far more
       // often at the moment of switching tools than at any other time, and requiring a second
       // click on a chip the size of a grain of rice to reach them was a tax on the common case.
-      // Select and Erase have nothing to configure.
-      setOpenSubmenuFor(next === 'select' || next === 'erase' ? null : next);
+      // Select, Erase and Terminology have nothing to configure — a terminology mark's colour is
+      // the single setting in Settings → Terminology, not a per-tool choice.
+      setOpenSubmenuFor(next === 'select' || next === 'erase' || next === 'terminology' ? null : next);
     },
     [pendingSelection, applyTextMark]
   );
@@ -891,6 +938,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     if (stored) {
       fittedRef.current = docId;
       setScale(stored.scale);
+      setViewMode(stored.viewMode);
       return;
     }
 
@@ -921,12 +969,47 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     }
   }, [pdf, pageCount, docId, goToPage]);
 
-  /** Remembers this document's zoom and page so reopening it resumes where the reader left off. */
+  /**
+   * Fetches the server's saved reading position once per document — the durable copy, since it
+   * lives outside the browser's localStorage (see `ReadingState`'s doc comment). Applied by the
+   * effect below once the page count is known, so an out-of-range page can be validated exactly
+   * as the local restore effect above already does.
+   */
+  const [remoteReadingState, setRemoteReadingState] = useState<ReadingState | null>(null);
+  const fetchedReadingStateFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!docId || fetchedReadingStateFor.current === docId) return;
+    fetchedReadingStateFor.current = docId;
+    setRemoteReadingState(null);
+    void fetchReadingState(docId).then(setRemoteReadingState);
+  }, [docId]);
+
+  const appliedReadingStateFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!remoteReadingState || !docId || pageCount === 0 || appliedReadingStateFor.current === docId) return;
+    appliedReadingStateFor.current = docId;
+    fittedRef.current = docId;
+    restoredPageRef.current = docId;
+    setScale(remoteReadingState.scale);
+    setViewMode(remoteReadingState.viewMode);
+    if (remoteReadingState.page > 1 && remoteReadingState.page <= pageCount) {
+      requestAnimationFrame(() => goToPage(remoteReadingState.page));
+    }
+    saveDocState(docId, remoteReadingState);
+  }, [remoteReadingState, pageCount, docId, goToPage]);
+
+  /**
+   * Remembers this document's zoom, page and view mode so reopening it resumes where the reader
+   * left off — to localStorage immediately (fast, same-session cache) and to the server,
+   * debounced, so scrolling through a book doesn't fire a write on every frame.
+   */
   useEffect(() => {
     if (fittedRef.current !== docId) return;
-    const timer = setTimeout(() => saveDocState(docId, { scale, page: currentPage }), SAVE_DEBOUNCE_MS);
+    const state: StoredDocState = { scale, page: currentPage, viewMode };
+    saveDocState(docId, state);
+    const timer = setTimeout(() => { void saveReadingState(docId, state); }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [scale, currentPage, docId]);
+  }, [scale, currentPage, viewMode, docId]);
 
   const fitWidth = useCallback(async () => {
     if (!pdf || !scrollRef.current) return;
@@ -934,6 +1017,94 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     const unscaled = page.getViewport({ scale: 1 });
     setScale(Math.max(0.25, Math.min(5, (scrollRef.current.clientWidth - 48) / unscaled.width)));
   }, [pdf, currentPage]);
+
+  /** The row gap between two pages in a spread — matches the `gap-5` (1.25rem) the layout below uses. */
+  const SPREAD_GAP_PX = 20;
+
+  /**
+   * Switching to spread view without also shrinking the zoom left two full-width pages competing
+   * for the window's width — they simply wrapped onto separate lines via `flex-wrap`, so the
+   * layout looked unchanged and the toggle read as broken. Real two-page views solve this the
+   * same way "Fit to width" already solves the one-page case: compute a scale two pages plus the
+   * gap between them actually fit at, and apply it the moment the mode is switched on.
+   */
+  const handleViewModeChange = useCallback(
+    (mode: 'single' | 'spread') => {
+      setViewMode(mode);
+      if (mode !== 'spread' || !pdf || !scrollRef.current) return;
+      const container = scrollRef.current;
+      void pdf.getPage(currentPage).then((page) => {
+        const unscaled = page.getViewport({ scale: 1 });
+        const fit = (container.clientWidth - 48 - SPREAD_GAP_PX) / (2 * unscaled.width);
+        setScale(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, fit)));
+      });
+    },
+    [pdf, currentPage]
+  );
+
+  /**
+   * Where the pointer was, in content coordinates, at the moment a wheel-zoom last changed
+   * `scale` — read once by the layout effect below and cleared, so a zoom the toolbar's buttons
+   * trigger (which never sets this) doesn't move the scroll position at all.
+   */
+  const wheelZoomAnchorRef = useRef<{ contentX: number; contentY: number; viewportX: number; viewportY: number; prevScale: number } | null>(null);
+
+  /**
+   * Ctrl+wheel and trackpad pinch both zoom the page under the cursor — Chromium reports a
+   * trackpad pinch as a wheel event with `ctrlKey` set, indistinguishable from a physical
+   * Ctrl+scroll, so one handler covers both. The browser's own page-zoom gesture is suppressed
+   * with `preventDefault` so it doesn't fight this one; `{ passive: false }` is required for that
+   * to have any effect.
+   *
+   * The exponential response (`Math.exp` rather than a fixed step) keeps the feel proportionate
+   * whether `deltaY` arrives as the small fractional values a trackpad sends many times a second
+   * or the larger, coarser notches a physical mouse wheel sends — unlike the toolbar's zoom
+   * buttons, which deliberately snap to fixed steps instead.
+   */
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+
+      const rect = el.getBoundingClientRect();
+      const viewportX = e.clientX - rect.left;
+      const viewportY = e.clientY - rect.top;
+
+      setScale((prev) => {
+        const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, prev * Math.exp(-e.deltaY * 0.01)));
+        if (next === prev) return prev;
+        wheelZoomAnchorRef.current = {
+          contentX: el.scrollLeft + viewportX,
+          contentY: el.scrollTop + viewportY,
+          viewportX,
+          viewportY,
+          prevScale: prev
+        };
+        return next;
+      });
+    };
+
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  /**
+   * Restores the point under the cursor to the same screen position after a wheel-zoom resizes
+   * the pages — must run after layout so it measures the container at the new scale, not the one
+   * mid-transition.
+   */
+  useLayoutEffect(() => {
+    const anchor = wheelZoomAnchorRef.current;
+    const el = scrollRef.current;
+    wheelZoomAnchorRef.current = null;
+    if (!anchor || !el) return;
+    const ratio = scale / anchor.prevScale;
+    el.scrollLeft = anchor.contentX * ratio - anchor.viewportX;
+    el.scrollTop = anchor.contentY * ratio - anchor.viewportY;
+  }, [scale]);
 
   const scrollToAnnotation = useCallback(
     (a: Annotation) => {
@@ -956,14 +1127,68 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     setIsExporting(true);
     try {
       const safe = (documentTitle || 'document').replace(/[^a-z0-9]+/gi, '_').slice(0, 60);
-      const blob = await exportAnnotatedPdf(fileUrl, annotations, `${safe}_annotated.pdf`);
+      const blob = await exportAnnotatedPdf(fileUrl, annotations, `${safe}_annotated.pdf`, settings.terminologyColor);
       downloadBlob(blob, `${safe}_annotated.pdf`);
     } catch (err) {
       console.error('PDF export failed:', err);
     } finally {
       setIsExporting(false);
     }
-  }, [fileUrl, annotations, documentTitle]);
+  }, [fileUrl, annotations, documentTitle, settings.terminologyColor]);
+
+  // ── Insert page ──
+  const [insertPageMenuOpen, setInsertPageMenuOpen] = useState(false);
+  const [insertPlacement, setInsertPlacement] = useState<PageInsertPlacement>('after');
+  const [insertHeight, setInsertHeight] = useState<PageInsertHeight>('full');
+  const [isInsertingPage, setIsInsertingPage] = useState(false);
+  /** Set once an insert succeeds; applied by the effect below once the reloaded PDF actually
+   *  reports enough pages to scroll to — reloading is asynchronous, so this can't happen inline. */
+  const [pendingPageJump, setPendingPageJump] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (pendingPageJump === null || pageCount < pendingPageJump) return;
+    const target = pendingPageJump;
+    setPendingPageJump(null);
+    requestAnimationFrame(() => goToPage(target));
+  }, [pendingPageJump, pageCount, goToPage]);
+
+  const handleInsertPage = useCallback(async () => {
+    setIsInsertingPage(true);
+    try {
+      const result = await insertPage(docId, insertPlacement, insertHeight, currentPage);
+      if (!result) return;
+      setFileVersion((v) => v + 1);
+      const stored = await fetchAnnotations(docId);
+      resetAnnotations((stored.annotations as unknown as Annotation[]) || []);
+      setInsertPageMenuOpen(false);
+      if (result.insertedPages.length) setPendingPageJump(result.insertedPages[0]);
+    } finally {
+      setIsInsertingPage(false);
+    }
+  }, [docId, insertPlacement, insertHeight, currentPage, resetAnnotations]);
+
+  /** Guards against a double-fire while a delete is in flight — the corner button's own inline
+   *  confirm (see PdfPage.tsx) is the only confirmation now; there is no modal step above it. */
+  const [isDeletingPage, setIsDeletingPage] = useState(false);
+
+  const handleDeletePage = useCallback(
+    async (pageNumber: number) => {
+      if (isDeletingPage) return;
+      setIsDeletingPage(true);
+      try {
+        const result = await deletePage(docId, pageNumber);
+        if (!result) return;
+        setFileVersion((v) => v + 1);
+        const stored = await fetchAnnotations(docId);
+        resetAnnotations((stored.annotations as unknown as Annotation[]) || []);
+        // The page that took the deleted one's place, or the new last page if it was the last one.
+        setPendingPageJump(Math.min(pageNumber, result.pageCount));
+      } finally {
+        setIsDeletingPage(false);
+      }
+    },
+    [docId, isDeletingPage, resetAnnotations]
+  );
 
   const byPage = useMemo(() => {
     const map = new Map<number, Annotation[]>();
@@ -1102,6 +1327,9 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         currentPage={currentPage}
         pageCount={pageCount}
         onGoToPage={goToPage}
+        viewMode={viewMode}
+        onViewModeChange={handleViewModeChange}
+        onInsertPage={() => setInsertPageMenuOpen(true)}
         markCount={annotations.length}
         onExport={() => void handleExport()}
         isExporting={isExporting}
@@ -1126,41 +1354,61 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
               <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
               <p className="text-[12px] text-stone-500">Opening document…</p>
             </div>
-          ) : (
-            <div className="space-y-5">
-              {Array.from({ length: pageCount }, (_, i) => i + 1).map((pageNumber) => (
-                <PdfPage
-                  key={pageNumber}
-                  pdf={pdf}
-                  pageNumber={pageNumber}
-                  scale={scale}
-                  annotations={byPage.get(pageNumber) || []}
-                  tool={tool}
-                  activeColor={activeColor}
-                  activeThemeId={activeThemeId}
-                  toolWeight={toolWeights[tool]}
-                  toolStrokeStyle={toolStrokeStyles[tool]}
-                  toolNoteStyle={noteStyle}
-                  toolBracketSide={bracketSide}
-                  toolTextSize={textSize}
-                  toolTextAlign={textAlign}
-                  toolTextFont={textFont}
-                  toolTextBold={textBold}
-                  toolTextItalic={textItalic}
-                  isDark={isDark}
-                  selectedId={selectedId}
-                  hoveredId={hoveredId}
-                  onSelect={setSelectedId}
-                  onCreate={createAnnotation}
-                  onDelete={deleteAnnotation}
-                  onEdit={startEditing}
-                  onUpdate={updateAnnotation}
-                  onHover={setHoveredId}
-                  onVisible={setCurrentPage}
-                />
-              ))}
-            </div>
-          )}
+          ) : (() => {
+            const pageNumbers = Array.from({ length: pageCount }, (_, i) => i + 1);
+            const renderPage = (pageNumber: number) => (
+              <PdfPage
+                key={pageNumber}
+                pdf={pdf}
+                pageNumber={pageNumber}
+                scale={scale}
+                annotations={byPage.get(pageNumber) || []}
+                tool={tool}
+                activeColor={activeColor}
+                activeThemeId={activeThemeId}
+                terminologyColor={settings.terminologyColor}
+                toolWeight={toolWeights[tool]}
+                toolStrokeStyle={toolStrokeStyles[tool]}
+                toolNoteStyle={noteStyle}
+                toolBracketSide={bracketSide}
+                toolTextSize={textSize}
+                toolTextAlign={textAlign}
+                toolTextFont={textFont}
+                toolTextBold={textBold}
+                toolTextItalic={textItalic}
+                isDark={isDark}
+                selectedId={selectedId}
+                hoveredId={hoveredId}
+                onSelect={setSelectedId}
+                onCreate={createAnnotation}
+                onDelete={deleteAnnotation}
+                onEdit={startEditing}
+                onUpdate={updateAnnotation}
+                onHover={setHoveredId}
+                onVisible={setCurrentPage}
+                onDeletePage={pageCount > 1 ? () => void handleDeletePage(pageNumber) : undefined}
+              />
+            );
+
+            // Spread groups pages two to a row, like an open book — everything else about a page
+            // (its own AnnotationLayer, its own coordinate space) is unaffected by how it's laid
+            // out among its neighbours, so this is purely a container change.
+            if (viewMode === 'spread') {
+              const pairs: number[][] = [];
+              for (let i = 0; i < pageNumbers.length; i += 2) pairs.push(pageNumbers.slice(i, i + 2));
+              return (
+                <div className="space-y-5">
+                  {pairs.map((pair) => (
+                    <div key={pair[0]} className="flex flex-wrap items-start justify-center gap-5">
+                      {pair.map(renderPage)}
+                    </div>
+                  ))}
+                </div>
+              );
+            }
+
+            return <div className="space-y-5">{pageNumbers.map(renderPage)}</div>;
+          })()}
         </div>
 
         {isPanelOpen && (
@@ -1255,6 +1503,13 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
             createNoteForSelection();
             setTool('select');
           }}
+          onMarkTerminology={() => {
+            if (pendingSelection?.length) applyTextMark('terminology', pendingSelection);
+            setSelectionAnchor(null);
+            window.getSelection()?.removeAllRanges();
+            setTool('select');
+          }}
+          terminologyColor={settings.terminologyColor}
           // Dismissing takes the MENU away and leaves the passage selected. It fires on any
           // press outside — including a press on a toolbar tool — and clearing the selection
           // there would pull the passage out from under the very action being reached for.
@@ -1333,6 +1588,124 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
                 Save
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Insert page. Placement is relative to whichever page the reader was on when they opened
+          this — "before"/"after" read naturally against that, and "start and end" ignores it
+          entirely since it always means the very edges of the document. */}
+      {insertPageMenuOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          onClick={() => {
+            if (isInsertingPage) return;
+            setInsertPageMenuOpen(false);
+          }}
+        >
+          <div
+            className={`w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl ${
+              isDark ? 'bg-[#1b201d] border border-stone-800' : 'bg-white border border-stone-200'
+            }`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between">
+              <h3 className="font-serif text-[16px] font-semibold text-stone-900 dark:text-white">
+                Page {currentPage}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setInsertPageMenuOpen(false)}
+                className="p-1 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-semibold tracking-wider text-stone-500 uppercase">
+                Where
+              </span>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(
+                  [
+                    { id: 'before' as const, label: 'Before this page', icon: PanelTop },
+                    { id: 'after' as const, label: 'After this page', icon: PanelBottom },
+                    { id: 'both-ends' as const, label: 'Start & end of document', icon: FileStack }
+                  ]
+                ).map(({ id, label, icon: Icon }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setInsertPlacement(id)}
+                    className={`flex flex-col items-center gap-1 p-2.5 rounded-xl border text-[11px] font-medium text-center leading-tight cursor-pointer transition-all ${
+                      insertPlacement === id
+                        ? 'border-[#435c52] bg-[#435c52]/10 text-[#435c52] dark:text-emerald-300'
+                        : isDark
+                          ? 'border-stone-700 text-stone-400 hover:bg-stone-800'
+                          : 'border-stone-200 text-stone-600 hover:bg-stone-50'
+                    }`}
+                  >
+                    <Icon className="w-4 h-4" />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <span className="text-[11px] font-semibold tracking-wider text-stone-500 uppercase">
+                Size
+              </span>
+              <div className="grid grid-cols-3 gap-1.5">
+                {(
+                  [
+                    { id: 'full' as const, label: 'Full page' },
+                    { id: 'header' as const, label: 'Header strip' },
+                    { id: 'notes' as const, label: 'Notes page' }
+                  ]
+                ).map(({ id, label }) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setInsertHeight(id)}
+                    className={`p-2.5 rounded-xl border text-[11px] font-medium text-center leading-tight cursor-pointer transition-all ${
+                      insertHeight === id
+                        ? 'border-[#435c52] bg-[#435c52]/10 text-[#435c52] dark:text-emerald-300'
+                        : isDark
+                          ? 'border-stone-700 text-stone-400 hover:bg-stone-800'
+                          : 'border-stone-200 text-stone-600 hover:bg-stone-50'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                onClick={() => setInsertPageMenuOpen(false)}
+                disabled={isInsertingPage}
+                className="px-3.5 py-2 text-[12.5px] font-medium text-stone-500 hover:text-stone-800 dark:hover:text-white transition-colors cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleInsertPage()}
+                disabled={isInsertingPage}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#435c52] hover:bg-[#374c43] text-white text-[12.5px] font-semibold cursor-pointer disabled:opacity-60"
+              >
+                {isInsertingPage && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Insert
+              </button>
+            </div>
+
+            <p className="text-[11.5px] text-stone-400 dark:text-stone-500 text-center pt-1">
+              To delete a page instead, hover its bottom-right corner.
+            </p>
           </div>
         </div>
       )}

@@ -195,7 +195,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
    * tools would mean nothing could be drawn.
    */
   const capturesDrag =
-    tool === 'ink' || tool === 'note' || BOX_KINDS.includes(tool as never) || LINE_KINDS.includes(tool as never);
+    tool === 'ink' || tool === 'mask' || tool === 'note' || BOX_KINDS.includes(tool as never) || LINE_KINDS.includes(tool as never);
 
   // Marks stay clickable whatever the tool, so Select can pick one and Erase can remove one. The
   // exception is mid-drag, when a mark under the pointer must not steal the gesture.
@@ -244,12 +244,12 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       return;
     }
 
-    if (tool === 'ink' || BOX_KINDS.includes(tool as never) || LINE_KINDS.includes(tool as never)) {
+    if (tool === 'ink' || tool === 'mask' || BOX_KINDS.includes(tool as never) || LINE_KINDS.includes(tool as never)) {
       drawingRef.current = true;
       // Capture keeps the drag following the pointer when it leaves the page box, which would
       // otherwise truncate the mark at the edge.
       e.currentTarget.setPointerCapture(e.pointerId);
-      if (tool === 'ink') setDraftStroke([point]);
+      if (tool === 'ink' || tool === 'mask') setDraftStroke([point]);
       else {
         setDraftStart(point);
         setDraftEnd(point);
@@ -263,7 +263,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     if (!box) return;
     const point = pointToFraction(e.clientX, e.clientY, box);
 
-    if (tool === 'ink') {
+    if (tool === 'ink' || tool === 'mask') {
       setDraftStroke((prev) => {
         if (!prev) return [point];
         // Thin out near-duplicate samples: a high-frequency pointer emits far more points than
@@ -299,11 +299,13 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     drawingRef.current = false;
     e.currentTarget.releasePointerCapture?.(e.pointerId);
 
-    if (tool === 'ink') {
+    if (tool === 'ink' || tool === 'mask') {
       setDraftStroke((points) => {
         // A tap with the pen is a mis-click, not a one-point drawing.
         if (points && points.length > 1) {
           onCreate({
+            // `mask` draws exactly like `ink` (see PdfTool's doc comment) — same stored kind, just
+            // its own weight/colour defaults, so it needs no separate rendering or export path.
             ...base('ink'),
             points,
             weight: toolWeight ?? DEFAULT_WEIGHT,
@@ -1130,7 +1132,10 @@ export const TextMarkLayer: React.FC<{
   pageWidth: number;
   selectedId: string | null;
   hoveredId: string | null;
-}> = ({ annotations, pageWidth, selectedId, hoveredId }) => (
+  /** The live colour every `isTerminology` mark is drawn in, overriding its own stored `color` —
+   *  see `UserSettings.terminologyColor`. */
+  terminologyColor: string;
+}> = ({ annotations, pageWidth, selectedId, hoveredId, terminologyColor }) => (
   <div className="absolute inset-0 z-1" style={{ pointerEvents: 'none' }}>
     {annotations
       .filter((a) => a.rects?.length)
@@ -1169,7 +1174,9 @@ export const TextMarkLayer: React.FC<{
               key={`${a.id}-${index}`}
               style={{
                 ...style,
-                backgroundColor: a.color,
+                // A terminology mark ignores its own stored colour in favour of the live setting —
+                // see `terminologyColor`'s doc comment above.
+                backgroundColor: a.isTerminology ? terminologyColor : a.color,
                 // Multiply keeps the page's own text legible through the tint, which a flat
                 // opaque fill greys out.
                 mixBlendMode: 'multiply',

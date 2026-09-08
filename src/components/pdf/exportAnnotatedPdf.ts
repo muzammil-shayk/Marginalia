@@ -237,7 +237,9 @@ function dashPattern(style: StrokeStyle | undefined, widthPts: number): number[]
 export async function exportAnnotatedPdf(
   sourceUrl: string,
   annotations: Annotation[],
-  fileName: string
+  fileName: string,
+  /** Live colour for `isTerminology` marks — see `Annotation.isTerminology`'s doc comment. */
+  terminologyColor: string
 ): Promise<Blob> {
   const bytes = await (await fetch(sourceUrl)).arrayBuffer();
   const pdfDoc = await PDFDocument.load(bytes, { ignoreEncryption: true });
@@ -473,11 +475,23 @@ export async function exportAnnotatedPdf(
           w: Math.max(...a.rects.map((q) => q.x + q.w)) - Math.min(...a.rects.map((q) => q.x)),
           h: Math.max(...a.rects.map((q) => q.y + q.h)) - Math.min(...a.rects.map((q) => q.y))
         });
-        common(a, bounds, {
+        // A terminology mark ignores its own stored colour in favour of the live setting, exactly
+        // as TextMarkLayer does on screen — see `Annotation.isTerminology`.
+        const withEffectiveColor = a.isTerminology ? { ...a, color: terminologyColor } : a;
+        common(withEffectiveColor, bounds, {
           Subtype: PDFName.of(
             a.kind === 'highlight' ? 'Highlight' : a.kind === 'underline' ? 'Underline' : 'StrikeOut'
           ),
-          QuadPoints: context.obj(quads)
+          QuadPoints: context.obj(quads),
+          // Without `CA`, a viewer's default-generated appearance for a Highlight paints the
+          // colour fully opaque — a flat, saturated block that buries the text under it. On
+          // screen, TextMarkLayer renders the same fill at 38% opacity with a multiply blend
+          // (see AnnotationLayer.tsx) precisely so the tint stays a highlighter-style wash rather
+          // than a solid rectangle; `CA` is the PDF annotation model's equivalent lever, and
+          // `BM: Multiply` asks any viewer that honours blend modes to match the multiply too.
+          // Underline/strikeout are left untouched: on screen those are a thin full-colour line,
+          // not a filled tint, so there is nothing to reconcile.
+          ...(a.kind === 'highlight' ? { CA: 0.38, BM: PDFName.of('Multiply') } : {})
         });
         continue;
       }

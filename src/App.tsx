@@ -7,7 +7,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { Screen, TransitionType, UserSettings, StickyNote } from './types';
 import { initialSettings } from './data/mockData';
-import { fetchDocumentText, StoredDocumentMeta } from './utils/documentStorage';
+import { fetchDocumentText, fetchRemoteSettings, saveRemoteSettings, StoredDocumentMeta } from './utils/documentStorage';
 import { CustomFormat } from './utils/documentExporter';
 import { usePlainTextAnnotations } from './hooks/usePlainTextAnnotations';
 import { Header } from './components/Header';
@@ -38,19 +38,22 @@ const SESSION_KEY = 'marginalia_session';          // sessionStorage — per-tab
  * `initialSettings` means a missing field falls back to its default instead of crashing, and any
  * setting added in future is covered automatically.
  */
+/** Merges a partial, possibly-stale settings object over the current defaults — shared by the
+ *  localStorage read below and the server-backed one fetched after mount. */
+function mergeSettings(stored: Partial<UserSettings>): UserSettings {
+  return {
+    ...initialSettings,
+    ...stored,
+    // Arrays need an explicit guard: a stored `null`, or an empty list saved by mistake,
+    // would otherwise leave the app with no themes at all.
+    activeThemes: stored.activeThemes?.length ? stored.activeThemes : initialSettings.activeThemes
+  };
+}
+
 function loadSettings(): UserSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    if (raw) {
-      const stored = JSON.parse(raw) as Partial<UserSettings>;
-      return {
-        ...initialSettings,
-        ...stored,
-        // Arrays need an explicit guard: a stored `null`, or an empty list saved by mistake,
-        // would otherwise leave the app with no themes at all.
-        activeThemes: stored.activeThemes?.length ? stored.activeThemes : initialSettings.activeThemes
-      };
-    }
+    if (raw) return mergeSettings(JSON.parse(raw) as Partial<UserSettings>);
   } catch (e) { /* ignore */ }
   return initialSettings;
 }
@@ -199,8 +202,41 @@ export default function App() {
   }, [analysisDoc.docId, analysisDoc.text, analysisDoc.title]);
 
 
-  // ── Persist settings to localStorage ──
-  useEffect(() => { saveSettings(settings); }, [settings]);
+  /**
+   * Adopt the server-saved settings once, on mount, if they differ from what localStorage handed
+   * back as the initial state.
+   *
+   * The desktop build's embedded server binds to a fresh random port every launch (see
+   * server.ts's PORT=0 comment), and a different port is a different origin to the browser — so
+   * localStorage alone resets on every restart and every auto-update even though nothing was
+   * actually lost. The settings file on disk (see documentStore's getSettings) lives outside the
+   * browser's per-origin storage and survives both, so it is treated as the source of truth once
+   * it has loaded; a `null` response just means this is the very first launch, and the
+   * localStorage/default value already in state stands.
+   */
+  const hasHydratedRemoteSettings = useRef(false);
+  useEffect(() => {
+    fetchRemoteSettings().then((remote) => {
+      if (remote) setSettings(mergeSettings(remote as Partial<UserSettings>));
+      hasHydratedRemoteSettings.current = true;
+    });
+  }, []);
+
+  /**
+   * Persist settings to localStorage immediately (fast, same-session cache) and to the durable
+   * on-disk copy, debounced — the "Your name" field fires this on every keystroke, and writing
+   * straight through would mean a disk write and a request per character.
+   *
+   * Skipped until the remote hydration above has run once: otherwise the very first render (still
+   * holding localStorage's or the default's value) would overwrite the durable copy before it has
+   * even been read.
+   */
+  useEffect(() => {
+    saveSettings(settings);
+    if (!hasHydratedRemoteSettings.current) return;
+    const timer = window.setTimeout(() => { void saveRemoteSettings(settings as unknown as Record<string, unknown>); }, 400);
+    return () => window.clearTimeout(timer);
+  }, [settings]);
 
   /**
    * Persist the session, debounced.
@@ -362,6 +398,8 @@ export default function App() {
         onNavigate={navigate}
         isDark={isDark}
         hasActiveDocument={hasActiveDocument}
+        collapsed={Boolean(settings.sidebarCollapsed)}
+        onToggleCollapsed={() => setSettings((prev) => ({ ...prev, sidebarCollapsed: !prev.sidebarCollapsed }))}
       />
 
       {/* Main Content Area */}

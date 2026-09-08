@@ -11,5 +11,6 @@ export const initialSettings: UserSettings = {
     { id: '1', name: 'Key Concepts', color: '#52796f' },
     { id: '2', name: 'Questions', color: '#5e60ce' },
     { id: '3', name: 'Metaphors', color: '#d97706' }
-  ]
+  ],
+  terminologyColor: '#0ea5e9'
 };
