@@ -11,7 +11,7 @@
  */
 
 import React, { useRef } from 'react';
-import { Highlighter, Underline, Strikethrough, StickyNote, X } from 'lucide-react';
+import { Highlighter, Underline, Strikethrough, StickyNote, Tag, X } from 'lucide-react';
 import { AnnotationKind, REACTION_KINDS, reactionChar } from './annotationModel';
 import { UserSettings } from '../../types';
 import { HoverTooltip } from '../HoverTooltip';
@@ -37,6 +37,10 @@ interface SelectionPopoverProps {
   onThemeChange: (id: string) => void;
   onMark: (kind: AnnotationKind) => void;
   onCreateNote: () => void;
+  /** Marks the selection as a terminology term — always in `terminologyColor`, set in
+   *  Settings → Terminology rather than chosen per-mark. */
+  onMarkTerminology: () => void;
+  terminologyColor: string;
   onDismiss: () => void;
   /**
    * The X button specifically. Unlike `onDismiss` (outside click / Escape, which must leave the
@@ -74,6 +78,8 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
   onThemeChange,
   onMark,
   onCreateNote,
+  onMarkTerminology,
+  terminologyColor,
   onDismiss,
   onClose
 }) => {
@@ -125,6 +131,16 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
           <span className="hidden sm:inline">{label}</span>
         </button>
       ))}
+
+      <button
+        type="button"
+        onClick={onMarkTerminology}
+        title="Mark as a terminology term"
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold text-stone-700 dark:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
+      >
+        <Tag className="w-3.5 h-3.5" style={{ color: terminologyColor }} />
+        <span className="hidden sm:inline">Terminology</span>
+      </button>
 
       <div className={`w-px h-5 mx-0.5 ${isDark ? 'bg-stone-700' : 'bg-stone-200'}`} />
 

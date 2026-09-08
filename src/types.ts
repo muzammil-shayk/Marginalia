@@ -68,4 +68,17 @@ export interface UserSettings {
   customColors?: string[];
   /** Dismisses the Home screen's first-run callout prompting the reader to assign theme colours. */
   themeCtaDismissed?: boolean;
+  /**
+   * The single colour every terminology mark is drawn in, everywhere one appears.
+   *
+   * Unlike a theme's colour, this is never baked into the mark itself — `isTerminology` marks are
+   * always rendered and exported by looking this setting up live, so changing it here instantly
+   * recolours every terminology mark ever made, old and new alike, with no per-mark migration.
+   */
+  terminologyColor: string;
+  /** Which of the Home screen's collapsible sections (Key Concepts, Terminologies, Themes) the
+   *  reader has folded shut. Absent or false means expanded, so a fresh install shows everything. */
+  collapsedHomeSections?: Record<string, boolean>;
+  /** Whether the desktop sidebar is collapsed to icons-only. */
+  sidebarCollapsed?: boolean;
 }

@@ -25,6 +25,8 @@ import {
   Minus,
   Braces,
   Type,
+  Tag,
+  EyeOff,
   Eraser,
   Undo2,
   Redo2,
@@ -34,7 +36,10 @@ import {
   ChevronUp,
   ChevronDown,
   Download,
-  Loader2
+  Loader2,
+  BookOpen,
+  FileText,
+  FilePlus2
 } from 'lucide-react';
 import {
   BracketSide,
@@ -61,6 +66,7 @@ import {
 } from './StyleControls';
 import { useDismiss } from './useDismiss';
 import { UserSettings } from '../../types';
+import { HoverTooltip } from '../HoverTooltip';
 
 export { NEUTRAL_COLORS, WEIGHT_STEPS } from './StyleControls';
 
@@ -111,6 +117,9 @@ interface PdfToolbarProps {
   currentPage: number;
   pageCount: number;
   onGoToPage: (page: number) => void;
+  viewMode: 'single' | 'spread';
+  onViewModeChange: (mode: 'single' | 'spread') => void;
+  onInsertPage: () => void;
   markCount: number;
   onExport: () => void;
   isExporting: boolean;
@@ -124,10 +133,17 @@ const TOOL_GROUPS: { id: PdfTool; label: string; icon: React.ElementType; hint: 
     { id: 'select', label: 'Select', icon: MousePointer2, hint: 'Select text and marks, and drag marks around' },
     { id: 'highlight', label: 'Highlight', icon: Highlighter, hint: 'Select text to highlight it' },
     { id: 'underline', label: 'Underline', icon: Underline, hint: 'Select text to underline it' },
-    { id: 'strikeout', label: 'Strikeout', icon: Strikethrough, hint: 'Select text to strike it out' }
+    { id: 'strikeout', label: 'Strikeout', icon: Strikethrough, hint: 'Select text to strike it out' },
+    {
+      id: 'terminology',
+      label: 'Terminology',
+      icon: Tag,
+      hint: 'Select a term to mark it as terminology — always in the colour set in Settings'
+    }
   ],
   [
     { id: 'ink', label: 'Pen', icon: PenLine, hint: 'Draw freehand' },
+    { id: 'mask', label: 'Mask', icon: EyeOff, hint: 'Draw over something to black it out' },
     { id: 'rect', label: 'Rectangle', icon: Square, hint: 'Drag a rectangle' },
     { id: 'ellipse', label: 'Ellipse', icon: Circle, hint: 'Drag an ellipse' },
     { id: 'arrow', label: 'Arrow', icon: ArrowUpRight, hint: 'Drag to draw an arrow on the page' },
@@ -270,18 +286,19 @@ const ToolChip: React.FC<{
     // The menu closes only on a press outside or on Escape — never on picking an option, so
     // several can be tried in a row and each change is seen on the page.
     <div ref={ref} className="relative flex justify-center">
-      <button
-        type="button"
-        // Keeps a live text selection alive — pressing this must not discard what the reader is
-        // about to mark.
-        onMouseDown={(e) => e.preventDefault()}
-        onClick={() => setOpen((v) => !v)}
-        title={`${label} options`}
-        aria-label={`${label} options`}
-        aria-expanded={open}
-        className="w-6 h-2.5 rounded-full border border-black/15 dark:border-white/25 cursor-pointer transition-transform hover:scale-110"
-        style={{ backgroundColor: color }}
-      />
+      <HoverTooltip label={`${label} options`}>
+        <button
+          type="button"
+          // Keeps a live text selection alive — pressing this must not discard what the reader is
+          // about to mark.
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => setOpen((v) => !v)}
+          aria-label={`${label} options`}
+          aria-expanded={open}
+          className="w-6 h-2.5 rounded-full border border-black/15 dark:border-white/25 cursor-pointer transition-transform hover:scale-110"
+          style={{ backgroundColor: color }}
+        />
+      </HoverTooltip>
 
       {open && (
         <div
@@ -392,6 +409,9 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
   currentPage,
   pageCount,
   onGoToPage,
+  viewMode,
+  onViewModeChange,
+  onInsertPage,
   markCount,
   onExport,
   isExporting,
@@ -428,36 +448,38 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
               const isActive = tool === id;
               // A text tool with text already selected will act on that selection right now, so
               // it says so rather than describing what happens after the next drag.
-              const actsNow = hasSelection && isTextAnchored(id as never);
-              // Only tools that actually draw carry a style chip.
-              const hasChip = id !== 'erase' && id !== 'select';
+              const actsNow = hasSelection && isTextAnchored(id);
+              // Only tools that actually draw carry a style chip. Terminology has nothing to
+              // configure here either — its colour lives in Settings → Terminology, not per-tool.
+              const hasChip = id !== 'erase' && id !== 'select' && id !== 'terminology';
               // Everything drawn with a stroke gets a thickness and a dash pattern. Highlight is
               // the exception: it fills the line box rather than stroking, so it has neither.
               const strokes = isStroked(id as never);
               return (
                 <div key={id} className="flex flex-col items-center gap-0.5">
-                  <button
-                    type="button"
-                    // Pressing a button moves focus, which would clear the text selection before
-                    // the click handler ever ran. Suppressing the default keeps the selection
-                    // alive — and visible — so tapping the tool can apply to it.
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => onToolChange(id)}
-                    title={actsNow ? `${label} the selected text (tap again to undo)` : hint}
-                    aria-label={label}
-                    aria-pressed={isActive}
-                    className={`p-2 rounded-lg transition-all cursor-pointer ${
-                      isActive
-                        ? 'bg-[#435c52] text-white shadow-xs'
-                        : actsNow
-                          ? 'text-[#435c52] dark:text-emerald-300 bg-emerald-500/10 ring-1 ring-emerald-500/40'
-                          : isDark
-                            ? 'text-stone-400 hover:bg-stone-800 hover:text-stone-200'
-                            : 'text-stone-500 hover:bg-stone-100 hover:text-stone-800'
-                    }`}
-                  >
-                    <Icon className="w-4 h-4" />
-                  </button>
+                  <HoverTooltip label={actsNow ? `${label} the selected text (tap again to undo)` : hint}>
+                    <button
+                      type="button"
+                      // Pressing a button moves focus, which would clear the text selection before
+                      // the click handler ever ran. Suppressing the default keeps the selection
+                      // alive — and visible — so tapping the tool can apply to it.
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => onToolChange(id)}
+                      aria-label={label}
+                      aria-pressed={isActive}
+                      className={`p-2 rounded-lg transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-[#435c52] text-white shadow-xs'
+                          : actsNow
+                            ? 'text-[#435c52] dark:text-emerald-300 bg-emerald-500/10 ring-1 ring-emerald-500/40'
+                            : isDark
+                              ? 'text-stone-400 hover:bg-stone-800 hover:text-stone-200'
+                              : 'text-stone-500 hover:bg-stone-100 hover:text-stone-800'
+                      }`}
+                    >
+                      <Icon className="w-4 h-4" />
+                    </button>
+                  </HoverTooltip>
                   {hasChip ? (
                     <ToolChip
                       color={toolColors[id] ?? NEUTRAL_COLORS[0]}
@@ -508,90 +530,132 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
         {/* Undo and redo. Every edit goes through one history, so this covers drawing, moving,
             restyling, erasing and writing alike — not just the drawing tools. */}
         <div className="flex items-center gap-0.5">
-          <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={onUndo}
-            disabled={!canUndo}
-            title="Undo (⌘Z)"
-            aria-label="Undo"
-            className="p-2 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 hover:text-stone-800 dark:hover:text-stone-200 disabled:opacity-30 cursor-pointer disabled:cursor-default"
-          >
-            <Undo2 className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onMouseDown={(e) => e.preventDefault()}
-            onClick={onRedo}
-            disabled={!canRedo}
-            title="Redo (⇧⌘Z)"
-            aria-label="Redo"
-            className="p-2 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 hover:text-stone-800 dark:hover:text-stone-200 disabled:opacity-30 cursor-pointer disabled:cursor-default"
-          >
-            <Redo2 className="w-4 h-4" />
-          </button>
+          <HoverTooltip label="Undo (⌘Z)">
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={onUndo}
+              disabled={!canUndo}
+              aria-label="Undo"
+              className="p-2 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 hover:text-stone-800 dark:hover:text-stone-200 disabled:opacity-30 cursor-pointer disabled:cursor-default"
+            >
+              <Undo2 className="w-4 h-4" />
+            </button>
+          </HoverTooltip>
+          <HoverTooltip label="Redo (⇧⌘Z)">
+            <button
+              type="button"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={onRedo}
+              disabled={!canRedo}
+              aria-label="Redo"
+              className="p-2 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 hover:text-stone-800 dark:hover:text-stone-200 disabled:opacity-30 cursor-pointer disabled:cursor-default"
+            >
+              <Redo2 className="w-4 h-4" />
+            </button>
+          </HoverTooltip>
         </div>
 
         <div className="flex-1" />
 
         <div className="flex items-center gap-0.5">
-          <button
-            type="button"
-            onClick={() => onGoToPage(Math.max(1, currentPage - 1))}
-            disabled={currentPage <= 1}
-            title="Previous page"
-            className="p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 disabled:opacity-30 cursor-pointer disabled:cursor-default"
-          >
-            <ChevronUp className="w-4 h-4" />
-          </button>
+          <HoverTooltip label="Previous page">
+            <button
+              type="button"
+              onClick={() => onGoToPage(Math.max(1, currentPage - 1))}
+              disabled={currentPage <= 1}
+              className="p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 disabled:opacity-30 cursor-pointer disabled:cursor-default"
+            >
+              <ChevronUp className="w-4 h-4" />
+            </button>
+          </HoverTooltip>
           <span className="text-[12px] tabular-nums text-stone-600 dark:text-stone-400 px-1 select-none">
             {currentPage} / {pageCount || '—'}
           </span>
-          <button
-            type="button"
-            onClick={() => onGoToPage(Math.min(pageCount, currentPage + 1))}
-            disabled={currentPage >= pageCount}
-            title="Next page"
-            className="p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 disabled:opacity-30 cursor-pointer disabled:cursor-default"
-          >
-            <ChevronDown className="w-4 h-4" />
-          </button>
+          <HoverTooltip label="Next page">
+            <button
+              type="button"
+              onClick={() => onGoToPage(Math.min(pageCount, currentPage + 1))}
+              disabled={currentPage >= pageCount}
+              className="p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 disabled:opacity-30 cursor-pointer disabled:cursor-default"
+            >
+              <ChevronDown className="w-4 h-4" />
+            </button>
+          </HoverTooltip>
         </div>
 
         <div className={`w-px h-6 mx-1 ${isDark ? 'bg-stone-800' : 'bg-stone-200'}`} />
 
         <div className="flex items-center gap-0.5">
-          <button type="button" onClick={() => stepZoom(-1)} title="Zoom out" className="p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer">
-            <ZoomOut className="w-4 h-4" />
-          </button>
+          <HoverTooltip label="Zoom out">
+            <button type="button" onClick={() => stepZoom(-1)} className="p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer">
+              <ZoomOut className="w-4 h-4" />
+            </button>
+          </HoverTooltip>
           <span className="text-[12px] tabular-nums text-stone-600 dark:text-stone-400 w-11 text-center select-none">
             {Math.round(scale * 100)}%
           </span>
-          <button type="button" onClick={() => stepZoom(1)} title="Zoom in" className="p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer">
-            <ZoomIn className="w-4 h-4" />
-          </button>
-          <button type="button" onClick={onFitWidth} title="Fit to width" className="p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer">
-            <Maximize2 className="w-4 h-4" />
-          </button>
+          <HoverTooltip label="Zoom in">
+            <button type="button" onClick={() => stepZoom(1)} className="p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer">
+              <ZoomIn className="w-4 h-4" />
+            </button>
+          </HoverTooltip>
+          <HoverTooltip label="Fit to width">
+            <button type="button" onClick={onFitWidth} className="p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer">
+              <Maximize2 className="w-4 h-4" />
+            </button>
+          </HoverTooltip>
         </div>
 
         <div className={`w-px h-6 mx-1 ${isDark ? 'bg-stone-800' : 'bg-stone-200'}`} />
 
-        <button
-          type="button"
-          onClick={onExport}
-          disabled={isExporting}
-          title="Export a PDF with your marks embedded as real PDF annotations"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-stone-700 dark:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer disabled:opacity-50"
-        >
-          {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-          <span className="hidden lg:inline">Export PDF</span>
-        </button>
+        <HoverTooltip label={viewMode === 'spread' ? 'Switch to single-page view' : 'Switch to two-page spread view'}>
+          <button
+            type="button"
+            onClick={() => onViewModeChange(viewMode === 'spread' ? 'single' : 'spread')}
+            aria-pressed={viewMode === 'spread'}
+            className={`p-1.5 rounded-lg cursor-pointer ${
+              viewMode === 'spread'
+                ? 'bg-[#435c52] text-white shadow-xs'
+                : isDark
+                  ? 'text-stone-400 hover:bg-stone-800 hover:text-stone-200'
+                  : 'text-stone-500 hover:bg-stone-100 hover:text-stone-800'
+            }`}
+          >
+            {viewMode === 'spread' ? <BookOpen className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
+          </button>
+        </HoverTooltip>
+
+        <HoverTooltip label="Insert or delete a page">
+          <button
+            type="button"
+            onClick={onInsertPage}
+            className="p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
+          >
+            <FilePlus2 className="w-4 h-4" />
+          </button>
+        </HoverTooltip>
+
+        <div className={`w-px h-6 mx-1 ${isDark ? 'bg-stone-800' : 'bg-stone-200'}`} />
+
+        <HoverTooltip label="Export a PDF with your marks embedded as real PDF annotations">
+          <button
+            type="button"
+            onClick={onExport}
+            disabled={isExporting}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-stone-700 dark:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer disabled:opacity-50"
+          >
+            {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            <span className="hidden lg:inline">Export PDF</span>
+          </button>
+        </HoverTooltip>
 
         {markCount > 0 && (
-          <span className="text-[11px] font-semibold px-2 py-1 rounded-full bg-emerald-600/10 text-emerald-800 dark:text-emerald-300 select-none" title="Marks saved on this computer">
+          <HoverTooltip label="Marks saved on this computer">
+          <span className="text-[11px] font-semibold px-2 py-1 rounded-full bg-emerald-600/10 text-emerald-800 dark:text-emerald-300 select-none">
             {markCount}
           </span>
+          </HoverTooltip>
         )}
       </div>
 

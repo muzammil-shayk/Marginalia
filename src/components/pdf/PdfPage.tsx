@@ -14,6 +14,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist';
 import { TextLayer } from 'pdfjs-dist';
+import { Trash2 } from 'lucide-react';
 import {
   Annotation,
   BracketSide,
@@ -35,6 +36,8 @@ interface PdfPageProps {
   tool: PdfTool;
   activeColor: string;
   activeThemeId: string | null;
+  /** Live colour for `isTerminology` marks — see `TextMarkLayer`. */
+  terminologyColor: string;
   toolWeight?: number;
   toolStrokeStyle?: StrokeStyle;
   toolNoteStyle?: NoteStyle;
@@ -54,6 +57,9 @@ interface PdfPageProps {
   onUpdate: (id: string, patch: Partial<Annotation>) => void;
   onHover: (id: string | null) => void;
   onVisible: (pageNumber: number) => void;
+  /** Removes this page from the document entirely. Absent when the document has only one page
+   *  left — a PDF can't go to zero pages, so there is nothing this button could do there. */
+  onDeletePage?: () => void;
 }
 
 export const PdfPage: React.FC<PdfPageProps> = ({
@@ -64,6 +70,7 @@ export const PdfPage: React.FC<PdfPageProps> = ({
   tool,
   activeColor,
   activeThemeId,
+  terminologyColor,
   toolWeight,
   toolStrokeStyle,
   toolNoteStyle,
@@ -82,7 +89,8 @@ export const PdfPage: React.FC<PdfPageProps> = ({
   onEdit,
   onUpdate,
   onHover,
-  onVisible
+  onVisible,
+  onDeletePage
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -93,6 +101,10 @@ export const PdfPage: React.FC<PdfPageProps> = ({
   const [isNear, setIsNear] = useState(pageNumber <= 2);
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
   const [isRendered, setIsRendered] = useState(false);
+  /** A second tap to confirm, right where the first one was, rather than a separate dialog —
+   *  removing a page is destructive (it takes any marks on it with it) but common enough while
+   *  cleaning up an inserted page that a modal every time would be a tax on the common case. */
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   // Two observers: a wide margin decides whether the page renders at all, a tight one reports
   // which page the reader is actually looking at.
@@ -250,7 +262,7 @@ export const PdfPage: React.FC<PdfPageProps> = ({
     <div
       ref={containerRef}
       data-page-number={pageNumber}
-      className={`relative mx-auto shadow-lg rounded-sm ${isDark ? 'bg-stone-200' : 'bg-white'}`}
+      className={`group relative mx-auto shadow-lg rounded-sm ${isDark ? 'bg-stone-200' : 'bg-white'}`}
       style={{
         width: size ? `${size.width}px` : '100%',
         height: size ? `${size.height}px` : '60vh',
@@ -260,12 +272,57 @@ export const PdfPage: React.FC<PdfPageProps> = ({
     >
       <canvas ref={canvasRef} className="block absolute inset-0" />
 
+      {/* Delete this page — resting quietly out of the way until the reader is actually looking
+          at this corner, the same "revealed on hover" rule the library shelf's own card actions
+          follow, so a page at rest reads as a page rather than a row of controls. */}
+      {onDeletePage && (
+        <div className="absolute bottom-2 right-2 z-20">
+          {confirmingDelete ? (
+            <div
+              className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg shadow-lg border text-[11px] ${
+                isDark ? 'bg-[#1b201d] border-stone-700 text-stone-200' : 'bg-white border-stone-200 text-stone-700'
+              }`}
+            >
+              <span className="font-medium">Delete page {pageNumber}?</span>
+              <button
+                type="button"
+                onClick={() => setConfirmingDelete(false)}
+                className="px-1.5 py-0.5 rounded text-stone-500 hover:text-stone-800 dark:hover:text-white cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmingDelete(false);
+                  onDeletePage();
+                }}
+                className="px-1.5 py-0.5 rounded bg-red-600 hover:bg-red-700 text-white font-semibold cursor-pointer"
+              >
+                Delete
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmingDelete(true)}
+              title={`Delete page ${pageNumber}`}
+              aria-label={`Delete page ${pageNumber}`}
+              className="p-1.5 rounded-lg bg-black/50 text-white opacity-0 group-hover:opacity-100 hover:bg-red-600 transition-all cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Below the text layer, deliberately — see `TextMarkLayer`. */}
       <TextMarkLayer
         annotations={annotations}
         pageWidth={size?.width ?? 0}
         selectedId={selectedId}
         hoveredId={hoveredId}
+        terminologyColor={terminologyColor}
       />
 
       {/* Placeholder while a page is off-screen or mid-render, so scrolling a long document shows

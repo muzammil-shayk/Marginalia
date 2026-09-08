@@ -113,17 +113,26 @@ export const MarkProperties: React.FC<MarkPropertiesProps> = ({
       onPointerDown={(e) => e.stopPropagation()}
     >
       <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-400 px-1 capitalize">
-        {mark.kind}
+        {mark.isTerminology ? 'Terminology' : mark.kind}
       </span>
 
       <Divider isDark={isDark} />
 
-      <ColorPalette
-        color={mark.color}
-        themes={settings.activeThemes}
-        customColors={settings.customColors}
-        onChange={onColorChange}
-      />
+      {mark.isTerminology ? (
+        // Its colour is the live Settings → Terminology setting, not a per-mark choice — offering
+        // a palette here would change `mark.color` for nothing, since rendering and export both
+        // ignore it in favour of that setting.
+        <span className="text-[10.5px] text-stone-400 dark:text-stone-500 px-1 italic whitespace-nowrap">
+          Colour set in Settings → Terminology
+        </span>
+      ) : (
+        <ColorPalette
+          color={mark.color}
+          themes={settings.activeThemes}
+          customColors={settings.customColors}
+          onChange={onColorChange}
+        />
+      )}
 
       {showsStroke && (
         <>
