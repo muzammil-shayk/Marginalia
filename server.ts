@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import path from "path";
+import { PDFDocument } from "pdf-lib";
 import {
   saveDocument,
   attachOriginal,
@@ -12,6 +13,8 @@ import {
   startDocumentSweeper,
   setStoreDirectory,
   getBackend,
+  getSettings,
+  saveSettings,
   RETENTION_DAYS
 } from "./src/services/documentStore";
 
@@ -386,6 +389,175 @@ app.put("/api/documents/:id/annotations", express.json({ limit: "25mb" }), async
 });
 
 /**
+ * Where the reader left off in this document — zoom, page and single/spread view. Stored here
+ * rather than in the browser's localStorage because the desktop build's embedded server binds to
+ * a fresh random port every launch (see this file's PORT=0 comment), and a different port is a
+ * different origin to the browser — so localStorage would reset on every restart and update.
+ */
+app.get("/api/documents/:id/reading-state", async (req, res) => {
+  const doc = await getDocument(req.params.id);
+  if (!doc) {
+    res.status(404).json({ error: "Document not found." });
+    return;
+  }
+  res.json({ readingState: doc.readingState });
+});
+
+app.put("/api/documents/:id/reading-state", async (req, res) => {
+  const { readingState } = req.body || {};
+  if (
+    !readingState ||
+    typeof readingState.scale !== "number" ||
+    typeof readingState.page !== "number" ||
+    (readingState.viewMode !== "single" && readingState.viewMode !== "spread")
+  ) {
+    res.status(400).json({ error: "A valid readingState object is required." });
+    return;
+  }
+  const meta = await updateDocument(req.params.id, { readingState });
+  if (!meta) {
+    res.status(404).json({ error: "Document not found." });
+    return;
+  }
+  res.json({ saved: true });
+});
+
+/**
+ * Inserts a blank page into the document's own stored PDF file — a REAL page written into the
+ * original, not a virtual overlay the app only pretends is there. That is what lets it render
+ * through the ordinary page pipeline, be annotated as any other page can, and survive being
+ * closed and reopened or exported, all with no separate code path.
+ *
+ * `placement` is relative to `anchorPage` (the page the reader had open) for 'before'/'after', or
+ * ignores it for 'both-ends', which inserts one blank page at the very start of the document and
+ * appends another at the very end in the same request. `height` picks the new page's height in
+ * points; its width always matches the page it's inserted next to, so it never reads as a
+ * foreign size dropped into the document.
+ *
+ * Every existing annotation's `page` number is shifted to match wherever the new page landed —
+ * the whole reason this recomputes rather than trusting the client to know the new numbering.
+ */
+app.post("/api/documents/:id/pages", express.json(), async (req, res) => {
+  const { placement, anchorPage, height } = req.body || {};
+  if (placement !== "before" && placement !== "after" && placement !== "both-ends") {
+    res.status(400).json({ error: "placement must be 'before', 'after', or 'both-ends'." });
+    return;
+  }
+  if (height !== "full" && height !== "header" && height !== "notes") {
+    res.status(400).json({ error: "height must be 'full', 'header', or 'notes'." });
+    return;
+  }
+  if (placement !== "both-ends" && (typeof anchorPage !== "number" || anchorPage < 1)) {
+    res.status(400).json({ error: "A valid anchorPage is required for 'before' and 'after'." });
+    return;
+  }
+
+  const [original, doc] = await Promise.all([getOriginal(req.params.id), getDocument(req.params.id)]);
+  if (!original || !doc) {
+    res.status(404).json({ error: "Document not found." });
+    return;
+  }
+  if (path.extname(original.filename).toLowerCase() !== ".pdf") {
+    res.status(400).json({ error: "Only PDF documents support inserted pages." });
+    return;
+  }
+
+  try {
+    const pdfDoc = await PDFDocument.load(original.buffer, { ignoreEncryption: true });
+    const pageCountBefore = pdfDoc.getPageCount();
+    if (pageCountBefore === 0) {
+      res.status(400).json({ error: "This PDF has no pages." });
+      return;
+    }
+
+    const referenceIndex = Math.min(Math.max((anchorPage || 1) - 1, 0), pageCountBefore - 1);
+    const { width, height: fullHeight } = pdfDoc.getPage(referenceIndex).getSize();
+    const insertHeight = height === "full" ? fullHeight : height === "header" ? 108 : 252; // 1.5in / 3.5in
+
+    let insertedPages: number[];
+    if (placement === "both-ends") {
+      pdfDoc.insertPage(0, [width, insertHeight]);
+      pdfDoc.addPage([width, insertHeight]);
+      insertedPages = [1, pdfDoc.getPageCount()];
+    } else {
+      const index0 = placement === "before" ? referenceIndex : referenceIndex + 1;
+      pdfDoc.insertPage(index0, [width, insertHeight]);
+      insertedPages = [index0 + 1];
+    }
+
+    const newBytes = await pdfDoc.save();
+    await attachOriginal(req.params.id, Buffer.from(newBytes), original.filename);
+
+    // Only the page inserted at the very start ever shifts an EXISTING annotation — one appended
+    // at the end is by definition after everything already there. For 'before'/'after', that's
+    // wherever the single new page landed, in both cases.
+    const shiftFrom = placement === "both-ends" ? 1 : insertedPages[0];
+    const annotations = doc.annotations.map((a) =>
+      typeof a.page === "number" && a.page >= shiftFrom ? { ...a, page: a.page + 1 } : a
+    );
+    await updateDocument(req.params.id, { annotations });
+
+    res.json({ insertedPages, pageCount: pdfDoc.getPageCount() });
+  } catch (error) {
+    console.error("Page insertion failed:", error);
+    res.status(500).json({ error: "Could not insert a page into this PDF." });
+  }
+});
+
+/**
+ * Removes one page — inserted or original — from the document's own stored PDF file. Any
+ * annotation ON that page is discarded with it; everything after it shifts down by one to close
+ * the gap, the mirror image of what inserting a page does to the numbering.
+ *
+ * Refuses to remove the last remaining page: a PDF with zero pages isn't a smaller document, it's
+ * a broken one, and the right way to get rid of a whole document is deleting it, not emptying it.
+ */
+app.delete("/api/documents/:id/pages/:pageNumber", async (req, res) => {
+  const pageNumber = Number(req.params.pageNumber);
+  if (!Number.isInteger(pageNumber) || pageNumber < 1) {
+    res.status(400).json({ error: "pageNumber must be a positive integer." });
+    return;
+  }
+
+  const [original, doc] = await Promise.all([getOriginal(req.params.id), getDocument(req.params.id)]);
+  if (!original || !doc) {
+    res.status(404).json({ error: "Document not found." });
+    return;
+  }
+  if (path.extname(original.filename).toLowerCase() !== ".pdf") {
+    res.status(400).json({ error: "Only PDF documents support removing pages." });
+    return;
+  }
+
+  try {
+    const pdfDoc = await PDFDocument.load(original.buffer, { ignoreEncryption: true });
+    const pageCountBefore = pdfDoc.getPageCount();
+    if (pageNumber > pageCountBefore) {
+      res.status(400).json({ error: "That page doesn't exist." });
+      return;
+    }
+    if (pageCountBefore <= 1) {
+      res.status(400).json({ error: "Can't remove the only page left. Delete the document instead." });
+      return;
+    }
+
+    pdfDoc.removePage(pageNumber - 1);
+    const newBytes = await pdfDoc.save();
+    await attachOriginal(req.params.id, Buffer.from(newBytes), original.filename);
+
+    const annotations = doc.annotations
+      .filter((a) => typeof a.page !== "number" || a.page !== pageNumber)
+      .map((a) => (typeof a.page === "number" && a.page > pageNumber ? { ...a, page: a.page - 1 } : a));
+    await updateDocument(req.params.id, { annotations });
+
+    res.json({ pageCount: pdfDoc.getPageCount() });
+  } catch (error) {
+    console.error("Page removal failed:", error);
+    res.status(500).json({ error: "Could not remove that page." });
+  }
+});
+
+/**
  * Deletes a document from this machine's disk permanently — record, original file and
  * annotations. Backs the library panel's delete button, which is the only way documents leave
  * the store now that retention is opt-in.
@@ -402,6 +574,29 @@ app.get("/api/storage", (_req, res) => {
     location: getBackend().location,
     retentionDays: RETENTION_DAYS
   });
+});
+
+/**
+ * The reader's preferences — name, theme colours, palettes, typography, dark mode. Stored beside
+ * the document library (see LocalDocumentBackend.getSettings) rather than left to the browser's
+ * localStorage, because the desktop build's embedded server binds to a fresh random port every
+ * launch: a different port is a different origin, so localStorage would reset on every restart
+ * and every auto-update. This file lives in the OS per-user application-data directory instead,
+ * which — like the library itself — survives both.
+ */
+app.get("/api/settings", async (_req, res) => {
+  const settings = await getSettings();
+  res.json({ settings });
+});
+
+app.put("/api/settings", async (req, res) => {
+  const settings = req.body?.settings;
+  if (!settings || typeof settings !== "object") {
+    res.status(400).json({ error: "settings object required" });
+    return;
+  }
+  await saveSettings(settings);
+  res.json({ saved: true });
 });
 
 /**
