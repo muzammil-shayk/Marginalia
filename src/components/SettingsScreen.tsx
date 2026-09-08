@@ -9,8 +9,10 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { ChevronDown, Plus, Sparkles, X, Check, Palette, Droplet, HardDrive, FolderOpen, Loader2, Info, RotateCcw, DownloadCloud, AlertTriangle } from 'lucide-react';
+import { ChevronDown, Plus, Sparkles, X, Check, Palette, Droplet, HardDrive, FolderOpen, Loader2, Info, RotateCcw, DownloadCloud, AlertTriangle, Scale, ExternalLink, Tag } from 'lucide-react';
 import { Screen, TransitionType, UserSettings } from '../types';
+import privacyText from '../../PRIVACY.md?raw';
+import termsText from '../../TERMS.md?raw';
 import {
   AppInfo,
   StorageInfo,
@@ -155,6 +157,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
       setIsChangingFolder(false);
     }
   };
+
+  const [expandedLegalDoc, setExpandedLegalDoc] = useState<'privacy' | 'terms' | null>(null);
 
   const [isAddingTheme, setIsAddingTheme] = useState(false);
   const [editingThemeId, setEditingThemeId] = useState<string | null>(null);
@@ -547,6 +551,46 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             </p>
           </div>
         )}
+      </section>
+
+      {/* TERMINOLOGY — one colour, not a list: every terminology mark reads this setting live
+          rather than storing its own colour, so changing it here recolours every term already
+          marked, not just new ones. */}
+      <section
+        id="settings-terminology-section"
+        className={`p-5 rounded-2xl border transition-all ${
+          isDark
+            ? 'bg-[#1b201d] border-stone-800 text-stone-100'
+            : 'bg-white border-stone-200/80 text-stone-900 shadow-xs'
+        }`}
+      >
+        <div className="flex items-center gap-1.5 mb-1">
+          <Tag className="w-3.5 h-3.5 text-stone-500" />
+          <span className="text-[11px] font-semibold tracking-wider text-stone-500 uppercase">
+            TERMINOLOGY
+          </span>
+        </div>
+        <p className="text-[12px] text-stone-500 dark:text-stone-400 mb-4">
+          The colour every term you mark with the Terminology tool is shown in — across every
+          document. Change it here and every term already marked updates too.
+        </p>
+        <div className="flex items-center gap-3">
+          <label
+            title="Click to change the terminology colour"
+            className="block w-11 h-11 rounded-xl border border-black/10 dark:border-white/15 cursor-pointer overflow-hidden shadow-xs shrink-0"
+            style={{ backgroundColor: settings.terminologyColor }}
+          >
+            <input
+              type="color"
+              value={settings.terminologyColor}
+              onChange={(e) => onUpdateSettings((p) => ({ ...p, terminologyColor: e.target.value }))}
+              className="opacity-0 w-full h-full cursor-pointer"
+            />
+          </label>
+          <span className="text-[12.5px] font-mono tabular-nums text-stone-500 dark:text-stone-400 uppercase">
+            {settings.terminologyColor}
+          </span>
+        </div>
       </section>
 
       {/* ACTIVE THEMES Section */}
@@ -990,6 +1034,87 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           For close readers,
           <br />
           Built with care by Shama Iqbal Hussain.
+        </p>
+      </section>
+
+      {/* LEGAL — the Privacy Policy and Terms (which also cover the app's name) ship with the
+          app itself, so they're readable without a network connection or a web browser. */}
+      <section
+        id="settings-legal-section"
+        className={`p-5 rounded-2xl border transition-all ${
+          isDark
+            ? 'bg-[#1b201d] border-stone-800 text-stone-100'
+            : 'bg-white border-stone-200/80 text-stone-900 shadow-xs'
+        }`}
+      >
+        <div className="flex items-center gap-1.5 mb-4">
+          <Scale className="w-3.5 h-3.5 text-stone-500" />
+          <span className="text-[11px] font-semibold tracking-wider text-stone-500 uppercase">
+            LEGAL
+          </span>
+        </div>
+
+        <div className="space-y-2">
+          {(
+            [
+              { key: 'privacy' as const, label: 'Privacy Policy', text: privacyText },
+              { key: 'terms' as const, label: 'Terms of Service', text: termsText }
+            ]
+          ).map(({ key, label, text }) => {
+            const isOpen = expandedLegalDoc === key;
+            return (
+              <div
+                key={key}
+                className={`rounded-xl border overflow-hidden transition-all ${
+                  isDark ? 'border-stone-800/80' : 'border-stone-200/80'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => setExpandedLegalDoc(isOpen ? null : key)}
+                  className="w-full flex items-center justify-between px-3.5 py-3 text-[13px] font-medium text-stone-800 dark:text-stone-200 cursor-pointer"
+                >
+                  <span>{label}</span>
+                  <ChevronDown
+                    className={`w-3.5 h-3.5 text-stone-400 transition-transform ${isOpen ? 'rotate-180' : ''}`}
+                  />
+                </button>
+                {isOpen && (
+                  <div
+                    className={`px-3.5 pb-3.5 pt-1 max-h-72 overflow-y-auto text-[12px] leading-relaxed whitespace-pre-wrap border-t ${
+                      isDark ? 'border-stone-800/80 text-stone-300' : 'border-stone-200/80 text-stone-600'
+                    }`}
+                  >
+                    {text}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 mt-4 pt-3 border-t border-stone-200 dark:border-stone-700/50">
+          <a
+            href="/legal/LICENSE"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-[12px] font-semibold text-[#435c52] dark:text-stone-300 hover:underline cursor-pointer"
+          >
+            MIT License <ExternalLink className="w-3 h-3" />
+          </a>
+          <a
+            href="/legal/THIRD_PARTY_NOTICES.txt"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-[12px] font-semibold text-[#435c52] dark:text-stone-300 hover:underline cursor-pointer"
+          >
+            Third-Party Notices <ExternalLink className="w-3 h-3" />
+          </a>
+        </div>
+
+        <p className="mt-3 pt-3 border-t border-stone-200 dark:border-stone-700/50 text-[11.5px] text-stone-400 dark:text-stone-500 leading-snug">
+          "Marginalia" is the name of this app only — it is not affiliated with any other
+          project or service that happens to share the name.
         </p>
       </section>
     </main>

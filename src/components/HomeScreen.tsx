@@ -26,10 +26,13 @@ import {
   Type,
   Highlighter,
   Palette,
-  Sparkles
+  Sparkles,
+  Lightbulb,
+  Tag,
+  ChevronDown
 } from 'lucide-react';
 import { isAnnotatableFormat } from '../utils/annotatableFormats';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Screen, TransitionType, UserSettings } from '../types';
 import { initialSettings } from '../data/mockData';
 import { documentThumbnail } from '../utils/documentThumbnail';
@@ -148,6 +151,69 @@ const DocumentCover: React.FC<{ doc: StoredDocumentMeta }> = ({ doc }) => {
   );
 };
 
+/**
+ * One of the Home screen's dashboard cards — Key Concepts, Terminologies, Themes — sharing one
+ * header treatment (an icon badge tinted with the card's own accent colour, a summary that stays
+ * visible even collapsed, and a chevron) so folding one shut is a single, predictable gesture
+ * wherever it appears, rather than each card inventing its own affordance for it.
+ */
+const CollapsibleSection: React.FC<{
+  icon: React.ElementType;
+  accentColor: string;
+  title: string;
+  summary: string;
+  isDark: boolean;
+  collapsed: boolean;
+  onToggle: () => void;
+  children: React.ReactNode;
+}> = ({ icon: Icon, accentColor, title, summary, isDark, collapsed, onToggle, children }) => (
+  <section
+    className={`mb-5 rounded-2xl border overflow-hidden ${
+      isDark ? 'bg-[#1b201d] border-stone-800' : 'bg-white border-stone-200/80 shadow-xs'
+    }`}
+  >
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-expanded={!collapsed}
+      className={`w-full flex items-center gap-3 p-4 text-left cursor-pointer transition-colors ${
+        isDark ? 'hover:bg-white/[0.03]' : 'hover:bg-black/[0.015]'
+      }`}
+    >
+      <span
+        className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+        style={{ backgroundColor: `${accentColor}1f` }}
+      >
+        <Icon className="w-4 h-4" style={{ color: accentColor }} />
+      </span>
+      <span className="flex-1 min-w-0">
+        <h3 className="font-serif text-[15px] font-semibold text-stone-900 dark:text-white leading-tight">
+          {title}
+        </h3>
+        <span className="text-[12px] text-stone-500 dark:text-stone-400">{summary}</span>
+      </span>
+      <ChevronDown
+        className={`w-4 h-4 text-stone-400 shrink-0 transition-transform ${collapsed ? '' : 'rotate-180'}`}
+      />
+    </button>
+    <AnimatePresence initial={false}>
+      {!collapsed && (
+        <motion.div
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 'auto', opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ duration: 0.2, ease: 'easeInOut' }}
+          style={{ overflow: 'hidden' }}
+        >
+          <div className={`px-4 pb-4 pt-1 border-t ${isDark ? 'border-stone-800/80' : 'border-stone-100'}`}>
+            {children}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  </section>
+);
+
 export const HomeScreen: React.FC<HomeScreenProps> = ({
   onNavigate,
   isDark = false,
@@ -225,6 +291,38 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     }
     return map;
   }, [settings.activeThemes, stored]);
+
+  /**
+   * "Key Concepts" gets its own banner rather than sitting inside the general Themes dashboard —
+   * matched by name rather than by the default id, so the split still finds it if the reader ever
+   * renames or recreates it. Everything else stays in the Themes list below.
+   */
+  const keyConceptsTheme = useMemo(
+    () => settings.activeThemes.find((t) => t.name.trim().toLowerCase() === 'key concepts'),
+    [settings.activeThemes]
+  );
+  const otherThemes = useMemo(
+    () => settings.activeThemes.filter((t) => t.id !== keyConceptsTheme?.id),
+    [settings.activeThemes, keyConceptsTheme]
+  );
+
+  /** Which books, across the whole library, carry at least one terminology mark. */
+  const documentsWithTerminology = useMemo(
+    () => stored.filter((d) => (d.terminologyCount ?? 0) > 0),
+    [stored]
+  );
+
+  /** Persisted rather than session-local, so a section folded shut stays that way next launch —
+   *  the same reasoning as every other reading preference in `UserSettings`. */
+  const toggleHomeSection = useCallback(
+    (key: string) => {
+      onUpdateSettings?.((prev) => ({
+        ...prev,
+        collapsedHomeSections: { ...prev.collapsedHomeSections, [key]: !prev.collapsedHomeSections?.[key] }
+      }));
+    },
+    [onUpdateSettings]
+  );
 
   /** True only while the reader has never touched the three starter themes at all — id, name AND
    *  colour all still match what a fresh install ships with — so the callout disappears the
@@ -550,24 +648,107 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </motion.section>
       )}
 
-      {/* Themes: a dashboard reading of the same colour-coding used everywhere marks are made —
-          which books, across the whole library, touch each theme. Secondary to the shelf below
-          it, so it stays visually quieter than the active-document card above it. */}
-      {settings.activeThemes.length > 0 && (
-        <section
-          id="themes-dashboard-section"
-          className={`mb-7 rounded-2xl border p-5 ${
-            isDark ? 'bg-[#1b201d] border-stone-800' : 'bg-white border-stone-200/80 shadow-xs'
-          }`}
-        >
-          <div className="flex items-center gap-1.5 mb-3.5">
-            <Sparkles className="w-3.5 h-3.5 text-stone-500" />
-            <span className="text-[11px] font-semibold tracking-wider text-stone-500 uppercase">
-              Themes
-            </span>
+      {/* Key Concepts: split out of the general Themes dashboard into its own card, since it's
+          the one every fresh install ships with and reaches for first — worth a glance on its
+          own rather than buried as one row among however many other themes exist. */}
+      {keyConceptsTheme && (() => {
+        const books = booksByTheme.get(keyConceptsTheme.id) ?? [];
+        return (
+          <CollapsibleSection
+            icon={Lightbulb}
+            accentColor={keyConceptsTheme.color}
+            title="Key Concepts"
+            summary={books.length === 0 ? 'No books tagged yet' : `${books.length} book${books.length === 1 ? '' : 's'}`}
+            isDark={isDark}
+            collapsed={Boolean(settings.collapsedHomeSections?.keyConcepts)}
+            onToggle={() => toggleHomeSection('keyConcepts')}
+          >
+            {books.length === 0 ? (
+              <p className="text-[12px] text-stone-400 dark:text-stone-500 italic pt-2">
+                Tag a passage under Key Concepts while annotating, and the book will show up here.
+              </p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5 pt-2">
+                {books.map((doc) => (
+                  <button
+                    key={doc.id}
+                    type="button"
+                    onClick={() => onOpenStoredDocument?.(doc)}
+                    title={`Open ${doc.title}`}
+                    className={`px-2 py-0.5 rounded-full text-[12px] font-medium cursor-pointer transition-colors ${
+                      isDark
+                        ? 'bg-stone-800 text-stone-300 hover:bg-stone-700'
+                        : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                    }`}
+                  >
+                    {doc.title}
+                  </button>
+                ))}
+              </div>
+            )}
+          </CollapsibleSection>
+        );
+      })()}
+
+      {/* Terminologies: which books have terms marked with the Terminology tool, all shown in the
+          one colour set in Settings → Terminology — recolouring it there updates every term
+          already marked, so this swatch is never stale. */}
+      <CollapsibleSection
+        icon={Tag}
+        accentColor={settings.terminologyColor}
+        title="Terminologies"
+        summary={
+          documentsWithTerminology.length === 0
+            ? 'No terms marked yet'
+            : `${documentsWithTerminology.length} book${documentsWithTerminology.length === 1 ? '' : 's'}`
+        }
+        isDark={isDark}
+        collapsed={Boolean(settings.collapsedHomeSections?.terminologies)}
+        onToggle={() => toggleHomeSection('terminologies')}
+      >
+        {documentsWithTerminology.length === 0 ? (
+          <p className="text-[12px] text-stone-400 dark:text-stone-500 italic pt-2">
+            Select a word or phrase while annotating and choose Terminology to mark it.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-1.5 pt-2">
+            {documentsWithTerminology.map((doc) => (
+              <button
+                key={doc.id}
+                type="button"
+                onClick={() => onOpenStoredDocument?.(doc)}
+                title={`Open ${doc.title}`}
+                className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[12px] font-medium cursor-pointer transition-colors ${
+                  isDark
+                    ? 'bg-stone-800 text-stone-300 hover:bg-stone-700'
+                    : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                }`}
+              >
+                {doc.title}
+                <span className="text-stone-400 dark:text-stone-500 tabular-nums">
+                  {doc.terminologyCount}
+                </span>
+              </button>
+            ))}
           </div>
-          <div className="space-y-3">
-            {settings.activeThemes.map((theme) => {
+        )}
+      </CollapsibleSection>
+
+      {/* Themes: a dashboard reading of the same colour-coding used everywhere marks are made —
+          which books, across the whole library, touch each theme. Key Concepts is split out into
+          its own card above, so this covers everything else. */}
+      {otherThemes.length > 0 && (
+        <CollapsibleSection
+          icon={Sparkles}
+          accentColor="#8a8578"
+          title="Themes"
+          summary={`${otherThemes.length} theme${otherThemes.length === 1 ? '' : 's'}`}
+          isDark={isDark}
+          collapsed={Boolean(settings.collapsedHomeSections?.themes)}
+          onToggle={() => toggleHomeSection('themes')}
+        >
+          <div className="space-y-3 pt-2">
+            {otherThemes.map((theme) => {
               const books = booksByTheme.get(theme.id) ?? [];
               return (
                 <div key={theme.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1.5">
@@ -607,7 +788,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               );
             })}
           </div>
-        </section>
+        </CollapsibleSection>
       )}
 
       {/* The shelf. Tracks size themselves, so the same page is full on a laptop and on a wide

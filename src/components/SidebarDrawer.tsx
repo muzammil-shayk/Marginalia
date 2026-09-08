@@ -2,6 +2,7 @@ import React from 'react';
 import { X, BookOpen, PlusCircle, Settings } from 'lucide-react';
 import { Screen, TransitionType } from '../types';
 import { AnimatePresence, motion } from 'motion/react';
+import logo from '../assets/images/marginalia-logo.png';
 
 interface SidebarDrawerProps {
   isOpen: boolean;
@@ -43,7 +44,9 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
             <div className="space-y-6">
           {/* Header */}
           <div className="flex items-center justify-between pb-4 border-b border-stone-200 dark:border-stone-800">
-            <h2 className="font-serif text-[22px] font-semibold">Marginalia</h2>
+            <h2>
+              <img src={logo} alt="Marginalia" className="h-16 w-auto" />
+            </h2>
             <button
               type="button"
               onClick={onClose}

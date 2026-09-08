@@ -32,6 +32,15 @@ const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
 /** The default library location: per-user and writable on every platform Electron targets. */
 const DEFAULT_STORE_DIR = path.join(app.getPath('userData'), 'library');
 
+/**
+ * The app's icon, sourced straight from the repo rather than duplicated. A packaged build gets
+ * its icon from the OS-level bundle metadata electron-builder writes at build time (see
+ * package.json's `build.mac.icon` / `build.win.icon`), so this path is only ever read when it
+ * exists — which in practice means only in an unpackaged `npm run desktop` run, where Electron
+ * otherwise shows its own generic icon in the Dock and taskbar instead of Marginalia's.
+ */
+const APP_ICON_PATH = path.join(__dirname, '..', 'build', 'icon.png');
+
 function readConfig() {
   try {
     return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
@@ -143,6 +152,8 @@ function createWindow() {
     // title bar area, which is where the desktop build's chrome lives.
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     show: false,
+    // Windows/Linux taskbar icon in an unpackaged run — see APP_ICON_PATH.
+    icon: fs.existsSync(APP_ICON_PATH) ? APP_ICON_PATH : undefined,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       // The renderer is our own client, but it loads over HTTP and parses user-supplied PDFs,
@@ -415,6 +426,12 @@ if (!app.requestSingleInstanceLock()) {
       mainWindow.focus();
     }
   });
+
+  // macOS's Dock icon, for an unpackaged run — see APP_ICON_PATH. A packaged .app gets its Dock
+  // icon from Info.plist automatically and never touches this.
+  if (process.platform === 'darwin' && app.dock && fs.existsSync(APP_ICON_PATH)) {
+    app.dock.setIcon(APP_ICON_PATH);
+  }
 
   app.whenReady().then(async () => {
     try {

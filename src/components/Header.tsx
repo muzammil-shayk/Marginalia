@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Menu, Search } from 'lucide-react';
 import { Screen } from '../types';
 import { motion, useScroll, useMotionValueEvent } from 'motion/react';
+import logo from '../assets/images/marginalia-logo.png';
 
 interface HeaderProps {
   onNavigate: (screen: Screen, transition?: 'push' | 'push_back' | 'slide_up' | 'none') => void;
@@ -66,9 +67,9 @@ export const Header: React.FC<HeaderProps> = ({
       <h1
         id="marginalia-brand-logo"
         onClick={handleLogoClick}
-        className="cursor-pointer select-none font-serif text-[26px] font-normal tracking-tight hover:opacity-85 transition-opacity"
+        className="cursor-pointer select-none hover:opacity-85 transition-opacity"
       >
-        <div className="inline-block">Marginalia</div>
+        <img src={logo} alt="Marginalia" className="h-16 w-auto" />
       </h1>
 
       {/* Search Button (also fulfills //a[contains(., 'Search')] | //button[contains(., 'search')]) */}
