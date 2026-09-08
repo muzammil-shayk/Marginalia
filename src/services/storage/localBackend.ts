@@ -23,6 +23,7 @@ import {
   UpdateDocumentParams,
   buildMeta,
   computeThemeIds,
+  countTerminology,
   countWords,
   isValidId,
   safeExtension
@@ -34,11 +35,14 @@ export class LocalDocumentBackend implements DocumentBackend {
   private docsDir: string;
   private originalsDir: string;
 
+  private settingsPath: string;
+
   constructor(storeRoot?: string) {
     const root = storeRoot ? path.resolve(storeRoot) : path.join(process.cwd(), '.marginalia-store');
     this.location = root;
     this.docsDir = path.join(root, 'documents');
     this.originalsDir = path.join(root, 'originals');
+    this.settingsPath = path.join(root, 'settings.json');
     this.name = `local disk (${root})`;
   }
 
@@ -68,7 +72,7 @@ export class LocalDocumentBackend implements DocumentBackend {
   async saveDocument(params: SaveDocumentParams): Promise<DocumentMeta> {
     await this.ensureDirs();
     const meta = buildMeta(crypto.randomBytes(16).toString('hex'), params);
-    await this.write({ ...meta, text: params.text, annotations: [] });
+    await this.write({ ...meta, text: params.text, annotations: [], readingState: null });
     return meta;
   }
 
@@ -109,8 +113,10 @@ export class LocalDocumentBackend implements DocumentBackend {
         // "nothing tagged yet" rather than an error. Recomputed rather than trusted from disk in
         // case an older record's cached value has drifted from its own annotations.
         themeIds: computeThemeIds(annotations),
+        terminologyCount: countTerminology(annotations),
         text: raw.text || '',
-        annotations
+        annotations,
+        readingState: raw.readingState ?? null
       };
     } catch {
       return null;
@@ -148,13 +154,19 @@ export class LocalDocumentBackend implements DocumentBackend {
     if (!doc) return null;
 
     const annotations = params.annotations ?? doc.annotations;
+    // A reading-position-only update (scale/page/view mode, saved every few seconds while
+    // scrolling) must not bump `updatedAt` — that field drives the library's "recent activity"
+    // sort, and merely reading a book is not the activity it means to track.
+    const changesActivity = params.title !== undefined || params.annotations !== undefined;
     const updated: StoredDocument = {
       ...doc,
       title: params.title?.trim() ? params.title.trim() : doc.title,
       annotations,
       annotationCount: annotations.length,
       themeIds: computeThemeIds(annotations),
-      updatedAt: new Date().toISOString()
+      terminologyCount: countTerminology(annotations),
+      readingState: params.readingState ?? doc.readingState,
+      updatedAt: changesActivity ? new Date().toISOString() : doc.updatedAt
     };
     await this.write(updated);
 
@@ -219,5 +231,19 @@ export class LocalDocumentBackend implements DocumentBackend {
     }
 
     return removed;
+  }
+
+  async getSettings(): Promise<Record<string, unknown> | null> {
+    try {
+      const raw = await fs.readFile(this.settingsPath, 'utf-8');
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  async saveSettings(settings: Record<string, unknown>): Promise<void> {
+    await fs.mkdir(this.location, { recursive: true });
+    await fs.writeFile(this.settingsPath, JSON.stringify(settings), 'utf-8');
   }
 }

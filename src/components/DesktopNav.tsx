@@ -1,41 +1,32 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { BookOpen, Settings as SettingsIcon, PlusCircle, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { Screen, TransitionType } from '../types';
-
-/**
- * Remembered across sessions, because a collapsed sidebar is a standing preference about how much
- * of the window belongs to the document rather than a per-visit decision.
- */
-const COLLAPSED_KEY = 'marginalia:sidebar-collapsed';
+import logo from '../assets/images/marginalia-logo.png';
 
 interface DesktopNavProps {
   currentScreen: Screen;
   onNavigate: (screen: Screen, transition?: TransitionType) => void;
   isDark?: boolean;
   hasActiveDocument?: boolean;
+  /**
+   * A collapsed sidebar is a standing preference about how much of the window belongs to the
+   * document rather than a per-visit decision, so it lives in `UserSettings` (server-backed) —
+   * not local component state — the same as every other reading preference. Controlled from
+   * `App.tsx` rather than owned here so it persists the same way settings changed from Settings
+   * itself do.
+   */
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 }
 
 export const DesktopNav: React.FC<DesktopNavProps> = ({
   currentScreen,
   onNavigate,
   isDark = false,
-  hasActiveDocument = true
+  hasActiveDocument = true,
+  collapsed,
+  onToggleCollapsed
 }) => {
-  const [collapsed, setCollapsed] = useState(() => {
-    try {
-      return localStorage.getItem(COLLAPSED_KEY) === 'true';
-    } catch {
-      return false;
-    }
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(COLLAPSED_KEY, String(collapsed));
-    } catch {
-      // A blocked storage quota is not a reason to stop the sidebar working this session.
-    }
-  }, [collapsed]);
 
   const tabs: Array<{
     id: Screen;
@@ -69,14 +60,14 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
         {!collapsed && (
           <h1
             onClick={() => onNavigate('home', 'push_back')}
-            className="font-serif text-[22px] font-normal tracking-tight cursor-pointer hover:opacity-80 transition-opacity text-stone-900 dark:text-white select-none flex-1 min-w-0 truncate"
+            className="cursor-pointer hover:opacity-80 transition-opacity select-none flex-1 min-w-0"
           >
-            Marginalia
+            <img src={logo} alt="Marginalia" className="h-20 w-auto" />
           </h1>
         )}
         <button
           type="button"
-          onClick={() => setCollapsed((v) => !v)}
+          onClick={onToggleCollapsed}
           title={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
           aria-label={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
           aria-expanded={!collapsed}

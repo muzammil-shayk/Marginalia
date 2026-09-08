@@ -36,6 +36,13 @@ export interface DocumentMeta {
    * `computeThemeIds`.
    */
   themeIds: string[];
+  /**
+   * How many of this document's annotations are marked terminology (`isTerminology: true`), so
+   * the Home screen's Terminologies section can list which books have any without loading every
+   * document's full annotation list. Recomputed from `annotations` on every write, the same way
+   * `themeIds` is; see `countTerminology`.
+   */
+  terminologyCount: number;
 }
 
 /**
@@ -55,9 +62,24 @@ export interface StoredAnnotation {
   [key: string]: unknown;
 }
 
+/**
+ * Where the reader left off in the PDF workspace — zoom, page and single/spread view. Stored
+ * alongside the document itself (not in the browser's localStorage) for the same reason
+ * `UserSettings` moved server-side: the desktop build's embedded server binds to a fresh random
+ * port every launch, so a different port is a different origin to the browser, and localStorage
+ * would silently reset on every restart and every auto-update.
+ */
+export interface ReadingState {
+  scale: number;
+  page: number;
+  viewMode: 'single' | 'spread';
+}
+
 export interface StoredDocument extends DocumentMeta {
   text: string;
   annotations: StoredAnnotation[];
+  /** Null until the reader has opened this document in the PDF workspace at least once. */
+  readingState: ReadingState | null;
 }
 
 /**
@@ -73,6 +95,11 @@ export function computeThemeIds(annotations: StoredAnnotation[]): string[] {
   return Array.from(ids).sort();
 }
 
+/** How many of this document's annotations are marked terminology. See `DocumentMeta.terminologyCount`. */
+export function countTerminology(annotations: StoredAnnotation[]): number {
+  return annotations.filter((a) => a.isTerminology === true).length;
+}
+
 export interface SaveDocumentParams {
   title: string;
   text: string;
@@ -84,6 +111,7 @@ export interface SaveDocumentParams {
 export interface UpdateDocumentParams {
   title?: string;
   annotations?: StoredAnnotation[];
+  readingState?: ReadingState;
 }
 
 export interface DocumentBackend {
@@ -100,6 +128,16 @@ export interface DocumentBackend {
   deleteDocument(id: string): Promise<boolean>;
   /** Deletes every document past its retention window; returns how many were removed. */
   sweepExpiredDocuments(): Promise<number>;
+  /**
+   * The reader's preferences (name, theme colours, palettes, typography, …), or null if none have
+   * been saved yet. Kept alongside the document library rather than in the browser's localStorage
+   * because the desktop build's embedded server binds to a fresh random port every launch (see
+   * server.ts) — a different port is a different origin to the browser, so localStorage would
+   * silently reset on every restart and every auto-update. This file, like the library itself,
+   * lives in the OS per-user application-data directory and survives both.
+   */
+  getSettings(): Promise<Record<string, unknown> | null>;
+  saveSettings(settings: Record<string, unknown>): Promise<void>;
 }
 
 /**
@@ -150,6 +188,7 @@ export function buildMeta(id: string, params: SaveDocumentParams): DocumentMeta 
     updatedAt: now.toISOString(),
     expiresAt: RETENTION_DAYS > 0 ? new Date(now.getTime() + RETENTION_DAYS * 864e5).toISOString() : null,
     annotationCount: 0,
-    themeIds: []
+    themeIds: [],
+    terminologyCount: 0
   };
 }
