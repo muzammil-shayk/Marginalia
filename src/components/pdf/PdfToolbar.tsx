@@ -123,6 +123,14 @@ interface PdfToolbarProps {
   markCount: number;
   onExport: () => void;
   isExporting: boolean;
+  /**
+   * The side-panel toggles, rendered at the end of this row.
+   *
+   * They used to live in the title bar above, which on the desktop build is also the window's
+   * drag handle and its traffic-light corner — a cramped strip that is not where any of the
+   * document's other controls are. They belong with the rest of the tools.
+   */
+  panelControls?: React.ReactNode;
   isDark?: boolean;
 }
 
@@ -415,6 +423,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
   markCount,
   onExport,
   isExporting,
+  panelControls,
   isDark = false
 }) => {
   const stepZoom = (direction: 1 | -1) => {
@@ -440,7 +449,15 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
       }`}
     >
       {/* Tools, undo, zoom and pages */}
-      <div className="flex items-center gap-1 flex-wrap px-3 py-2">
+      {/*
+        One row, always.
+        
+        It used to wrap, which on a narrow window dropped the last controls onto a second line —
+        a toolbar that changes height as the window resizes, and buttons that move out from under
+        the cursor. Scrolling sideways keeps the row one row: the tools nearest the left are the
+        ones reached most, and nothing is ever hidden without a way to reach it.
+      */}
+      <div className="flex items-center gap-1 flex-nowrap px-3 py-2 overflow-x-auto [scrollbar-width:thin] [&>*]:shrink-0">
         {TOOL_GROUPS.map((group, groupIndex) => (
           <React.Fragment key={groupIndex}>
             {groupIndex > 0 && <div className={`w-px h-6 mx-1 ${isDark ? 'bg-stone-800' : 'bg-stone-200'}`} />}
@@ -657,6 +674,16 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
           </span>
           </HoverTooltip>
         )}
+
+        {panelControls && (
+          <>
+            <div className={`w-px h-6 mx-1 ${isDark ? 'bg-stone-800' : 'bg-stone-200'}`} />
+            {panelControls}
+          </>
+        )}
+        {/* A little air after the last control, so it is not flush against the window edge when
+            the row is scrolled to its end. */}
+        <span aria-hidden className="w-1" />
       </div>
 
       {/* Themes. The per-tool chips above set style; this row sets which theme a new mark is

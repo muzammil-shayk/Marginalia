@@ -190,7 +190,21 @@ export default function App() {
    * key them on — the title-keyed `documentNotes`/`documentFormats` session maps above remain
    * only as the fallback for text that was never saved (see the ReaderScreen render below).
    */
-  const plainTextAnnotations = usePlainTextAnnotations(analysisDoc.docId);
+  /**
+   * The text reader's own notes and formats — and ONLY for documents the text reader owns.
+   *
+   * This hook writes a document's entire annotation list, and so does the PDF workspace. Running
+   * both against the same document meant two writers with two ideas of what it contains: on every
+   * open the store took two identical writes, and the hook's copy of the workspace's marks was a
+   * snapshot taken once, never refreshed as the reader kept marking. Any later write from this
+   * side would put that stale snapshot back and take the newer marks with it.
+   *
+   * A document opens in exactly one of the two surfaces, so exactly one of them should be able to
+   * write it. PDFs and imported HTML belong to the workspace; everything else to the reader.
+   */
+  const plainTextAnnotations = usePlainTextAnnotations(
+    analysisDoc.docId && !isAnnotatableFormat(analysisDoc.format) ? analysisDoc.docId : undefined
+  );
 
   // The library panel reads from disk rather than from `uploadedLibrary`, so it can show
   // documents stored in earlier sessions that this one has never opened. `libraryRefreshToken`

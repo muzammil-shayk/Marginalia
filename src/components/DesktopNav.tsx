@@ -55,21 +55,53 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
   return (
     <aside
       id="desktop-sidebar-nav"
-      className={`hidden md:flex flex-col shrink-0 border-r h-screen sticky top-0 transition-all duration-200 ${
+      className={`relative hidden md:flex flex-col shrink-0 h-screen sticky top-0 transition-all duration-200 overflow-hidden ${
         collapsed ? 'w-16' : 'w-55'
-      } ${isDark ? 'bg-[#121514] border-white/5' : 'bg-[#f9f9f7] border-black/4'}`}
+      } ${isDark ? 'bg-[#121514]' : 'bg-[#f9f9f7]'}`}
     >
+      {/*
+        The sidebar's edge, drawn from below the title bar rather than by a `border-r` on the
+        aside itself.
+        
+        macOS puts its close/minimise/zoom buttons in the window's top-left corner, which — with
+        the system title bar hidden — is inside this sidebar. A full-height border ran a hairline
+        straight through them, and when the sidebar is collapsed to 64px the buttons are wider
+        than the column, so the line cut across them. Starting the edge below that zone leaves the
+        corner clean on every platform, and costs nothing where there are no traffic lights.
+      */}
+      <span
+        aria-hidden
+        className={`absolute top-9 right-0 bottom-0 w-px ${isDark ? 'bg-white/5' : 'bg-black/4'}`}
+      />
       {/* Brand, and the control that gives the window back to the document. */}
       {/* Also a drag handle: on macOS the traffic lights sit in this corner and the rest of the
           row is the only chrome the window has left to be moved by. */}
-      <div className={`app-drag flex items-center pt-6 pb-4 ${collapsed ? 'flex-col gap-3 px-2' : 'px-4 gap-2'}`}>
+      <div
+        className={`app-drag flex items-center pb-4 overflow-hidden ${
+          // Collapsed, this column starts under macOS's traffic lights, so it begins lower than
+          // the expanded sidebar does — where the wordmark is tall enough to clear them anyway.
+          collapsed ? 'flex-col gap-4 px-2 pt-11' : 'px-4 gap-2 pt-6'
+        }`}
+      >
         {!collapsed && (
           <h1
             onClick={() => onNavigate('home', 'push_back')}
-            className="cursor-pointer hover:opacity-80 transition-opacity select-none flex-1 min-w-0"
+            className="cursor-pointer hover:opacity-80 transition-opacity select-none flex-1 min-w-0 overflow-hidden"
           >
-            <img src={logo} alt="Marginalia" className="h-20 w-auto" />
+            <img src={logo} alt="Marginalia" className="h-20 w-auto shrink-0" />
           </h1>
+        )}
+        {collapsed && (
+          // The wordmark does not survive a 64px column, so the icon stands in for it. Same
+          // artwork as the app icon and the tab favicon, so the mark is one thing everywhere.
+          <button
+            type="button"
+            onClick={() => onNavigate('home', 'push_back')}
+            title="Marginalia"
+            className="shrink-0 rounded-xl cursor-pointer transition-transform duration-150 ease-out hover:opacity-85 active:scale-[0.94]"
+          >
+            <img src="/favicon.png" alt="Marginalia" className="w-9 h-9 rounded-xl" />
+          </button>
         )}
         <button
           type="button"
@@ -84,7 +116,7 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
       </div>
 
       {/* Nav Items */}
-      <nav className={`flex-1 space-y-1 pt-2 ${collapsed ? 'px-2' : 'px-3'}`}>
+      <nav className={`flex-1 space-y-1 pt-2 overflow-hidden ${collapsed ? 'px-2' : 'px-3'}`}>
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const active = isActive(tab);
@@ -100,7 +132,7 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
                   onNavigate(tab.screen, tab.transition);
                 }
               }}
-              className={`w-full flex items-center rounded-xl text-[13px] font-medium transition-all active:scale-[0.97] ${
+              className={`w-full flex items-center rounded-xl text-[13px] font-medium transition-all active:scale-[0.97] whitespace-nowrap overflow-hidden ${
                 collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3.5 py-2.5'
               } ${
                 isDisabled
@@ -116,7 +148,7 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
               title={isDisabled ? 'Upload a document to start reading' : collapsed ? tab.label : undefined}
             >
               <Icon className="w-4 h-4 shrink-0" />
-              {!collapsed && <span>{tab.label}</span>}
+              {!collapsed && <span className="truncate whitespace-nowrap">{tab.label}</span>}
             </button>
           );
         })}
@@ -128,7 +160,7 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
             type="button"
             onClick={onOpenAnalysis}
             title={collapsed ? 'AI Analysis' : undefined}
-            className={`w-full flex items-center rounded-xl text-[13px] font-medium transition-all active:scale-[0.97] cursor-pointer ${
+            className={`w-full flex items-center rounded-xl text-[13px] font-medium transition-all active:scale-[0.97] whitespace-nowrap overflow-hidden cursor-pointer ${
               collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3.5 py-2.5'
             } ${
               isDark
@@ -137,22 +169,23 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
             }`}
           >
             <Sparkles className="w-4 h-4 shrink-0" />
-            {!collapsed && <span>AI Analysis</span>}
+            {!collapsed && <span className="truncate whitespace-nowrap">AI Analysis</span>}
           </button>
         )}
       </nav>
 
       {/* Bottom section */}
       {!collapsed && (
-        <div className={`px-4 py-4 border-t text-[13px] text-stone-500 dark:text-stone-600 space-y-1.5 ${
+        <div className={`px-4 py-4 border-t text-[13px] text-stone-500 dark:text-stone-600 space-y-1.5 overflow-hidden whitespace-nowrap ${
           isDark ? 'border-white/5' : 'border-black/4'
         }`}>
-          <span className="font-serif font-bold tracking-tight text-[#435c52] dark:text-emerald-300">
+          <span className="font-serif font-bold tracking-tight text-[#435c52] dark:text-emerald-300 block truncate whitespace-nowrap">
             Marginalia • Annotator
           </span>
-          <p className="italic text-[12px] text-stone-400 dark:text-stone-600 leading-snug">
+          <p className="italic text-[12px] text-stone-400 dark:text-stone-600 leading-snug truncate whitespace-nowrap">
             For close readers,
-            <br />
+          </p>
+          <p className="italic text-[12px] text-stone-400 dark:text-stone-600 leading-snug truncate whitespace-nowrap">
             Built with care by Shama Iqbal Hussain.
           </p>
         </div>

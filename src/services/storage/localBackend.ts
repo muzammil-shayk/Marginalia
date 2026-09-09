@@ -74,7 +74,14 @@ export class LocalDocumentBackend implements DocumentBackend {
   async saveDocument(params: SaveDocumentParams): Promise<DocumentMeta> {
     await this.ensureDirs();
     const meta = buildMeta(crypto.randomBytes(16).toString('hex'), params);
-    await this.write({ ...meta, text: params.text, annotations: [], readingState: null, analysis: null });
+    await this.write({
+      ...meta,
+      text: params.text,
+      annotations: [],
+      readingState: null,
+      analysis: null,
+      annotationsBackup: null
+    });
     return meta;
   }
 
@@ -121,7 +128,8 @@ export class LocalDocumentBackend implements DocumentBackend {
         annotations,
         readingState: raw.readingState ?? null,
         // Absent on every record written before analyses were saved, which is most of them.
-        analysis: raw.analysis ?? null
+        analysis: raw.analysis ?? null,
+        annotationsBackup: raw.annotationsBackup ?? null
       };
     } catch {
       return null;
@@ -148,7 +156,7 @@ export class LocalDocumentBackend implements DocumentBackend {
       if (!entry.endsWith('.json')) continue;
       const doc = await this.getDocument(entry.replace(/\.json$/, ''));
       if (!doc) continue;
-      const { text, annotations, analysis, ...rest } = doc;
+      const { text, annotations, analysis, annotationsBackup, ...rest } = doc;
       metas.push({ ...rest, analysis: summarizeAnalysis(analysis) });
     }
     return metas.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -158,7 +166,26 @@ export class LocalDocumentBackend implements DocumentBackend {
     const doc = await this.getDocument(id);
     if (!doc) return null;
 
-    const annotations = params.annotations ?? doc.annotations;
+    const annotations = params.restoreAnnotationsBackup
+      ? doc.annotationsBackup?.annotations ?? doc.annotations
+      : params.annotations ?? doc.annotations;
+
+    /**
+     * Keep the set we are about to replace, whenever the replacement is smaller.
+     *
+     * Deleting a mark shrinks it legitimately, so this is not an error — but a stale overwrite
+     * looks exactly the same from here, and only one of the two is recoverable. Holding the
+     * previous set costs one copy and makes both recoverable. Never overwritten by a growing
+     * write, so the backup always describes the last time marks went missing.
+     */
+    const shrinks = params.annotations !== undefined && annotations.length < doc.annotations.length;
+    const annotationsBackup = shrinks
+      ? {
+          annotations: doc.annotations,
+          savedAt: new Date().toISOString(),
+          wasCount: doc.annotations.length
+        }
+      : doc.annotationsBackup;
     // A reading-position-only update (scale/page/view mode, saved every few seconds while
     // scrolling) must not bump `updatedAt` — that field drives the library's "recent activity"
     // sort, and merely reading a book is not the activity it means to track.
@@ -173,11 +200,12 @@ export class LocalDocumentBackend implements DocumentBackend {
       terminologyCount: countTerminology(annotations),
       readingState: params.readingState ?? doc.readingState,
       analysis: params.analysis ?? doc.analysis,
+      annotationsBackup,
       updatedAt: changesActivity ? new Date().toISOString() : doc.updatedAt
     };
     await this.write(updated);
 
-    const { text, annotations: _a, analysis, ...rest } = updated;
+    const { text, annotations: _a, analysis, annotationsBackup: _b, ...rest } = updated;
     return { ...rest, analysis: summarizeAnalysis(analysis) };
   }
 

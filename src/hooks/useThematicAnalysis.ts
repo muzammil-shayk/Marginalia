@@ -84,8 +84,11 @@ export function useThematicAnalysis() {
    * on what was found last time. Silent when there is nothing saved — that is the ordinary case
    * for a book nobody has analysed, not a failure worth a dialog.
    */
+  const [loadingSaved, setLoadingSaved] = useState(false);
   const loadSavedAnalysis = useCallback(async (docId: string) => {
+    setLoadingSaved(true);
     const saved = await fetchSavedAnalysis(docId);
+    setLoadingSaved(false);
     if (!saved) return false;
     setAnalysis(saved.data);
     setSource('document');
@@ -129,6 +132,7 @@ export function useThematicAnalysis() {
     retry,
     dismissError,
     loading,
+    loadingSaved,
     analysis,
     analysedAt,
     source,

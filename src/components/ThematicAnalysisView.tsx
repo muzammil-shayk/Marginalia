@@ -89,6 +89,7 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
     retry,
     dismissError,
     loading,
+    loadingSaved,
     analysis,
     analysedAt,
     source,
@@ -299,10 +300,18 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
                   )}
                 </>
               )}
+              {/* Said out loud, so the button does not flip from "Analyse" to "Re-analyse" under
+                  the reader's eyes a moment after the panel opens. */}
+              {loadingSaved && !analysis && (
+                <p className="text-[11.5px] text-stone-400 flex items-center gap-1.5">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  Looking for a saved analysis…
+                </p>
+              )}
               <button
                 type="button"
                 onClick={() => pickedId && void analyzeDocument(pickedId)}
-                disabled={loading || !pickedId}
+                disabled={loading || loadingSaved || !pickedId}
                 className={PRIMARY_BUTTON}
               >
                 {loading ? (
@@ -427,7 +436,7 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
             </h3>
             {analysedAt && (
               <p className="text-[10.5px] text-stone-400 tabular-nums">
-                Analysed{' '}
+                Saved analysis ·{' '}
                 {new Date(analysedAt).toLocaleDateString(undefined, {
                   day: 'numeric',
                   month: 'short',

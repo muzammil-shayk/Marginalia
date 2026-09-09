@@ -1406,38 +1406,44 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
             </>
           )}
         </span>
-        <button
-          type="button"
-          onClick={() => {
-            setPanelTab('analysis');
-            setIsPanelOpen(!(isPanelOpen && panelTab === 'analysis'));
-          }}
-          title="Thematic analysis"
-          className={`p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer ${
-            isPanelOpen && panelTab === 'analysis' ? 'text-[#435c52] dark:text-emerald-400' : 'text-stone-500'
-          }`}
-        >
-          <Sparkles className="w-4 h-4" />
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setPanelTab('notes');
-            setIsPanelOpen(!(isPanelOpen && panelTab === 'notes'));
-          }}
-          title={isPanelOpen && panelTab === 'notes' ? 'Hide notes' : 'Show notes'}
-          className="flex items-center gap-1.5 p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
-        >
-          <StickyNote className="w-4 h-4" />
-          {isPanelOpen && panelTab === 'notes' ? (
-            <PanelRightClose className="w-4 h-4" />
-          ) : (
-            <PanelRightOpen className="w-4 h-4" />
-          )}
-        </button>
       </header>
 
       <PdfToolbar
+        panelControls={
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setPanelTab('analysis');
+                setIsPanelOpen(!(isPanelOpen && panelTab === 'analysis'));
+              }}
+              title="Thematic analysis"
+              className={`p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer transition-[background-color,transform] duration-150 ease-out active:scale-[0.94] ${
+                isPanelOpen && panelTab === 'analysis'
+                  ? 'text-[#435c52] dark:text-emerald-400'
+                  : 'text-stone-500'
+              }`}
+            >
+              <Sparkles className="w-4 h-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setPanelTab('notes');
+                setIsPanelOpen(!(isPanelOpen && panelTab === 'notes'));
+              }}
+              title={isPanelOpen && panelTab === 'notes' ? 'Hide notes' : 'Show notes'}
+              className="flex items-center gap-1.5 p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer transition-[background-color,transform] duration-150 ease-out active:scale-[0.94]"
+            >
+              <StickyNote className="w-4 h-4" />
+              {isPanelOpen && panelTab === 'notes' ? (
+                <PanelRightClose className="w-4 h-4" />
+              ) : (
+                <PanelRightOpen className="w-4 h-4" />
+              )}
+            </button>
+          </>
+        }
         tool={tool}
         onToolChange={handleToolTap}
         hasSelection={Boolean(pendingSelection?.length)}
@@ -1560,18 +1566,27 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
           })()}
         </div>
 
-        {isPanelOpen && (
-          <div
-            // Docked beside the pages on a wide window; an overlay once the window is too narrow
-            // to give it a column. It used to be `hidden md:flex`, which left both toggles in the
-            // header doing visibly nothing on a small window.
-            className={`flex flex-col min-h-0 border-l z-30 max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:w-full max-md:max-w-sm max-md:shadow-2xl md:w-80 md:shrink-0 ${
-              isDark ? 'bg-[#151917] border-stone-800' : 'bg-white border-stone-200'
-            }`}
-          >
-            {panelTab === 'analysis' ? (
-              <ThematicAnalysisView docId={docId} documentTitle={documentTitle} />
-            ) : (
+        {/*
+          Both panels stay mounted; only one is shown.
+          
+          Unmounting the analysis panel threw away everything it held — the result of a run that
+          cost tokens and a minute of waiting, the title typed into the lookup form, which mode
+          was chosen — so glancing at your notes and coming back meant analysing the book again.
+          Hiding costs one hidden subtree and keeps all of it. The panel container is hidden the
+          same way, so closing the panel is just as cheap.
+        */}
+        <div
+          // Docked beside the pages on a wide window; an overlay once the window is too narrow
+          // to give it a column. It used to be `hidden md:flex`, which left both toggles in the
+          // header doing visibly nothing on a small window.
+          className={`flex-col min-h-0 border-l z-30 max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:w-full max-md:max-w-sm max-md:shadow-2xl md:w-80 md:shrink-0 ${
+            isPanelOpen ? 'flex' : 'hidden'
+          } ${isDark ? 'bg-[#151917] border-stone-800' : 'bg-white border-stone-200'}`}
+        >
+          <div className={`min-h-0 flex-1 ${panelTab === 'analysis' ? 'flex flex-col' : 'hidden'}`}>
+            <ThematicAnalysisView docId={docId} documentTitle={documentTitle} />
+          </div>
+          <div className={`min-h-0 flex-1 ${panelTab === 'notes' ? 'flex flex-col' : 'hidden'}`}>
             <NotesList
               annotations={annotations}
               settings={settings}
@@ -1586,9 +1601,8 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
               onDelete={deleteAnnotation}
               onEdit={startEditing}
             />
-            )}
           </div>
-        )}
+        </div>
       </div>
 
       <ErrorDialog open={Boolean(failure)} message={failure ?? ''} onClose={() => setFailure(null)} />

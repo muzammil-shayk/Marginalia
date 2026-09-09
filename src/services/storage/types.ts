@@ -119,6 +119,15 @@ export interface StoredDocument extends Omit<DocumentMeta, 'analysis'> {
   readingState: ReadingState | null;
   /** The last thematic analysis run on this document, kept so it need not be paid for twice. */
   analysis: StoredAnalysis | null;
+  /**
+   * The annotation set as it was immediately before a write that made it smaller.
+   *
+   * A shrinking write is usually the reader deleting a mark, which is fine. It is also what a bug
+   * looks like when some stale copy of the document overwrites a newer one — and that is
+   * unrecoverable, because the store keeps no history and a book's marks are hours of work. One
+   * slot costs almost nothing and turns "your annotations are gone" into "restore them".
+   */
+  annotationsBackup: { annotations: StoredAnnotation[]; savedAt: string; wasCount: number } | null;
 }
 
 /**
@@ -172,6 +181,8 @@ export interface UpdateDocumentParams {
   annotations?: StoredAnnotation[];
   readingState?: ReadingState;
   analysis?: StoredAnalysis;
+  /** Restores `annotationsBackup` over the live set. Used by the recovery endpoint. */
+  restoreAnnotationsBackup?: true;
 }
 
 export interface DocumentBackend {

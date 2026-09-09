@@ -384,6 +384,20 @@ app.put("/api/documents/:id/annotations", express.json({ limit: "25mb" }), async
     res.status(400).json({ error: "An annotations array is required." });
     return;
   }
+  /**
+   * A write that removes marks is worth saying out loud.
+   *
+   * Deleting one is ordinary; losing thirty to a stale overwrite is not, and the two are
+   * indistinguishable at this layer. The store keeps the previous set (see `annotationsBackup`),
+   * so this line is how anyone finds out it happened and when.
+   */
+  const before = await getDocument(req.params.id);
+  const had = before?.annotations.length ?? 0;
+  if (annotations.length < had) {
+    console.warn(
+      `[Marginalia] annotations SHRANK ${had} -> ${annotations.length} on ${req.params.id} — previous set kept, restore with POST /api/documents/${req.params.id}/annotations/restore`
+    );
+  }
   const meta = await updateDocument(req.params.id, { annotations });
   if (!meta) {
     res.status(404).json({ error: "Document not found." });
@@ -398,6 +412,29 @@ app.put("/api/documents/:id/annotations", express.json({ limit: "25mb" }), async
  * a fresh random port every launch (see this file's PORT=0 comment), and a different port is a
  * different origin to the browser — so localStorage would reset on every restart and update.
  */
+/**
+ * Puts back the annotation set from before the last write that removed marks.
+ *
+ * The escape hatch for the failure this store cannot otherwise survive: a document's marks are
+ * hours of reading, there is no history, and a bad overwrite is silent. Kept deliberately blunt —
+ * one slot, one step back.
+ */
+app.post("/api/documents/:id/annotations/restore", async (req, res) => {
+  const doc = await getDocument(req.params.id);
+  if (!doc) {
+    res.status(404).json({ error: "Document not found." });
+    return;
+  }
+  if (!doc.annotationsBackup) {
+    res.status(404).json({ error: "No previous annotation set is stored for this document." });
+    return;
+  }
+  const restoring = doc.annotationsBackup.annotations.length;
+  const meta = await updateDocument(req.params.id, { restoreAnnotationsBackup: true });
+  console.log(`[Marginalia] restored ${restoring} annotations on ${req.params.id}`);
+  res.json({ restored: restoring, meta });
+});
+
 app.get("/api/documents/:id/reading-state", async (req, res) => {
   const doc = await getDocument(req.params.id);
   if (!doc) {
