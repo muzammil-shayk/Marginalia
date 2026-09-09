@@ -7,7 +7,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { AnnotationFocus, Screen, TransitionType, UserSettings, StickyNote } from './types';
 import { initialSettings } from './data/mockData';
-import { fetchDocumentText, fetchRemoteSettings, saveRemoteSettings, StoredDocumentMeta } from './utils/documentStorage';
+import { fetchDocumentText, fetchRemoteSettings, saveRemoteSettings, StoredDocumentMeta, desktopBridge } from './utils/documentStorage';
 import { CustomFormat } from './utils/documentExporter';
 import { usePlainTextAnnotations } from './hooks/usePlainTextAnnotations';
 import { Header } from './components/Header';
@@ -23,6 +23,8 @@ import { DocumentLibraryPanel } from './components/DocumentLibraryPanel';
 import { SearchModal } from './components/SearchModal';
 import { SidebarDrawer } from './components/SidebarDrawer';
 import { AnalysisModal } from './components/AnalysisModal';
+import { ChangelogModal } from './components/ChangelogModal';
+import { CURRENT_APP_VERSION } from './data/changelog';
 import { ErrorDialog } from './components/ErrorDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -163,6 +165,78 @@ export default function App() {
   );
   const [documentLoadError, setDocumentLoadError] = useState<string | null>(null);
 
+  const hasHydratedRemoteSettings = useRef(false);
+  /** Re-render once the durable settings have been read, so the changelog check can run. */
+  const [settingsHydrated, setSettingsHydrated] = useState(false);
+  /** Whether anything was already saved — i.e. whether this reader predates this version. */
+  const hadStoredSettings = useRef(false);
+  /** The current settings, for effects that must read them without depending on them. */
+  const settingsRef = useRef(settings);
+
+  /**
+   * The "what changed" dialog, shown once after an update.
+   *
+   * Which version the reader has already seen lives in the durable settings, not in
+   * localStorage. The desktop build's embedded server binds a fresh port every launch, and a
+   * different port is a different origin — so a flag written to localStorage is gone by the next
+   * start, and the dialog reappears every single launch with no way to stop it.
+   *
+   * It also waits for those settings to be read. Deciding before they arrive means deciding
+   * against defaults, which is the same mistake as writing before reading.
+   */
+  const [isChangelogOpen, setIsChangelogOpen] = useState(false);
+  const [changelogVersion, setChangelogVersion] = useState<string>(CURRENT_APP_VERSION);
+  const changelogChecked = useRef(false);
+
+  useEffect(() => {
+    if (!settingsHydrated || changelogChecked.current) return;
+    changelogChecked.current = true;
+    let cancelled = false;
+
+    void (async () => {
+      // The packaged app knows its real version; the bundled constant is the fallback for a
+      // browser run, where there is no desktop bridge to ask.
+      let active = CURRENT_APP_VERSION;
+      const bridge = desktopBridge();
+      if (bridge) {
+        try {
+          const info = await bridge.getAppInfo();
+          if (info?.version) active = info.version;
+        } catch {
+          /* fall back to the bundled version */
+        }
+      }
+      if (cancelled) return;
+
+      setChangelogVersion(active);
+      const seen = settingsRef.current.lastSeenVersion;
+      if (seen === active) return;
+
+      // A first-ever launch gets no changelog — there is nothing to have changed since. That is
+      // what `hadStoredSettings` distinguishes: settings on disk mean this reader existed before
+      // this version did.
+      if (!seen && !hadStoredSettings.current) {
+        setSettings((prev) => ({ ...prev, lastSeenVersion: active }));
+        return;
+      }
+      setIsChangelogOpen(true);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [settingsHydrated]);
+
+  const handleCloseChangelog = useCallback(() => {
+    setIsChangelogOpen(false);
+    // Written through the settings, so it survives the next launch.
+    setSettings((prev) => ({ ...prev, lastSeenVersion: changelogVersion }));
+  }, [changelogVersion]);
+
+  const handleOpenChangelog = useCallback(() => {
+    setIsChangelogOpen(true);
+  }, []);
+
   // Per-document notes and inline formats, lifted here so they survive navigating away and back.
   const [documentNotes, setDocumentNotes] = useState<Record<string, StickyNote[]>>(
     savedSession?.documentNotes || {}
@@ -245,7 +319,6 @@ export default function App() {
    * it has loaded; a `null` response just means this is the very first launch, and the
    * localStorage/default value already in state stands.
    */
-  const hasHydratedRemoteSettings = useRef(false);
   useEffect(() => {
     let cancelled = false;
     /**
@@ -261,8 +334,12 @@ export default function App() {
       const result = await fetchRemoteSettings();
       if (cancelled) return;
       if (result.ok) {
-        if (result.settings) setSettings(mergeSettings(result.settings as Partial<UserSettings>));
+        if (result.settings) {
+          hadStoredSettings.current = true;
+          setSettings(mergeSettings(result.settings as Partial<UserSettings>));
+        }
         hasHydratedRemoteSettings.current = true;
+        setSettingsHydrated(true);
         return;
       }
       // Roughly 15 seconds of retries. Past that the store is genuinely unreachable, and the
@@ -290,6 +367,7 @@ export default function App() {
    * even been read.
    */
   useEffect(() => {
+    settingsRef.current = settings;
     saveSettings(settings);
     if (!hasHydratedRemoteSettings.current) return;
     const timer = window.setTimeout(() => { void saveRemoteSettings(settings as unknown as Record<string, unknown>); }, 400);
@@ -510,6 +588,14 @@ export default function App() {
           onAddDocument={() => navigate('upload', 'push')}
         />
 
+        {/* What's New changelog dialog, opened on first launch after update or from Settings */}
+        <ChangelogModal
+          isOpen={isChangelogOpen}
+          onClose={handleCloseChangelog}
+          isDark={isDark}
+          initialVersion={changelogVersion}
+        />
+
         {/* Screen Rendering */}
         {currentScreen === 'workspace' && analysisDoc.docId ? (
           <ErrorBoundary onGoHome={() => navigate('home', 'push_back')}>
@@ -630,6 +716,7 @@ export default function App() {
                         onNavigate={navigate}
                         isDark={isDark}
                         onStorageChanged={() => setLibraryRefreshToken((n) => n + 1)}
+                        onOpenChangelog={handleOpenChangelog}
                       />
                     )}
 

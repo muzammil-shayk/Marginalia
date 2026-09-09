@@ -81,6 +81,15 @@ export interface UserSettings {
   collapsedHomeSections?: Record<string, boolean>;
   /** Whether the desktop sidebar is collapsed to icons-only. */
   sidebarCollapsed?: boolean;
+  /**
+   * The app version whose changelog this reader has already seen.
+   *
+   * Kept here, with the durable settings, rather than in localStorage: the desktop build's
+   * embedded server binds a fresh port every launch, and a different port is a different origin,
+   * so anything in localStorage is gone by the next start. A "seen" flag kept there is never
+   * seen again — the dialog simply reappears on every launch.
+   */
+  lastSeenVersion?: string;
 }
 
 /**

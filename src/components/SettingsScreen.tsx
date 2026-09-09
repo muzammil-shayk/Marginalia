@@ -32,6 +32,8 @@ interface SettingsScreenProps {
   isDark?: boolean;
   /** Lets the library list refresh after the storage folder changes underneath it. */
   onStorageChanged?: () => void;
+  /** Opens the What's New changelog modal. */
+  onOpenChangelog?: () => void;
 }
 
 // Curated harmonious color palettes for active themes
@@ -79,7 +81,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onUpdateSettings,
   onNavigate,
   isDark = false,
-  onStorageChanged
+  onStorageChanged,
+  onOpenChangelog
 }) => {
   const bridge = desktopBridge();
   const [storage, setStorage] = useState<StorageInfo | null>(null);
@@ -1205,7 +1208,18 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         <div className="space-y-1.5 text-[13px]">
           <div className="flex items-center justify-between">
             <span className="text-stone-600 dark:text-stone-400">Marginalia</span>
-            <span className="text-stone-500 tabular-nums">{appInfo ? `Version ${appInfo.version}` : '—'}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-stone-500 tabular-nums">{appInfo ? `Version ${appInfo.version}` : '—'}</span>
+              {onOpenChangelog && (
+                <button
+                  type="button"
+                  onClick={onOpenChangelog}
+                  className="px-2 py-0.5 rounded-md text-[11px] font-mono font-medium bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 transition-colors cursor-pointer active:scale-95"
+                >
+                  What's New
+                </button>
+              )}
+            </div>
           </div>
           {appInfo && (
             <div className="flex items-center justify-between">
