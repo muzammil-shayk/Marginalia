@@ -247,10 +247,37 @@ export default function App() {
    */
   const hasHydratedRemoteSettings = useRef(false);
   useEffect(() => {
-    fetchRemoteSettings().then((remote) => {
-      if (remote) setSettings(mergeSettings(remote as Partial<UserSettings>));
-      hasHydratedRemoteSettings.current = true;
-    });
+    let cancelled = false;
+    /**
+     * Keeps asking until the durable copy answers.
+     *
+     * Nothing may be written back until it does. A failed read is not an empty settings file, and
+     * treating it as one is how a reader's themes get replaced by the defaults: the embedded
+     * server can still be starting when this first runs, and on a fresh machine localStorage is
+     * empty too (the desktop build binds a new port each launch, and a different port is a
+     * different origin), so there is nothing left holding the real values.
+     */
+    const hydrate = async (attempt = 0) => {
+      const result = await fetchRemoteSettings();
+      if (cancelled) return;
+      if (result.ok) {
+        if (result.settings) setSettings(mergeSettings(result.settings as Partial<UserSettings>));
+        hasHydratedRemoteSettings.current = true;
+        return;
+      }
+      // Roughly 15 seconds of retries. Past that the store is genuinely unreachable, and the
+      // session runs on whatever is in memory WITHOUT ever writing it back, so nothing on disk is
+      // overwritten by a guess.
+      if (attempt < 20) {
+        window.setTimeout(() => void hydrate(attempt + 1), 750);
+        return;
+      }
+      console.error('[Marginalia] Could not read saved settings; not writing over them.');
+    };
+    void hydrate();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   /**

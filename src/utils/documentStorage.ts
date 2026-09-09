@@ -188,6 +188,43 @@ export async function renameStoredDocument(id: string, title: string): Promise<S
  * `inline` is what the PDF workspace loads: it makes the server send the file with its real
  * content type instead of as a download, which is what PDF.js needs to render the actual pages.
  */
+export interface GeminiConfig {
+  configured: boolean;
+  /** 'settings' when set from inside the app, 'environment' when it came from GEMINI_API_KEY. */
+  source: 'settings' | 'environment' | null;
+  model: string;
+}
+
+/** Whether analysis is ready, and which model it will use. Never returns the key itself. */
+export async function fetchGeminiConfig(): Promise<GeminiConfig | null> {
+  try {
+    const res = await fetch('/api/gemini-config');
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+/** Stores the key and model on this machine. An empty key clears it. */
+export async function saveGeminiConfig(update: {
+  apiKey?: string;
+  model?: string;
+}): Promise<GeminiConfig | null> {
+  try {
+    const res = await fetch('/api/gemini-config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(update)
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    return { configured: Boolean(body.configured), source: 'settings', model: body.model };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * The analysis already saved for a document, or null if it has never been analysed.
  *
@@ -387,14 +424,26 @@ export async function fetchStorageInfo(): Promise<StorageInfo | null> {
  * if none have been saved yet. This is the durable copy — see `saveRemoteSettings` for why it
  * exists alongside localStorage rather than instead of it.
  */
-export async function fetchRemoteSettings(): Promise<Record<string, unknown> | null> {
+/**
+ * Reads the durable settings, distinguishing "nothing saved yet" from "could not read".
+ *
+ * It used to answer both with `null`, and the caller treats `null` as a first launch — so a
+ * settings request that failed because the embedded server had not finished starting looked
+ * exactly like a fresh install. The app then held whatever localStorage had (nothing, on a new
+ * machine: a different port is a different origin), and the next settings change wrote those
+ * defaults over the real ones. One failed request at startup was enough to replace a reader's
+ * themes with the stock three.
+ */
+export async function fetchRemoteSettings(): Promise<
+  { ok: true; settings: Record<string, unknown> | null } | { ok: false }
+> {
   try {
     const res = await fetch('/api/settings');
-    if (!res.ok) return null;
+    if (!res.ok) return { ok: false };
     const body = await res.json();
-    return body.settings ?? null;
+    return { ok: true, settings: body.settings ?? null };
   } catch {
-    return null;
+    return { ok: false };
   }
 }
 

@@ -18,6 +18,9 @@ import {
   StorageInfo,
   UpdateStatus,
   desktopBridge,
+  fetchGeminiConfig,
+  saveGeminiConfig,
+  type GeminiConfig,
   fetchStorageInfo,
   listStoredDocuments
 } from '../utils/documentStorage';
@@ -84,6 +87,43 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [libraryStats, setLibraryStats] = useState<{ count: number; bytes: number } | null>(null);
   const [isChangingFolder, setIsChangingFolder] = useState(false);
   const [storageNotice, setStorageNotice] = useState<string | null>(null);
+
+  /**
+   * The Gemini key, held only as a draft here.
+   *
+   * The saved key never travels back to the renderer — the status endpoint reports whether one is
+   * set and which model will be used, and nothing more. There is no reason for the page to hold a
+   * credential it only ever writes.
+   */
+  const [geminiConfig, setGeminiConfig] = useState<GeminiConfig | null>(null);
+  const [geminiKeyDraft, setGeminiKeyDraft] = useState('');
+  const [geminiModelDraft, setGeminiModelDraft] = useState('');
+  const [geminiSaving, setGeminiSaving] = useState(false);
+  const [geminiSaved, setGeminiSaved] = useState(false);
+
+  useEffect(() => {
+    void fetchGeminiConfig().then(setGeminiConfig);
+  }, []);
+
+  const persistGeminiConfig = useCallback(
+    async (options?: { clear?: boolean }) => {
+      setGeminiSaving(true);
+      const update: { apiKey?: string; model?: string } = {};
+      if (options?.clear) update.apiKey = '';
+      else if (geminiKeyDraft.trim()) update.apiKey = geminiKeyDraft.trim();
+      if (geminiModelDraft.trim()) update.model = geminiModelDraft.trim();
+      const next = await saveGeminiConfig(update);
+      if (next) setGeminiConfig(next);
+      else setGeminiConfig(await fetchGeminiConfig());
+      // The draft is dropped either way: leaving a key sitting in an input is exactly the habit
+      // this field should not encourage.
+      setGeminiKeyDraft('');
+      setGeminiSaving(false);
+      setGeminiSaved(true);
+      window.setTimeout(() => setGeminiSaved(false), 2000);
+    },
+    [geminiKeyDraft, geminiModelDraft]
+  );
 
   const loadStorage = useCallback(async () => {
     const [info, documents] = await Promise.all([fetchStorageInfo(), listStoredDocuments()]);
@@ -310,6 +350,112 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           <p className="text-[12px] text-stone-500 dark:text-stone-400 leading-snug">
             Signs the notes and annotations you write. Stays on this computer.
           </p>
+        </div>
+      </section>
+
+      {/* AI ANALYSIS — the one feature that needs a key, and the only place to put one. */}
+      <section
+        id="settings-ai-section"
+        className={`p-5 rounded-2xl border transition-all ${
+          isDark
+            ? 'bg-[#1b201d] border-stone-800 text-stone-100'
+            : 'bg-white border-stone-200/80 text-stone-900 shadow-xs'
+        }`}
+      >
+        <div className="flex items-center gap-1.5 mb-4">
+          <Sparkles className="w-3.5 h-3.5 text-stone-500" />
+          <span className="text-[11px] font-semibold tracking-wider text-stone-500 uppercase">
+            AI ANALYSIS
+          </span>
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-[12.5px] text-stone-600 dark:text-stone-400 leading-relaxed max-w-prose">
+            Thematic analysis needs a Google Gemini key. It is stored on this computer, beside your
+            library, and is sent to Google only when you press the analyse button.{' '}
+            Create a free one at{' '}
+            <span className="font-mono text-[12px] text-stone-800 dark:text-stone-200">
+              aistudio.google.com/apikey
+            </span>
+            .
+          </p>
+
+          <div className="flex items-center gap-2 text-[12px]">
+            <span
+              className={`w-2 h-2 rounded-full ${geminiConfig?.configured ? 'bg-emerald-500' : 'bg-stone-300 dark:bg-stone-700'}`}
+            />
+            <span className="text-stone-600 dark:text-stone-400">
+              {geminiConfig === null
+                ? 'Checking…'
+                : geminiConfig.configured
+                  ? geminiConfig.source === 'environment'
+                    ? 'A key is set in this machine’s environment.'
+                    : 'A key is saved on this computer.'
+                  : 'No key set — analysis is unavailable.'}
+            </span>
+          </div>
+
+          <label className="block space-y-1">
+            <span className="text-[12px] font-medium text-stone-700 dark:text-stone-300">
+              {geminiConfig?.configured ? 'Replace the key' : 'API key'}
+            </span>
+            <input
+              type="password"
+              value={geminiKeyDraft}
+              onChange={(e) => setGeminiKeyDraft(e.target.value)}
+              placeholder={geminiConfig?.configured ? '••••••••••••••••' : 'Paste your Gemini API key'}
+              spellCheck={false}
+              autoComplete="off"
+              className={`w-full px-3 py-2 rounded-xl border text-[12.5px] font-mono focus:outline-none focus:ring-1 focus:ring-[#435c52] ${
+                isDark
+                  ? 'bg-[#121514] border-stone-800 text-stone-100'
+                  : 'bg-white border-stone-200 text-stone-900'
+              }`}
+            />
+          </label>
+
+          <label className="block space-y-1">
+            <span className="text-[12px] font-medium text-stone-700 dark:text-stone-300">
+              Model{' '}
+              <span className="font-normal text-stone-500">
+                (leave as it is unless a model is retired)
+              </span>
+            </span>
+            <input
+              type="text"
+              value={geminiModelDraft}
+              onChange={(e) => setGeminiModelDraft(e.target.value)}
+              placeholder={geminiConfig?.model ?? 'gemini-flash-latest'}
+              spellCheck={false}
+              className={`w-full px-3 py-2 rounded-xl border text-[12.5px] font-mono focus:outline-none focus:ring-1 focus:ring-[#435c52] ${
+                isDark
+                  ? 'bg-[#121514] border-stone-800 text-stone-100'
+                  : 'bg-white border-stone-200 text-stone-900'
+              }`}
+            />
+          </label>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void persistGeminiConfig()}
+              disabled={geminiSaving || (!geminiKeyDraft.trim() && !geminiModelDraft.trim())}
+              className="px-4 py-2 rounded-xl bg-[#435c52] hover:bg-[#3a5048] text-white text-[12.5px] font-semibold cursor-pointer disabled:opacity-50 disabled:cursor-default transition-colors"
+            >
+              {geminiSaving ? 'Saving…' : 'Save'}
+            </button>
+            {geminiConfig?.source === 'settings' && (
+              <button
+                type="button"
+                onClick={() => void persistGeminiConfig({ clear: true })}
+                disabled={geminiSaving}
+                className="px-3 py-2 rounded-xl text-[12.5px] text-stone-600 dark:text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer transition-colors"
+              >
+                Remove key
+              </button>
+            )}
+            {geminiSaved && <span className="text-[12px] text-emerald-600 dark:text-emerald-400">Saved</span>}
+          </div>
         </div>
       </section>
 
