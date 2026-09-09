@@ -498,7 +498,20 @@ export default function App() {
             }
           />
         ) : (
-          <div className="flex-1 flex flex-col min-h-screen">
+          <div className="relative flex-1 flex flex-col min-h-screen">
+            {/*
+              The strip of window above the library masthead.
+              
+              Every screen with a header of its own already drags by it, but Library, Settings and
+              Add Document begin with `main`'s top padding — bare background that belonged to
+              nothing, so the only draggable part of the window was the sidebar. This claims it.
+              Excluded on the workspace, whose header sits at y=0 and would have its back button
+              covered; that header is a drag region in its own right.
+            */}
+            {currentScreen !== 'workspace' && (
+              <div aria-hidden className="app-drag absolute top-0 left-0 right-0 h-8 z-30" />
+            )}
+
             {/* Shared Header for Non-Reader Screens — mobile only since desktop has sidebar */}
             <div className="md:hidden">
               <Header
