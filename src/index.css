@@ -115,3 +115,18 @@
 .app-drag .no-drag {
   -webkit-app-region: no-drag;
 }
+
+/* ── Keyboard focus ────────────────────────────────────────────────────────
+   Buttons across the app set hover and active styles but almost none set a
+   focus ring, which left keyboard focus invisible nearly everywhere. One rule
+   covers every control that does not style its own, and `:focus-visible` keeps
+   it off mouse clicks. */
+:where(button, [role='button'], a, summary):focus-visible {
+  outline: 2px solid #435c52;
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+
+.dark :where(button, [role='button'], a, summary):focus-visible {
+  outline-color: #6ee7b7;
+}

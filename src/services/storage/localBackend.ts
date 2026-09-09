@@ -67,8 +67,48 @@ export class LocalDocumentBackend implements DocumentBackend {
     }
   }
 
+  /**
+   * Serialises everything that touches one document's record.
+   *
+   * Every writer here is a read-modify-write of the WHOLE record: read the document, change one
+   * field, write it all back. Two of those interleaved lose the other's change entirely — and the
+   * workspace fires two of them on the same 700ms debounce, one for annotations and one for the
+   * reading position. Scroll a page while a mark is pending and the reading-state write, holding
+   * a snapshot taken before the mark existed, puts the old annotation list back. No shrink is
+   * recorded either, because that write never mentions annotations, so the backup net does not
+   * see it and nothing is logged. It is a silent way to lose work.
+   *
+   * A promise chain per id is the whole fix: the second write waits for the first to finish, so
+   * it reads what the first wrote. Keyed per document, so two books never wait on each other.
+   */
+  private locks = new Map<string, Promise<unknown>>();
+
+  private withLock<T>(id: string, work: () => Promise<T>): Promise<T> {
+    const queued = (this.locks.get(id) ?? Promise.resolve()).then(work, work);
+    const settled = queued.catch(() => undefined);
+    this.locks.set(id, settled);
+    // Dropped once nothing is queued behind it, so the map does not grow with every document
+    // ever opened.
+    void settled.then(() => {
+      if (this.locks.get(id) === settled) this.locks.delete(id);
+    });
+    return queued;
+  }
+
+  /**
+   * Writes a document record atomically.
+   *
+   * `fs.writeFile` truncates before it writes, so a crash, a full disk or a power cut mid-write
+   * leaves a half-written file — which `getDocument` cannot tell from a missing one, since it
+   * catches everything and returns null. The library then reports the document as gone. Writing
+   * beside it and renaming into place makes the swap atomic: the record is either the old one or
+   * the new one, never a fragment of both.
+   */
   private async write(doc: StoredDocument): Promise<void> {
-    await fs.writeFile(this.docPath(doc.id), JSON.stringify(doc), 'utf-8');
+    const target = this.docPath(doc.id);
+    const temporary = `${target}.tmp`;
+    await fs.writeFile(temporary, JSON.stringify(doc), 'utf-8');
+    await fs.rename(temporary, target);
   }
 
   async saveDocument(params: SaveDocumentParams): Promise<DocumentMeta> {
@@ -85,7 +125,15 @@ export class LocalDocumentBackend implements DocumentBackend {
     return meta;
   }
 
-  async attachOriginal(id: string, original: Buffer, filename?: string): Promise<boolean> {
+  attachOriginal(id: string, original: Buffer, filename?: string): Promise<boolean> {
+    return this.withLock(id, () => this.attachOriginalLocked(id, original, filename));
+  }
+
+  private async attachOriginalLocked(
+    id: string,
+    original: Buffer,
+    filename?: string
+  ): Promise<boolean> {
     if (!isValidId(id)) return false;
     const doc = await this.getDocument(id);
     if (!doc) return false;
@@ -162,7 +210,14 @@ export class LocalDocumentBackend implements DocumentBackend {
     return metas.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
-  async updateDocument(id: string, params: UpdateDocumentParams): Promise<DocumentMeta | null> {
+  updateDocument(id: string, params: UpdateDocumentParams): Promise<DocumentMeta | null> {
+    return this.withLock(id, () => this.updateDocumentLocked(id, params));
+  }
+
+  private async updateDocumentLocked(
+    id: string,
+    params: UpdateDocumentParams
+  ): Promise<DocumentMeta | null> {
     const doc = await this.getDocument(id);
     if (!doc) return null;
 
@@ -179,7 +234,12 @@ export class LocalDocumentBackend implements DocumentBackend {
      * write, so the backup always describes the last time marks went missing.
      */
     const shrinks = params.annotations !== undefined && annotations.length < doc.annotations.length;
-    const annotationsBackup = shrinks
+    // A held backup is only replaced by a bigger one. Otherwise a reader who loses thirty marks
+    // to a bad write and then deletes one of the two survivors — before noticing anything is
+    // wrong — would trade the recoverable thirty for an unrecoverable two.
+    const worthKeeping =
+      shrinks && doc.annotations.length >= (doc.annotationsBackup?.wasCount ?? 0);
+    const annotationsBackup = worthKeeping
       ? {
           annotations: doc.annotations,
           savedAt: new Date().toISOString(),
@@ -189,7 +249,10 @@ export class LocalDocumentBackend implements DocumentBackend {
     // A reading-position-only update (scale/page/view mode, saved every few seconds while
     // scrolling) must not bump `updatedAt` — that field drives the library's "recent activity"
     // sort, and merely reading a book is not the activity it means to track.
-    const changesActivity = params.title !== undefined || params.annotations !== undefined;
+    const changesActivity =
+      params.title !== undefined ||
+      params.annotations !== undefined ||
+      params.restoreAnnotationsBackup === true;
     const updated: StoredDocument = {
       ...doc,
       title: params.title?.trim() ? params.title.trim() : doc.title,

@@ -83,7 +83,15 @@ export const NotesList: React.FC<NotesListProps> = ({
       color: theme.color,
       items: sorted.filter((a) => a.themeId === theme.id)
     })),
-    { id: null, name: 'Untagged', color: '#a8a29e', items: sorted.filter((a) => a.themeId === null) }
+    {
+      id: null,
+      name: 'Untagged',
+      color: '#a8a29e',
+      // Everything no theme group claimed — not just `themeId === null`. A mark filed under a
+      // theme the reader has since removed in Settings matched no group at all, so it vanished
+      // from this panel while still being on the page, in the counts and in the export.
+      items: sorted.filter((a) => !settings.activeThemes.some((t) => t.id === a.themeId))
+    }
   ].filter((group) => group.items.length > 0);
 
   if (annotations.length === 0) {

@@ -444,9 +444,17 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
   isDark = false
 }) => {
   const stepZoom = (direction: 1 | -1) => {
-    const index = ZOOM_STEPS.findIndex((s) => s >= scale - 0.001);
-    const next = Math.min(ZOOM_STEPS.length - 1, Math.max(0, (index === -1 ? 2 : index) + direction));
-    onScaleChange(ZOOM_STEPS[next]);
+    // Stepping out goes to the nearest step BELOW the current scale, stepping in to the nearest
+    // ABOVE. Both used the first step at-or-above, so from a fit-to-width scale under the
+    // smallest step — a wide scan often fits at 32% — pressing zoom OUT clamped to index 0 and
+    // zoomed the reader in to 50%.
+    if (direction === -1) {
+      const below = [...ZOOM_STEPS].reverse().find((s) => s < scale - 0.001);
+      onScaleChange(below ?? ZOOM_STEPS[0]);
+      return;
+    }
+    const above = ZOOM_STEPS.find((s) => s > scale + 0.001);
+    onScaleChange(above ?? ZOOM_STEPS[ZOOM_STEPS.length - 1]);
   };
 
   // Scrolls the newly active theme into view whenever it changes — not just when the reader drags

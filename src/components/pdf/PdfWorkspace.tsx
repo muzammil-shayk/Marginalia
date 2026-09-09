@@ -358,6 +358,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   useEffect(() => {
     let cancelled = false;
     setIsLoaded(false);
+    isLoadedRef.current = false;
     resetAnnotations([]);
     fetchAnnotations(docId).then((stored) => {
       if (cancelled) return;
@@ -371,6 +372,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         return;
       }
       resetAnnotations((stored.annotations as unknown as Annotation[]) || []);
+      isLoadedRef.current = true;
       setIsLoaded(true);
     });
     return () => {
@@ -380,6 +382,10 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
 
   // ── Persistence ──
   const annotationsRef = useRef<Annotation[]>([]);
+  /** Mirrors `isLoaded` for the unmount flush, which cannot read state from its closure. */
+  const isLoadedRef = useRef(false);
+  /** True while the server is renumbering pages; see the save effect. */
+  const repaginatingRef = useRef(false);
   useEffect(() => {
     annotationsRef.current = annotations;
   }, [annotations]);
@@ -388,6 +394,9 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     // Nothing is written until the stored set has been read, or an empty initial state would
     // overwrite the reader's existing marks the moment the document opened.
     if (!isLoaded) return;
+    // A page insert or delete renumbers every mark on the server. An autosave landing in the
+    // middle of that would PUT the pre-shift numbers back and undo the renumbering.
+    if (repaginatingRef.current) return;
     setSaveState('saving');
     const timer = window.setTimeout(async () => {
       const ok = await saveAnnotations(docId, annotations as never);
@@ -409,7 +418,9 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   // before navigating away are not lost with the timer.
   useEffect(
     () => () => {
-      if (annotationsRef.current.length) void saveAnnotations(docId, annotationsRef.current as never);
+      // Gated on having LOADED, not on having marks. The old length check meant erasing your last
+      // mark wrote nothing on the way out, and the mark reappeared on reopen.
+      if (isLoadedRef.current) void saveAnnotations(docId, annotationsRef.current as never);
     },
     [docId]
   );
@@ -814,7 +825,14 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
           setSelectionAnchor({ left: rect.left, top: rect.top, bottom: rect.bottom });
         }
         // Marking by selection always adds — never undoes.
-        if (isTextAnchored(tool)) applyTextMark(tool, groups);
+        if (isTextAnchored(tool)) {
+          applyTextMark(tool, groups);
+          // `applyTextMark` clears the pending selection, and the popover that just opened reads
+          // it on every action. Without putting it back, arming a text tool first left the
+          // popover's own buttons — sticky note, the reactions, the other marks — doing nothing
+          // at all, silently, for as long as the reader kept pressing them.
+          setPendingSelection(groups);
+        }
       }, 0);
 
     document.addEventListener('mouseup', handleUp);
@@ -959,6 +977,9 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         const justClosed =
           submenuClosedAt.current?.tool === next &&
           performance.now() - submenuClosedAt.current.at < 350;
+        // Cleared either way, so a panel dismissed by pressing the PAGE cannot swallow the next
+        // tap on the tool itself.
+        submenuClosedAt.current = null;
         if (justClosed) return;
         setOpenSubmenuFor(next);
         return;
@@ -1254,22 +1275,37 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     if (!container || !pageEl || pageEl.offsetHeight === 0) return false;
 
     const bounds = annotationBounds(a);
+    /**
+     * The page's top within the SCROLL CONTAINER's coordinates.
+     *
+     * `offsetTop` is measured from the nearest positioned ancestor, and nothing between the page
+     * and `<body>` is positioned — so it also counted the header and the toolbar above the
+     * viewer, about 135px that is not part of the scrollable content. Every jump over-scrolled by
+     * that much, which on a short window put the mark above the visible area entirely. Both
+     * elements share the same offsetParent, so subtracting the container's own offset cancels it.
+     */
+    const pageTop = () => pageEl.offsetTop - container.offsetTop;
     const destination = () => {
       const raw = bounds
-        ? pageEl.offsetTop + bounds.y * pageEl.offsetHeight - container.clientHeight / 3
-        : pageEl.offsetTop;
+        ? pageTop() + bounds.y * pageEl.offsetHeight - container.clientHeight / 3
+        : pageTop();
       return Math.max(0, Math.min(raw, container.scrollHeight - container.clientHeight));
     };
 
+    // A jump replaces whatever is in flight — including on the paths that return early below,
+    // or a half-finished glide would carry on to the previous mark after arriving at this one.
+    if (scrollAnimation.current !== null) {
+      cancelAnimationFrame(scrollAnimation.current);
+      scrollAnimation.current = null;
+    }
+
     // Already comfortably in view: leave it where it is.
     if (bounds) {
-      const markTop = pageEl.offsetTop + bounds.y * pageEl.offsetHeight - container.scrollTop;
+      const markTop = pageTop() + bounds.y * pageEl.offsetHeight - container.scrollTop;
       const markBottom = markTop + bounds.h * pageEl.offsetHeight;
       const margin = container.clientHeight * 0.12;
       if (markTop > margin && markBottom < container.clientHeight - margin) return true;
     }
-
-    if (scrollAnimation.current !== null) cancelAnimationFrame(scrollAnimation.current);
 
     if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
       container.scrollTop = destination();
@@ -1331,6 +1367,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
 
   const handleInsertPage = useCallback(async () => {
     setIsInsertingPage(true);
+    repaginatingRef.current = true;
     try {
       const result = await insertPage(docId, insertPlacement, insertHeight, currentPage);
       if (!result) {
@@ -1343,6 +1380,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       setInsertPageMenuOpen(false);
       if (result.insertedPages.length) setPendingPageJump(result.insertedPages[0]);
     } finally {
+      repaginatingRef.current = false;
       setIsInsertingPage(false);
     }
   }, [docId, insertPlacement, insertHeight, currentPage, resetAnnotations]);
@@ -1355,6 +1393,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     async (pageNumber: number) => {
       if (isDeletingPage) return;
       setIsDeletingPage(true);
+      repaginatingRef.current = true;
       try {
         const result = await deletePage(docId, pageNumber);
         if (!result) {
@@ -1367,6 +1406,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         // The page that took the deleted one's place, or the new last page if it was the last one.
         setPendingPageJump(Math.min(pageNumber, result.pageCount));
       } finally {
+        repaginatingRef.current = false;
         setIsDeletingPage(false);
       }
     },

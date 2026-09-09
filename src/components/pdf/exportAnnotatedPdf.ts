@@ -491,8 +491,38 @@ export async function exportAnnotatedPdf(
           // `BM: Multiply` asks any viewer that honours blend modes to match the multiply too.
           // Underline/strikeout are left untouched: on screen those are a thin full-colour line,
           // not a filled tint, so there is nothing to reconcile.
-          ...(a.kind === 'highlight' ? { CA: 0.38, BM: PDFName.of('Multiply') } : {})
+          ...(a.kind === 'highlight' ? { CA: 0.38, BM: PDFName.of('Multiply') } : {}),
+          // Thickness and dash pattern, which the reader sets on every underline and strikeout
+          // from the properties strip. Without this the viewer draws its own default hairline
+          // and a Heavy Dotted underline exports as a thin solid one.
+          ...(a.kind === 'highlight' ? {} : { BS: borderStyle(withEffectiveColor, pw, context) })
         });
+
+        // …and drawn onto the page as well, because no viewer tested honours `/BS` on an
+        // Underline or StrikeOut — it generates its own appearance from `QuadPoints` alone. The
+        // rule is baked at the same fraction of the line box the screen uses (92% for an
+        // underline, 52% for a strikeout) so the exported mark sits exactly where it was made.
+        if (a.kind !== 'highlight') {
+          const ink = hexToRgb(withEffectiveColor.color);
+          const widthPts = Math.max(1, (a.weight ?? DEFAULT_WEIGHT) * pw);
+          const dash = dashPattern(a.strokeStyle, widthPts);
+          const offset = a.kind === 'underline' ? 0.92 : 0.52;
+          for (const rect of a.rects) {
+            const [x1, , x2] = rectToPdf(rect);
+            // Fractions run top-down; the y of the rule is that many line-heights below the
+            // rect's top edge, converted through the same transform as everything else.
+            const [, ruleY] = rectToPdf({ x: rect.x, y: rect.y + rect.h * offset, w: 0, h: 0 });
+            drawStroke(
+              [
+                [x1, ruleY],
+                [x2, ruleY]
+              ],
+              ink,
+              widthPts,
+              dash
+            );
+          }
+        }
         continue;
       }
 

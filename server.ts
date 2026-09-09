@@ -82,7 +82,16 @@ app.use("/api", (req, res, next) => {
   next();
 });
 
-app.use(express.json({ limit: "10mb" }));
+/**
+ * One JSON parser, sized for the largest body any route takes.
+ *
+ * Per-route `express.json()` limits are dead code behind a global one: this middleware runs
+ * first, sets `req._body`, and every later parser no-ops. So the 50mb on document creation, the
+ * 200mb on HTML import and the 25mb on annotations were all silently capped at 10mb, and
+ * importing a large book failed with an unexplained 413. The server listens on loopback only and
+ * refuses cross-site callers, so the ceiling is a practical one rather than a security boundary.
+ */
+app.use(express.json({ limit: "200mb" }));
 
 // Health check endpoint
 /** Gemini-backed thematic analysis of a stored PDF. See `src/services/analyzer.ts`. */
@@ -533,7 +542,11 @@ app.post("/api/documents/:id/pages", express.json(), async (req, res) => {
     // at the end is by definition after everything already there. For 'before'/'after', that's
     // wherever the single new page landed, in both cases.
     const shiftFrom = placement === "both-ends" ? 1 : insertedPages[0];
-    const annotations = doc.annotations.map((a) =>
+    // Re-read rather than reuse the `doc` from the top of this handler. Saving a large PDF takes
+    // seconds, and a mark made while it ran has already been written by the client's own save —
+    // shifting the snapshot taken before that would put the older list back and lose it.
+    const current = await getDocument(req.params.id);
+    const annotations = (current?.annotations ?? doc.annotations).map((a) =>
       typeof a.page === "number" && a.page >= shiftFrom ? { ...a, page: a.page + 1 } : a
     );
     await updateDocument(req.params.id, { annotations });
@@ -586,7 +599,10 @@ app.delete("/api/documents/:id/pages/:pageNumber", async (req, res) => {
     const newBytes = await pdfDoc.save();
     await attachOriginal(req.params.id, Buffer.from(newBytes), original.filename);
 
-    const annotations = doc.annotations
+    // Re-read for the same reason as page insertion: a mark made during the PDF save is already
+    // on disk, and renumbering a stale snapshot would erase it.
+    const current = await getDocument(req.params.id);
+    const annotations = (current?.annotations ?? doc.annotations)
       .filter((a) => typeof a.page !== "number" || a.page !== pageNumber)
       .map((a) => (typeof a.page === "number" && a.page > pageNumber ? { ...a, page: a.page - 1 } : a));
     await updateDocument(req.params.id, { annotations });

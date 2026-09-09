@@ -46,7 +46,9 @@ export const HoverTooltip: React.FC<{ label: string; children: React.ReactNode; 
           >
             {label}
           </span>,
-          document.body
+          // Into the app's own root, not `document.body`: the dark theme is a `.dark` class on
+          // that root, so a tooltip parked outside it could never see the theme it was styled for.
+          document.getElementById('app-container') ?? document.body
         )}
     </span>
   );

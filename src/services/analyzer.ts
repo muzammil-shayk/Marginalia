@@ -189,7 +189,14 @@ function describeError(error: unknown): AnalysisFailure {
         'Could not reach Gemini. Check that this machine is online — everything else in Marginalia works offline, but this one feature cannot.'
     };
   }
-  return { status: 500, retryable: true, message: raw || 'The analysis failed.' };
+  // Never the raw blob: it is a JSON dump written for whoever wired up the API. Logged in full
+  // by the caller, summarised here.
+  console.error('[Marginalia] unclassified Gemini failure:', raw);
+  return {
+    status: 500,
+    retryable: true,
+    message: 'Gemini failed in a way this app does not recognise. The details are in the terminal.'
+  };
 }
 
 /**

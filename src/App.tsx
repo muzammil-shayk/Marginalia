@@ -289,6 +289,10 @@ export default function App() {
   const navigate = useCallback((screen: Screen, transition: TransitionType = 'push') => {
     setTransitionType(transition);
     setCurrentScreen(screen);
+    // The library panel is docked beside the CONTENT, not floating above it, so leaving it open
+    // across a navigation takes 320px from every screen that follows. At the 900px minimum window
+    // that leaves the library itself about 360px — three dashboard cards at 110px each.
+    setIsLibraryOpen(false);
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, []);
 
@@ -368,14 +372,22 @@ export default function App() {
   );
 
   /** Drops a deleted document from this session's in-memory library too. */
-  const handleStoredDocumentDeleted = useCallback((id: string) => {
-    setUploadedLibrary((prev) => prev.filter((d) => d.docId !== id));
-    setAnalysisDoc((prev) => {
-      if (prev.docId !== id) return prev;
-      // The open document was just erased from disk; there is nothing left to show.
-      return { title: '', text: '' };
-    });
-  }, []);
+  const handleStoredDocumentDeleted = useCallback(
+    (id: string) => {
+      setUploadedLibrary((prev) => prev.filter((d) => d.docId !== id));
+      setAnalysisDoc((prev) => {
+        if (prev.docId !== id) return prev;
+        // The open document was just erased from disk; there is nothing left to show. The reader
+        // and the workspace both render nothing without a document, so leaving the screen where
+        // it was showed an empty content area with no way out but the sidebar.
+        if (currentScreen === 'workspace' || currentScreen === 'reader') {
+          navigate('home', 'push_back');
+        }
+        return { title: '', text: '' };
+      });
+    },
+    [currentScreen, navigate]
+  );
 
   const handleStoredDocumentRenamed = useCallback((id: string, title: string) => {
     setUploadedLibrary((prev) => prev.map((d) => (d.docId === id ? { ...d, title } : d)));
@@ -462,7 +474,13 @@ export default function App() {
         {/* Thematic analysis, opened from either sidebar rather than from a document. */}
         <AnalysisModal
           isOpen={isAnalysisOpen}
-          onClose={() => setIsAnalysisOpen(false)}
+          // The dialog opens OVER a still-mounted library, so closing it is the only moment the
+          // dashboard can learn that a book was just analysed. Every other refresh rides on the
+          // screen remounting; this path has no navigation to ride.
+          onClose={() => {
+            setIsAnalysisOpen(false);
+            setLibraryRefreshToken((n) => n + 1);
+          }}
           isDark={isDark}
           onAddDocument={() => navigate('upload', 'push')}
         />

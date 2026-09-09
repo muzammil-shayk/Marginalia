@@ -460,9 +460,12 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
           {/* Notes Toggle Pill */}
           <button
             type="button"
+            // Two jobs on one button, and they were out of phase: arriving from another tab
+            // both switched to Notes AND hid every inline note, so the pill that says "Notes"
+            // was what made the notes disappear. Switching and toggling are now separate presses.
             onClick={() => {
-              handleSwitchTab('notes');
-              setShowNotesDrawer(!showNotesDrawer);
+              if (activeControlTab === 'notes') setShowNotesDrawer((shown) => !shown);
+              else handleSwitchTab('notes');
             }}
             className={`flex items-center gap-1.5 transition-all duration-200 cursor-pointer shrink-0 ${
               activeControlTab === 'notes'

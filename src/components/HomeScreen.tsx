@@ -247,8 +247,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const totalMarks = useMemo(() => stored.reduce((sum, d) => sum + (d.annotationCount || 0), 0), [stored]);
 
   // Themes
+  /**
+   * The theme the Atlas card is about.
+   *
+   * Matched by name so the split survives a reader who reorders their themes — but Settings lets
+   * that name be edited, and this card links straight to Settings to do it. Renaming it used to
+   * empty the card: the marks were all still there, they simply stopped being counted. Falling
+   * back to the first theme keeps the card about something real whatever it is called.
+   */
   const keyConceptsTheme = useMemo(
-    () => settings.activeThemes.find((t) => t.name.trim().toLowerCase() === 'key concepts'),
+    () =>
+      settings.activeThemes.find((t) => t.name.trim().toLowerCase() === 'key concepts') ??
+      settings.activeThemes[0],
     [settings.activeThemes]
   );
   const otherThemes = useMemo(
@@ -731,7 +741,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                           onClick={() => setStudioTab('terminology')}
                           className="font-semibold text-[#435c52] dark:text-emerald-400 hover:underline cursor-pointer"
                         >
-                          All terminologies ({documentsWithTerminology.length}) →
+                          All terminologies ({terminologyMarks}) →
                         </button>
                       </div>
                     </div>
@@ -1417,20 +1427,48 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   </div>
 
                   <div className="col-span-2 flex items-center justify-end gap-1 text-[11px]">
-                    <button
-                      type="button"
-                      onClick={() => onOpenStoredDocument?.(doc)}
-                      className="px-2 py-1 rounded hover:bg-stone-200/60 dark:hover:bg-stone-800 text-[#435c52] dark:text-emerald-400 font-medium cursor-pointer"
-                    >
-                      Open
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmingDeleteId(doc.id)}
-                      className="p-1 rounded text-stone-400 hover:text-red-600 cursor-pointer"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
+                    {/* The confirm step lives here too. It used to exist only in the grid, so the
+                        list's trash button set a pending-delete nobody could see or act on — and
+                        switching to grid afterwards showed a card asking to be deleted that the
+                        reader had never chosen. */}
+                    {confirmingDeleteId === doc.id ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => void commitDelete(doc.id)}
+                          disabled={busyId === doc.id}
+                          className="px-2 py-1 rounded text-red-600 dark:text-red-400 font-semibold hover:bg-red-50 dark:hover:bg-red-950/40 cursor-pointer disabled:opacity-50"
+                        >
+                          {busyId === doc.id ? 'Deleting…' : 'Delete'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmingDeleteId(null)}
+                          className="px-2 py-1 rounded text-stone-500 hover:bg-stone-200/60 dark:hover:bg-stone-800 cursor-pointer"
+                        >
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => onOpenStoredDocument?.(doc)}
+                          className="px-2 py-1 rounded hover:bg-stone-200/60 dark:hover:bg-stone-800 text-[#435c52] dark:text-emerald-400 font-medium cursor-pointer"
+                        >
+                          Open
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmingDeleteId(doc.id)}
+                          aria-label={`Delete ${doc.title}`}
+                          title={`Delete ${doc.title}`}
+                          className="p-1 rounded text-stone-400 hover:text-red-600 cursor-pointer"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
               ))}

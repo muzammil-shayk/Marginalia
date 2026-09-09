@@ -76,6 +76,8 @@ export function usePlainTextAnnotations(docId: string | undefined): PlainTextAnn
 
   const notesRef = useRef(notes);
   const formatsRef = useRef(formats);
+  /** Mirrors `isLoaded` for the unmount flush, which cannot read state from its closure. */
+  const isLoadedRef = useRef(false);
   /** Entries belonging to the PDF workspace, held only so every save can hand them back. */
   const othersRef = useRef<Annotation[]>([]);
   useEffect(() => {
@@ -95,8 +97,15 @@ export function usePlainTextAnnotations(docId: string | undefined): PlainTextAnn
       return;
     }
     setIsLoaded(false);
+    isLoadedRef.current = false;
     othersRef.current = [];
+    // Cancelled when the document changes, because a slow read for the PREVIOUS document must
+    // never land as this one's. Without it, opening A then B while A's read is in flight installs
+    // A's notes under B's id — and the save effect below then writes A's entire annotation list
+    // over B's. The workspace has always guarded its own read this way; this one did not.
+    let cancelled = false;
     fetchAnnotations(docId).then((stored) => {
+      if (cancelled) return;
       // A failed read is not an empty document. Leaving `isLoaded` false keeps the save effect
       // below switched off, so a document whose marks could not be read is never written over
       // with the nothing we managed to load.
@@ -109,8 +118,12 @@ export function usePlainTextAnnotations(docId: string | undefined): PlainTextAnn
       othersRef.current = others;
       setNotesState(loadedNotes);
       setFormatsState(loadedFormats);
+      isLoadedRef.current = true;
       setIsLoaded(true);
     });
+    return () => {
+      cancelled = true;
+    };
   }, [docId]);
 
   // Debounced save whenever either array changes, only once the initial load has completed.
@@ -129,7 +142,9 @@ export function usePlainTextAnnotations(docId: string | undefined): PlainTextAnn
   // a navigate-away.
   useEffect(() => {
     return () => {
-      if (docId && (notesRef.current.length || formatsRef.current.length)) {
+      // Gated on having LOADED, not on having something to write. The old length check meant
+      // deleting your only note wrote nothing on the way out, and the note came back on reopen.
+      if (docId && isLoadedRef.current) {
         void saveAnnotations(
           docId,
           mergeEntries(notesRef.current, formatsRef.current, othersRef.current)

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileText, BookOpen, Clock, MoreVertical, CheckCircle2, Loader2, AlertCircle } from './icons';
+import { Upload, FileText, BookOpen, Clock, CheckCircle2, Loader2, AlertCircle } from './icons';
 import { Screen, TransitionType } from '../types';
 import type { LibraryDocument } from '../App';
 import { parseFile } from '../utils/fileParser';
@@ -333,10 +333,10 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
             {uploadedLibrary.map((doc) => (
               <div
                 key={doc.id}
-                onClick={() => {
-                  onOpenLibraryDocument?.(doc);
-                  onNavigate(isAnnotatableFormat(doc.format) ? 'workspace' : 'reader', 'push');
-                }}
+                // The handler fetches the document's text and navigates once it has it. Calling
+                // `onNavigate` here too raced it: the workspace opened on whichever book was
+                // loaded before, and a failed fetch left the reader stranded on it.
+                onClick={() => onOpenLibraryDocument?.(doc)}
                 className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between cursor-pointer hover:shadow-xs ${
                   isDark
                     ? 'bg-[#1b201d] border-stone-800 hover:bg-[#232a26]'
@@ -356,13 +356,6 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
                     </p>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); }}
-                  className="p-1 text-stone-400 hover:text-stone-600 cursor-pointer"
-                >
-                  <MoreVertical className="w-4 h-4" />
-                </button>
               </div>
             ))}
           </div>
