@@ -467,6 +467,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             type="button"
             role="switch"
             aria-checked={settings.darkMode}
+            aria-label="Dark mode"
             onClick={() => onUpdateSettings((p) => ({ ...p, darkMode: !p.darkMode }))}
             className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer ${
               settings.darkMode ? 'bg-[#435c52]' : 'bg-stone-300 dark:bg-stone-700'
@@ -911,6 +912,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               type="button"
               role="switch"
               aria-checked={autoUpdateEnabled}
+              aria-label="Check for updates automatically"
               onClick={handleToggleAutoUpdate}
               className={`w-11 h-6 rounded-full transition-colors relative cursor-pointer shrink-0 ${
                 autoUpdateEnabled ? 'bg-[#435c52]' : 'bg-stone-300 dark:bg-stone-700'

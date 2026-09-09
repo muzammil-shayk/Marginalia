@@ -72,3 +72,46 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(100, 116, 139, 0.4);
 }
+
+/* ── Dashboard motion ──────────────────────────────────────────────────────
+   One strong ease-out, shared by every entrance and press on the library
+   dashboard. Rows stagger in on first paint; `motion-safe:` gates the whole
+   thing, so a reader who asked for reduced motion simply gets the list. */
+:root {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@keyframes insight-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Desktop window dragging ───────────────────────────────────────────────
+   The desktop build hides the system title bar (`titleBarStyle: 'hiddenInset'`)
+   so the app's own header can occupy that space. Hiding it also removes the
+   only thing the OS lets you grab, which left the window pinned in place — you
+   could not move it at all unless it was full screen.
+
+   So the app's own top bars become the title bar. Anything interactive inside
+   one opts back out, or a drag region would swallow its clicks. Browsers ignore
+   `-webkit-app-region` entirely, so this costs the web build nothing. */
+.app-drag {
+  -webkit-app-region: drag;
+}
+
+.app-drag button,
+.app-drag a,
+.app-drag input,
+.app-drag select,
+.app-drag textarea,
+.app-drag [role='button'],
+.app-drag [contenteditable='true'],
+.app-drag .no-drag {
+  -webkit-app-region: no-drag;
+}

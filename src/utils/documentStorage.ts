@@ -1,3 +1,4 @@
+import type { ThematicAnalysisResult } from '../types';
 /**
  * Client side of the local document store (see `src/services/documentStore.ts` for the server
  * half). Documents live on the machine's own filesystem instead of in the browser, so the app
@@ -26,8 +27,17 @@ export interface StoredDocumentMeta {
   annotationCount: number;
   /** The distinct theme ids tagged anywhere in this document, for the Home screen's theme dashboard. */
   themeIds: string[];
+  /** How many marks this document carries under each theme id, keyed by `UserSettings.activeThemes[].id`. */
+  themeCounts: Record<string, number>;
   /** How many annotations in this document are marked terminology, for the Home screen's Terminologies section. */
   terminologyCount: number;
+  /** A digest of the saved thematic analysis, or null if this book has never been analysed.
+   *  Drives the Home screen's AI Themes section without loading every full result. */
+  analysis: {
+    analysedAt: string;
+    primaryThemes: string[];
+    themeCount: number;
+  } | null;
   retentionDays?: number;
 }
 
@@ -178,6 +188,40 @@ export async function renameStoredDocument(id: string, title: string): Promise<S
  * `inline` is what the PDF workspace loads: it makes the server send the file with its real
  * content type instead of as a download, which is what PDF.js needs to render the actual pages.
  */
+/**
+ * The analysis already saved for a document, or null if it has never been analysed.
+ *
+ * Separate from `fetchDocument` because that hands back the entire text of the book, which is the
+ * one thing this caller does not want.
+ */
+export async function fetchSavedAnalysis(
+  id: string
+): Promise<{ data: ThematicAnalysisResult; analysedAt: string; model: string } | null> {
+  try {
+    const res = await fetch(`/api/documents/${id}/analysis`);
+    if (!res.ok) return null;
+    const body = await res.json();
+    return body?.data ? { data: body.data, analysedAt: body.analysedAt, model: body.model } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * What a stored PDF says it is inside its own metadata, for prefilling the analysis lookup form.
+ * Empty strings when the document is not a PDF, carries nothing usable, or cannot be parsed —
+ * the caller falls back to guessing from the filename.
+ */
+export async function fetchBookMetadata(id: string): Promise<{ title: string; author: string }> {
+  try {
+    const res = await fetch(`/api/documents/${id}/book-metadata`);
+    if (!res.ok) return { title: '', author: '' };
+    return await res.json();
+  } catch {
+    return { title: '', author: '' };
+  }
+}
+
 export function originalDocumentUrl(id: string, disposition: 'inline' | 'attachment' = 'attachment'): string {
   return `/api/documents/${id}/original${disposition === 'inline' ? '?disposition=inline' : ''}`;
 }
@@ -186,14 +230,23 @@ export interface StoredAnnotationSet {
   annotations: Annotation[];
 }
 
-export async function fetchAnnotations(id: string): Promise<StoredAnnotationSet> {
+/**
+ * Reads a document's marks, or null if they could not be read.
+ *
+ * The null matters more than it looks. This used to answer a failed request with an empty set,
+ * which is indistinguishable from a book nobody has marked yet — so the workspace would open
+ * showing nothing, decide it was loaded, and write that emptiness straight back over the marks
+ * still on disk. A request that fails while the server is still starting is enough to do it.
+ * Failure and emptiness are different answers and callers must be able to tell them apart.
+ */
+export async function fetchAnnotations(id: string): Promise<StoredAnnotationSet | null> {
   try {
     const res = await fetch(`/api/documents/${id}/annotations`);
-    if (!res.ok) return { annotations: [] };
+    if (!res.ok) return null;
     const body = await res.json();
     return { annotations: Array.isArray(body.annotations) ? body.annotations : [] };
   } catch {
-    return { annotations: [] };
+    return null;
   }
 }
 

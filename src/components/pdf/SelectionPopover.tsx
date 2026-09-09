@@ -28,6 +28,8 @@ export interface SelectionAnchor {
 interface SelectionPopoverProps {
   anchor: SelectionAnchor | null;
   isDark?: boolean;
+  /** Pixels at the foot of the window this menu must stay clear of — the instance navigator. */
+  bottomInset?: number;
   /** Colour each text tool will use, so the menu shows what it is about to do. */
   toolColors: Record<string, string>;
   themes: UserSettings['activeThemes'];
@@ -72,6 +74,7 @@ const REACTION_LABELS: Record<string, string> = {
 export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
   anchor,
   isDark = false,
+  bottomInset = 0,
   toolColors,
   themes,
   activeThemeId,
@@ -87,7 +90,7 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
   // Any press outside, or Escape, takes the menu away — the same rule every floating surface in
   // the workspace follows. The hook is called before the early return so it is never conditional.
   useDismiss(ref, Boolean(anchor), onDismiss);
-  const panel = useAnchoredPanel(ref, anchor);
+  const panel = useAnchoredPanel(ref, anchor, [], bottomInset);
 
   if (!anchor) return null;
 

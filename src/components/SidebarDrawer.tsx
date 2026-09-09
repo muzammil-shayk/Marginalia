@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, BookOpen, PlusCircle, Settings } from 'lucide-react';
+import { X, BookOpen, PlusCircle, Settings, Sparkles } from 'lucide-react';
 import { Screen, TransitionType } from '../types';
 import { AnimatePresence, motion } from 'motion/react';
 import logo from '../assets/images/marginalia-logo.png';
@@ -9,13 +9,16 @@ interface SidebarDrawerProps {
   onClose: () => void;
   onNavigate: (screen: Screen, transition?: TransitionType) => void;
   isDark?: boolean;
+  /** Opens the thematic analysis dialog. See DesktopNav for why it is not a screen. */
+  onOpenAnalysis?: () => void;
 }
 
 export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   isOpen,
   onClose,
   onNavigate,
-  isDark = false
+  isDark = false,
+  onOpenAnalysis
 }) => {
   return (
     <AnimatePresence>
@@ -69,6 +72,20 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               <BookOpen className="w-4 h-4 text-[#435c52]" />
               <span>Library</span>
             </button>
+
+            {onOpenAnalysis && (
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenAnalysis();
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-stone-200/60 dark:hover:bg-stone-800 text-[14px] font-medium transition-colors text-left"
+              >
+                <Sparkles className="w-4 h-4 text-[#435c52]" />
+                <span>AI Analysis</span>
+              </button>
+            )}
 
             <button
               type="button"

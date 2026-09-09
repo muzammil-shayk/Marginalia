@@ -46,6 +46,8 @@ interface MarkPropertiesProps {
   mark: Annotation;
   /** Viewport rectangle of the mark, used to place the strip. */
   rect: { left: number; top: number; right: number; bottom: number };
+  /** Pixels at the foot of the window this strip must stay clear of — the instance navigator. */
+  bottomInset?: number;
   settings: UserSettings;
   isDark?: boolean;
   onColorChange: (color: string, themeId: string | null) => void;
@@ -67,6 +69,7 @@ interface MarkPropertiesProps {
 export const MarkProperties: React.FC<MarkPropertiesProps> = ({
   mark,
   rect,
+  bottomInset = 0,
   settings,
   isDark = false,
   onColorChange,
@@ -99,7 +102,7 @@ export const MarkProperties: React.FC<MarkPropertiesProps> = ({
 
   // Measured rather than guessed: the strip's width depends on which controls its kind needs, so
   // the kind is what re-triggers the measurement.
-  const panel = useAnchoredPanel(ref, rect, [mark.kind]);
+  const panel = useAnchoredPanel(ref, rect, [mark.kind], bottomInset);
 
   return (
     <div

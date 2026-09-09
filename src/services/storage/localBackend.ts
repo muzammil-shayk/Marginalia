@@ -22,11 +22,13 @@ import {
   StoredDocument,
   UpdateDocumentParams,
   buildMeta,
+  computeThemeCounts,
   computeThemeIds,
   countTerminology,
   countWords,
   isValidId,
-  safeExtension
+  safeExtension,
+  summarizeAnalysis
 } from './types';
 
 export class LocalDocumentBackend implements DocumentBackend {
@@ -72,7 +74,7 @@ export class LocalDocumentBackend implements DocumentBackend {
   async saveDocument(params: SaveDocumentParams): Promise<DocumentMeta> {
     await this.ensureDirs();
     const meta = buildMeta(crypto.randomBytes(16).toString('hex'), params);
-    await this.write({ ...meta, text: params.text, annotations: [], readingState: null });
+    await this.write({ ...meta, text: params.text, annotations: [], readingState: null, analysis: null });
     return meta;
   }
 
@@ -113,10 +115,13 @@ export class LocalDocumentBackend implements DocumentBackend {
         // "nothing tagged yet" rather than an error. Recomputed rather than trusted from disk in
         // case an older record's cached value has drifted from its own annotations.
         themeIds: computeThemeIds(annotations),
+        themeCounts: computeThemeCounts(annotations),
         terminologyCount: countTerminology(annotations),
         text: raw.text || '',
         annotations,
-        readingState: raw.readingState ?? null
+        readingState: raw.readingState ?? null,
+        // Absent on every record written before analyses were saved, which is most of them.
+        analysis: raw.analysis ?? null
       };
     } catch {
       return null;
@@ -143,8 +148,8 @@ export class LocalDocumentBackend implements DocumentBackend {
       if (!entry.endsWith('.json')) continue;
       const doc = await this.getDocument(entry.replace(/\.json$/, ''));
       if (!doc) continue;
-      const { text, annotations, ...meta } = doc;
-      metas.push(meta);
+      const { text, annotations, analysis, ...rest } = doc;
+      metas.push({ ...rest, analysis: summarizeAnalysis(analysis) });
     }
     return metas.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
@@ -164,14 +169,16 @@ export class LocalDocumentBackend implements DocumentBackend {
       annotations,
       annotationCount: annotations.length,
       themeIds: computeThemeIds(annotations),
+      themeCounts: computeThemeCounts(annotations),
       terminologyCount: countTerminology(annotations),
       readingState: params.readingState ?? doc.readingState,
+      analysis: params.analysis ?? doc.analysis,
       updatedAt: changesActivity ? new Date().toISOString() : doc.updatedAt
     };
     await this.write(updated);
 
-    const { text, annotations: _a, ...meta } = updated;
-    return meta;
+    const { text, annotations: _a, analysis, ...rest } = updated;
+    return { ...rest, analysis: summarizeAnalysis(analysis) };
   }
 
   /**

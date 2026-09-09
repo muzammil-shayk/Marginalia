@@ -29,11 +29,12 @@ import {
   Sparkles,
   Lightbulb,
   Tag,
-  ChevronDown
+  ChevronDown,
+  ChevronRight
 } from 'lucide-react';
 import { isAnnotatableFormat } from '../utils/annotatableFormats';
 import { motion, AnimatePresence } from 'motion/react';
-import { Screen, TransitionType, UserSettings } from '../types';
+import { AnnotationFocus, Screen, TransitionType, UserSettings } from '../types';
 import { initialSettings } from '../data/mockData';
 import { documentThumbnail } from '../utils/documentThumbnail';
 import {
@@ -42,6 +43,7 @@ import {
   listStoredDocuments,
   renameStoredDocument
 } from '../utils/documentStorage';
+import { ErrorDialog } from './ErrorDialog';
 
 interface HomeScreenProps {
   onNavigate: (screen: Screen, transition?: TransitionType) => void;
@@ -74,7 +76,12 @@ interface HomeScreenProps {
     docId?: string;
   }) => void;
   /** Opens a document straight from disk — a PDF lands in the viewer. */
-  onOpenStoredDocument?: (meta: StoredDocumentMeta) => void;
+  /**
+   * Opens a stored document. The optional focus travels with it: tapping a book under Key
+   * Concepts asks to see the key concepts IN that book, not merely to open it, and the workspace
+   * turns that request into a navigator over the matching marks.
+   */
+  onOpenStoredDocument?: (meta: StoredDocumentMeta, focus?: AnnotationFocus) => void;
   /** Reopens the document already in hand, in the PDF editor. */
   onContinueAnnotating?: () => void;
   /** False when the open document has no PDF behind it and so cannot be annotated. */
@@ -168,8 +175,8 @@ const CollapsibleSection: React.FC<{
   children: React.ReactNode;
 }> = ({ icon: Icon, accentColor, title, summary, isDark, collapsed, onToggle, children }) => (
   <section
-    className={`mb-5 rounded-2xl border overflow-hidden ${
-      isDark ? 'bg-[#1b201d] border-stone-800' : 'bg-white border-stone-200/80 shadow-xs'
+    className={`mb-4 rounded-2xl border overflow-hidden ${
+      isDark ? 'bg-[#1b201d] border-stone-800' : 'bg-white border-stone-200/70'
     }`}
   >
     <button
@@ -214,6 +221,141 @@ const CollapsibleSection: React.FC<{
   </section>
 );
 
+/**
+ * Motion vocabulary for the dashboard.
+ *
+ * One strong ease-out curve, used everywhere something enters or responds to a press. The stock
+ * CSS easings are too weak to read as intentional, and mixing three curves across one screen is
+ * what makes an interface feel assembled rather than designed.
+ */
+const EASE_OUT = 'cubic-bezier(0.23, 1, 0.32, 1)';
+
+/**
+ * One book in a dashboard section, with what that section knows about it alongside.
+ *
+ * A row is not one button. The title opens the book and each piece of data beside it can be its
+ * own action — jump to those marks, step through that theme — so wrapping the lot in a single
+ * `<button>` would nest interactive elements inside each other, which is invalid and leaves a
+ * keyboard user with one stop where there are three actions. The row is a plain list item; the
+ * things you can press are buttons.
+ *
+ * The chevron only appears on hover. An affordance on every row at rest is noise; absent when
+ * nothing is pointing at it, present the moment something is, is the same information for free.
+ */
+const InsightRow: React.FC<{
+  title: string;
+  onOpen?: () => void;
+  index?: number;
+  children: React.ReactNode;
+}> = ({ title, onOpen, index = 0, children }) => (
+  <li
+    className="group/row flex items-center gap-3 -mx-2 pl-2 pr-1 rounded-lg transition-colors duration-150 hover:bg-stone-500/[0.055] motion-safe:animate-[insight-row-in_260ms_var(--ease-out)_both]"
+    style={{ animationDelay: `${Math.min(index, 6) * 40}ms` }}
+  >
+    <button
+      type="button"
+      onClick={onOpen}
+      title={`Open ${title}`}
+      className="flex-1 min-w-0 flex items-center gap-1.5 py-2.5 text-left cursor-pointer rounded-md transition-transform duration-150 ease-out active:scale-[0.995] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#435c52] dark:focus-visible:ring-emerald-400"
+    >
+      <span className="font-serif text-[14px] text-stone-800 dark:text-stone-200 truncate group-hover/row:text-stone-950 dark:group-hover/row:text-white transition-colors duration-150">
+        {title}
+      </span>
+      <ChevronRight
+        aria-hidden
+        className="w-3.5 h-3.5 shrink-0 text-stone-400 opacity-0 -translate-x-1 group-hover/row:opacity-100 group-hover/row:translate-x-0 transition-[opacity,transform] duration-150 ease-out"
+      />
+    </button>
+    <span className="shrink-0 flex items-center justify-end gap-1">{children}</span>
+  </li>
+);
+
+/** The rows of one section: a list, hairline-separated rather than boxed one by one. */
+const InsightList: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <ul className="divide-y divide-stone-200/60 dark:divide-stone-800/70">{children}</ul>
+);
+
+/**
+ * A count and its unit, right-aligned and tabular so the numbers form a column the eye runs down
+ * instead of a ragged edge. The fixed minimum width is what keeps that column straight when the
+ * counts are 1 and 12.
+ */
+const RowCount: React.FC<{ value: number; unit: string }> = ({ value, unit }) => (
+  <span className="text-[11.5px] text-stone-500 dark:text-stone-500 tabular-nums min-w-[4.75rem] text-right pr-1">
+    {value} {unit}
+    {value === 1 ? '' : 's'}
+  </span>
+);
+
+/**
+ * A theme on a row: its colour, its name, its tally — and, where the caller gives it somewhere to
+ * go, a press that opens the book already stepping through those marks.
+ *
+ * Squared rather than pill-shaped. A rounded-full chip reads as decoration; these are data, and
+ * half of them are controls.
+ */
+const RowTag: React.FC<{
+  label: string;
+  color?: string;
+  count?: number;
+  onPress?: () => void;
+}> = ({ label, color, count, onPress }) => {
+  const body = (
+    <>
+      {color && (
+        <span
+          aria-hidden
+          className="w-1.5 h-1.5 rounded-[1px] shrink-0"
+          style={{ backgroundColor: color }}
+        />
+      )}
+      <span className="truncate">{label}</span>
+      {count !== undefined && <span className="text-stone-500 tabular-nums">{count}</span>}
+    </>
+  );
+  const shell =
+    'inline-flex items-center gap-1.5 max-w-[12rem] px-1.5 py-0.5 rounded-[3px] text-[11px] font-medium bg-stone-500/[0.09] text-stone-700 dark:text-stone-300';
+
+  if (!onPress) return <span className={shell}>{body}</span>;
+  return (
+    <button
+      type="button"
+      onClick={onPress}
+      title={`Show ${label} in this book`}
+      className={`${shell} cursor-pointer transition-[background-color,transform] duration-150 ease-out hover:bg-stone-500/[0.16] active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#435c52] dark:focus-visible:ring-emerald-400`}
+    >
+      {body}
+    </button>
+  );
+};
+
+/**
+ * What a section shows before it has anything to show.
+ *
+ * One italic sentence is not an empty state: it reports the absence and abandons the reader
+ * there. Each of these names the single action that fills the section and offers it.
+ */
+const SectionEmpty: React.FC<{
+  children: React.ReactNode;
+  actionLabel?: string;
+  onAction?: () => void;
+}> = ({ children, actionLabel, onAction }) => (
+  <div className="pt-3 pb-1 space-y-2.5">
+    <p className="text-[12.5px] text-stone-500 dark:text-stone-400 leading-relaxed max-w-[52ch] text-pretty">
+      {children}
+    </p>
+    {actionLabel && onAction && (
+      <button
+        type="button"
+        onClick={onAction}
+        className="text-[12px] font-semibold text-[#435c52] dark:text-emerald-300 hover:underline underline-offset-4 cursor-pointer transition-transform duration-150 ease-out active:scale-[0.97]"
+      >
+        {actionLabel}
+      </button>
+    )}
+  </div>
+);
+
 export const HomeScreen: React.FC<HomeScreenProps> = ({
   onNavigate,
   isDark = false,
@@ -235,6 +377,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const [draftTitle, setDraftTitle] = useState('');
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  /** A rename or delete the store refused. Both used to fail into nothing at all. */
+  const [failure, setFailure] = useState<string | null>(null);
   const [query, setQuery] = useState('');
 
   const refreshLibrary = useCallback(async () => {
@@ -258,6 +402,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     if (updated) {
       setStored((prev) => prev.map((d) => (d.id === id ? updated : d)));
       onDocumentRenamed?.(id, updated.title);
+    } else {
+      // Without this the card silently snapped back to its old name, which reads like the app
+      // ignored the edit rather than like the write failed.
+      setFailure('Could not rename that document. Its name on disk is unchanged.');
     }
     setBusyId(null);
     setRenamingId(null);
@@ -268,6 +416,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     if (await deleteStoredDocument(id)) {
       setStored((prev) => prev.filter((d) => d.id !== id));
       onDocumentDeleted?.(id);
+    } else {
+      setFailure('Could not delete that document. It is still in your library.');
     }
     setBusyId(null);
     setConfirmingDeleteId(null);
@@ -306,10 +456,52 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     [settings.activeThemes, keyConceptsTheme]
   );
 
+  /**
+   * Every book carrying at least one mark under a theme the reader defined, with the themes it
+   * carries and how many marks each holds. Key Concepts is excluded — it has its own card.
+   *
+   * Book-first rather than theme-first: the same data read the way the reader asks for it, which
+   * is "what have I been filing in this book", not "which books touch Questions".
+   */
+  const booksWithUserThemes = useMemo(
+    () =>
+      stored
+        .map((doc) => ({
+          doc,
+          themes: otherThemes
+            .map((theme) => ({ ...theme, count: doc.themeCounts?.[theme.id] ?? 0 }))
+            .filter((theme) => theme.count > 0)
+            .sort((a, b) => b.count - a.count)
+        }))
+        .filter((entry) => entry.themes.length > 0),
+    [stored, otherThemes]
+  );
+
   /** Which books, across the whole library, carry at least one terminology mark. */
   const documentsWithTerminology = useMemo(
     () => stored.filter((d) => (d.terminologyCount ?? 0) > 0),
     [stored]
+  );
+
+  /** Every terminology mark in the library, for the section header's tally. */
+  const terminologyMarks = useMemo(
+    () => documentsWithTerminology.reduce((total, d) => total + d.terminologyCount, 0),
+    [documentsWithTerminology]
+  );
+
+  /** Which books have a saved thematic analysis, most recently analysed first. */
+  const analysedDocuments = useMemo(
+    () =>
+      stored
+        .filter((d) => d.analysis)
+        .sort((a, b) => (b.analysis?.analysedAt ?? '').localeCompare(a.analysis?.analysedAt ?? '')),
+    [stored]
+  );
+
+  /** Every theme found across every analysed book, for the section header's tally. */
+  const analysedThemeCount = useMemo(
+    () => analysedDocuments.reduce((total, d) => total + (d.analysis?.themeCount ?? 0), 0),
+    [analysedDocuments]
   );
 
   /** Persisted rather than session-local, so a section folded shut stays that way next launch —
@@ -522,8 +714,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   return (
     <main className="flex-1 w-full px-5 md:px-8 lg:px-10 py-6 md:py-8 pb-28 md:pb-10">
+      <ErrorDialog open={Boolean(failure)} message={failure ?? ''} onClose={() => setFailure(null)} />
+
       {/* Masthead: what is here, and the two ways to act on it. */}
-      <header className="flex flex-wrap items-end justify-between gap-4 mb-6">
+      <header className="app-drag flex flex-wrap items-end justify-between gap-4 mb-6">
         <div className="min-w-0">
           <h1 className="font-serif text-[28px] md:text-[34px] font-bold tracking-tight text-stone-900 dark:text-white leading-none">
             Library
@@ -653,38 +847,52 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           own rather than buried as one row among however many other themes exist. */}
       {keyConceptsTheme && (() => {
         const books = booksByTheme.get(keyConceptsTheme.id) ?? [];
+        const keyConceptMarks = books.reduce(
+          (total, doc) => total + (doc.themeCounts?.[keyConceptsTheme.id] ?? 0),
+          0
+        );
         return (
           <CollapsibleSection
             icon={Lightbulb}
             accentColor={keyConceptsTheme.color}
             title="Key Concepts"
-            summary={books.length === 0 ? 'No books tagged yet' : `${books.length} book${books.length === 1 ? '' : 's'}`}
+            summary={
+              books.length === 0
+                ? 'Nothing filed yet'
+                : `${books.length} book${books.length === 1 ? '' : 's'} · ${keyConceptMarks} mark${keyConceptMarks === 1 ? '' : 's'}`
+            }
             isDark={isDark}
             collapsed={Boolean(settings.collapsedHomeSections?.keyConcepts)}
             onToggle={() => toggleHomeSection('keyConcepts')}
           >
             {books.length === 0 ? (
-              <p className="text-[12px] text-stone-400 dark:text-stone-500 italic pt-2">
-                Tag a passage under Key Concepts while annotating, and the book will show up here.
-              </p>
+              <SectionEmpty
+                actionLabel={stored.length === 0 ? 'Add your first document' : undefined}
+                onAction={stored.length === 0 ? () => onNavigate('upload', 'push') : undefined}
+              >
+                Nothing is filed under Key Concepts yet. Tag a passage with it while annotating and
+                the book appears here, with how much of it you have marked.
+              </SectionEmpty>
             ) : (
-              <div className="flex flex-wrap gap-1.5 pt-2">
-                {books.map((doc) => (
-                  <button
+              <InsightList>
+                {books.map((doc, i) => (
+                  <InsightRow
                     key={doc.id}
-                    type="button"
-                    onClick={() => onOpenStoredDocument?.(doc)}
-                    title={`Open ${doc.title}`}
-                    className={`px-2 py-0.5 rounded-full text-[12px] font-medium cursor-pointer transition-colors ${
-                      isDark
-                        ? 'bg-stone-800 text-stone-300 hover:bg-stone-700'
-                        : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
-                    }`}
+                    index={i}
+                    title={doc.title}
+                    onOpen={() =>
+                      onOpenStoredDocument?.(doc, {
+                        kind: 'theme',
+                        themeId: keyConceptsTheme.id,
+                        label: keyConceptsTheme.name,
+                        color: keyConceptsTheme.color
+                      })
+                    }
                   >
-                    {doc.title}
-                  </button>
+                    <RowCount value={doc.themeCounts?.[keyConceptsTheme.id] ?? 0} unit="mark" />
+                  </InsightRow>
                 ))}
-              </div>
+              </InsightList>
             )}
           </CollapsibleSection>
         );
@@ -699,95 +907,144 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         title="Terminologies"
         summary={
           documentsWithTerminology.length === 0
-            ? 'No terms marked yet'
-            : `${documentsWithTerminology.length} book${documentsWithTerminology.length === 1 ? '' : 's'}`
+            ? 'Nothing marked yet'
+            : `${documentsWithTerminology.length} book${documentsWithTerminology.length === 1 ? '' : 's'} · ${terminologyMarks} term${terminologyMarks === 1 ? '' : 's'}`
         }
         isDark={isDark}
         collapsed={Boolean(settings.collapsedHomeSections?.terminologies)}
         onToggle={() => toggleHomeSection('terminologies')}
       >
         {documentsWithTerminology.length === 0 ? (
-          <p className="text-[12px] text-stone-400 dark:text-stone-500 italic pt-2">
-            Select a word or phrase while annotating and choose Terminology to mark it.
-          </p>
+          <SectionEmpty>
+            No terms marked yet. Select a word or phrase while annotating and choose Terminology,
+            and every book you build a vocabulary in is listed here.
+          </SectionEmpty>
         ) : (
-          <div className="flex flex-wrap gap-1.5 pt-2">
-            {documentsWithTerminology.map((doc) => (
-              <button
+          <InsightList>
+            {documentsWithTerminology.map((doc, i) => (
+              <InsightRow
                 key={doc.id}
-                type="button"
-                onClick={() => onOpenStoredDocument?.(doc)}
-                title={`Open ${doc.title}`}
-                className={`flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[12px] font-medium cursor-pointer transition-colors ${
-                  isDark
-                    ? 'bg-stone-800 text-stone-300 hover:bg-stone-700'
-                    : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
-                }`}
+                index={i}
+                title={doc.title}
+                onOpen={() =>
+                  onOpenStoredDocument?.(doc, {
+                    kind: 'terminology',
+                    label: 'Terminology',
+                    color: settings.terminologyColor
+                  })
+                }
               >
-                {doc.title}
-                <span className="text-stone-400 dark:text-stone-500 tabular-nums">
-                  {doc.terminologyCount}
-                </span>
-              </button>
+                <RowCount value={doc.terminologyCount} unit="term" />
+              </InsightRow>
             ))}
-          </div>
+          </InsightList>
         )}
       </CollapsibleSection>
 
-      {/* Themes: a dashboard reading of the same colour-coding used everywhere marks are made —
-          which books, across the whole library, touch each theme. Key Concepts is split out into
-          its own card above, so this covers everything else. */}
+      {/* AI Themes: what Gemini found in each book that has been analysed. Saved with the document
+          (see `StoredAnalysis`), so this costs nothing to show and a book never has to be
+          analysed twice to be read again. */}
+      <CollapsibleSection
+        icon={Sparkles}
+        accentColor="#435c52"
+        title="AI Themes"
+        summary={
+          analysedDocuments.length === 0
+            ? 'Nothing analysed yet'
+            : `${analysedDocuments.length} book${analysedDocuments.length === 1 ? '' : 's'} · ${analysedThemeCount} theme${analysedThemeCount === 1 ? '' : 's'}`
+        }
+        isDark={isDark}
+        collapsed={Boolean(settings.collapsedHomeSections?.aiThemes)}
+        onToggle={() => toggleHomeSection('aiThemes')}
+      >
+        {analysedDocuments.length === 0 ? (
+          <SectionEmpty
+            actionLabel={stored.length === 0 ? 'Add your first document' : undefined}
+            onAction={stored.length === 0 ? () => onNavigate('upload', 'push') : undefined}
+          >
+            No books analysed yet. Open one and press AI Analysis, or use AI Analysis in the
+            sidebar. Nothing is sent anywhere until you press it, and what comes back is saved
+            here, so a book is only ever analysed once.
+          </SectionEmpty>
+        ) : (
+          <InsightList>
+            {analysedDocuments.map((doc, i) => (
+              <InsightRow
+                key={doc.id}
+                index={i}
+                title={doc.title}
+                onOpen={() => onOpenStoredDocument?.(doc)}
+              >
+                {/* Primary themes only. Every theme it found would be a wall of tags rather than
+                    an answer to "what is this book about". */}
+                {doc.analysis!.primaryThemes.length === 0 ? (
+                  <span className="text-[11px] text-stone-400">No dominant theme</span>
+                ) : (
+                  doc.analysis!.primaryThemes.map((theme) => <RowTag key={theme} label={theme} />)
+                )}
+                <RowCount value={doc.analysis!.themeCount} unit="theme" />
+              </InsightRow>
+            ))}
+          </InsightList>
+        )}
+      </CollapsibleSection>
+
+      {/* User Themes: the reader's own colour-coding, read back by book rather than by theme.
+          Grouping by theme answered "who touches Questions?"; the reader's actual question at a
+          glance is "what have I been filing in this book, and how much of it". Key Concepts is
+          split out into its own card above, so this covers everything else. */}
       {otherThemes.length > 0 && (
         <CollapsibleSection
-          icon={Sparkles}
+          // Not Sparkles: AI Themes already owns that, and two identical icons on adjacent cards
+          // read as the same kind of thing. The reader's own themes are the colour-coding they
+          // chose, so the palette is the honest icon for them.
+          icon={Palette}
           accentColor="#8a8578"
-          title="Themes"
-          summary={`${otherThemes.length} theme${otherThemes.length === 1 ? '' : 's'}`}
+          title="User Themes"
+          summary={
+            booksWithUserThemes.length === 0
+              ? `${otherThemes.length} theme${otherThemes.length === 1 ? '' : 's'}, none used yet`
+              : `${booksWithUserThemes.length} book${booksWithUserThemes.length === 1 ? '' : 's'} across ${otherThemes.length} theme${otherThemes.length === 1 ? '' : 's'}`
+          }
           isDark={isDark}
           collapsed={Boolean(settings.collapsedHomeSections?.themes)}
           onToggle={() => toggleHomeSection('themes')}
         >
-          <div className="space-y-3 pt-2">
-            {otherThemes.map((theme) => {
-              const books = booksByTheme.get(theme.id) ?? [];
-              return (
-                <div key={theme.id} className="flex flex-wrap items-baseline gap-x-3 gap-y-1.5">
-                  <span className="flex items-center gap-2 shrink-0 w-40">
-                    <span
-                      className="w-3 h-3 rounded-full shrink-0 border border-black/10"
-                      style={{ backgroundColor: theme.color }}
+          {booksWithUserThemes.length === 0 ? (
+            <SectionEmpty actionLabel="Set up theme colours" onAction={() => onNavigate('settings', 'push')}>
+              You have {otherThemes.length} theme{otherThemes.length === 1 ? '' : 's'} defined and
+              nothing filed under {otherThemes.length === 1 ? 'it' : 'them'} yet. Pick a theme in the
+              toolbar before marking a passage, and each book you tag shows up here with its tally.
+            </SectionEmpty>
+          ) : (
+            <InsightList>
+              {booksWithUserThemes.map(({ doc, themes }, i) => (
+                <InsightRow
+                  key={doc.id}
+                  index={i}
+                  title={doc.title}
+                  onOpen={() => onOpenStoredDocument?.(doc)}
+                >
+                  {themes.map((theme) => (
+                    <RowTag
+                      key={theme.id}
+                      label={theme.name}
+                      color={theme.color}
+                      count={theme.count}
+                      onPress={() =>
+                        onOpenStoredDocument?.(doc, {
+                          kind: 'theme',
+                          themeId: theme.id,
+                          label: theme.name,
+                          color: theme.color
+                        })
+                      }
                     />
-                    <span className="text-[13px] font-medium text-stone-800 dark:text-stone-200 truncate">
-                      {theme.name}
-                    </span>
-                  </span>
-                  {books.length === 0 ? (
-                    <span className="text-[12px] text-stone-400 dark:text-stone-500 italic">
-                      No books tagged yet
-                    </span>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5">
-                      {books.map((doc) => (
-                        <button
-                          key={doc.id}
-                          type="button"
-                          onClick={() => onOpenStoredDocument?.(doc)}
-                          title={`Open ${doc.title}`}
-                          className={`px-2 py-0.5 rounded-full text-[12px] font-medium cursor-pointer transition-colors ${
-                            isDark
-                              ? 'bg-stone-800 text-stone-300 hover:bg-stone-700'
-                              : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
-                          }`}
-                        >
-                          {doc.title}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                  ))}
+                </InsightRow>
+              ))}
+            </InsightList>
+          )}
         </CollapsibleSection>
       )}
 

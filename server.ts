@@ -17,6 +17,7 @@ import {
   saveSettings,
   RETENTION_DAYS
 } from "./src/services/documentStore";
+import analyzerRouter from "./src/services/analyzer";
 
 /**
  * Re-exported for the desktop shell, which owns the folder picker and calls this to re-point the
@@ -84,6 +85,9 @@ app.use("/api", (req, res, next) => {
 app.use(express.json({ limit: "10mb" }));
 
 // Health check endpoint
+/** Gemini-backed thematic analysis of a stored PDF. See `src/services/analyzer.ts`. */
+app.use("/api", analyzerRouter);
+
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
 });

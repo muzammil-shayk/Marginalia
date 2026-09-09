@@ -115,11 +115,21 @@ export const PdfPage: React.FC<PdfPageProps> = ({
     const near = new IntersectionObserver(([e]) => setIsNear(e.isIntersecting), {
       rootMargin: '1200px 0px'
     });
+    /**
+     * Which page the reader is looking at, defined as the one crossing a thin band across the
+     * middle of the viewport.
+     *
+     * This used to ask for `threshold: 0.5` — half the page on screen. A page taller than the
+     * window can never satisfy that, so above roughly 150% zoom the observer stopped firing
+     * entirely and the toolbar's page number froze on whatever it last said, no matter how far
+     * the reader scrolled. A band is zoom-independent: a postage-stamp page and a page three
+     * screens tall both either cross the middle of the window or do not.
+     */
     const visible = new IntersectionObserver(
       ([e]) => {
         if (e.isIntersecting) onVisible(pageNumber);
       },
-      { threshold: 0.5 }
+      { rootMargin: '-45% 0px -45% 0px', threshold: 0 }
     );
     near.observe(el);
     visible.observe(el);

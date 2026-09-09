@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpen, Settings as SettingsIcon, PlusCircle, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { BookOpen, Settings as SettingsIcon, PlusCircle, PanelLeftClose, PanelLeftOpen, Sparkles } from 'lucide-react';
 import { Screen, TransitionType } from '../types';
 import logo from '../assets/images/marginalia-logo.png';
 
@@ -17,6 +17,9 @@ interface DesktopNavProps {
    */
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  /** Opens the thematic analysis dialog. Not a screen: it asks which book to read and shows the
+   *  result in place, so routing to it would leave a back button pointing at nothing. */
+  onOpenAnalysis?: () => void;
 }
 
 export const DesktopNav: React.FC<DesktopNavProps> = ({
@@ -25,7 +28,8 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
   isDark = false,
   hasActiveDocument = true,
   collapsed,
-  onToggleCollapsed
+  onToggleCollapsed,
+  onOpenAnalysis
 }) => {
 
   const tabs: Array<{
@@ -56,7 +60,9 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
       } ${isDark ? 'bg-[#121514] border-white/5' : 'bg-[#f9f9f7] border-black/4'}`}
     >
       {/* Brand, and the control that gives the window back to the document. */}
-      <div className={`flex items-center pt-6 pb-4 ${collapsed ? 'flex-col gap-3 px-2' : 'px-4 gap-2'}`}>
+      {/* Also a drag handle: on macOS the traffic lights sit in this corner and the rest of the
+          row is the only chrome the window has left to be moved by. */}
+      <div className={`app-drag flex items-center pt-6 pb-4 ${collapsed ? 'flex-col gap-3 px-2' : 'px-4 gap-2'}`}>
         {!collapsed && (
           <h1
             onClick={() => onNavigate('home', 'push_back')}
@@ -114,6 +120,26 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
             </button>
           );
         })}
+
+        {/* Analysis is a dialog rather than a tab: it can be opened over any screen, and it
+            asks which book to read rather than assuming the one on screen. */}
+        {onOpenAnalysis && (
+          <button
+            type="button"
+            onClick={onOpenAnalysis}
+            title={collapsed ? 'AI Analysis' : undefined}
+            className={`w-full flex items-center rounded-xl text-[13px] font-medium transition-all active:scale-[0.97] cursor-pointer ${
+              collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3.5 py-2.5'
+            } ${
+              isDark
+                ? 'text-stone-400 hover:text-stone-200 hover:bg-white/5'
+                : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100/80'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 shrink-0" />
+            {!collapsed && <span>AI Analysis</span>}
+          </button>
+        )}
       </nav>
 
       {/* Bottom section */}

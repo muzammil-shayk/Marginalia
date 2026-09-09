@@ -82,3 +82,37 @@ export interface UserSettings {
   /** Whether the desktop sidebar is collapsed to icons-only. */
   sidebarCollapsed?: boolean;
 }
+
+/**
+ * One theme Gemini found while reading a document, and how central it judged it to be.
+ *
+ * `prominence` is a closed set rather than free text because the analysis panel sorts and colours
+ * by it; the response schema in `src/services/analyzer.ts` pins the same three values server-side
+ * so a model that improvises a fourth is rejected before it reaches here.
+ */
+export interface ThemeItem {
+  themeName: string;
+  description: string;
+  prominence: 'Primary' | 'Secondary' | 'Recurring Motif';
+  evidence: string[];
+}
+
+/** The whole result of one thematic analysis run over a stored PDF. */
+export interface ThematicAnalysisResult {
+  bookTitle: string;
+  executiveSummary: string;
+  themes: ThemeItem[];
+  narrativeArc: string;
+}
+
+/**
+ * What the reader asked to be shown when they opened a document from the library dashboard.
+ *
+ * Tapping a book under Key Concepts means "show me the key concepts in this book", not merely
+ * "open this book" — so the request travels with the navigation and the workspace turns it into a
+ * navigator over the matching marks. Carries its own label so the navigator can name what it is
+ * stepping through without knowing where the request came from.
+ */
+export type AnnotationFocus =
+  | { kind: 'theme'; themeId: string; label: string; color: string }
+  | { kind: 'terminology'; label: string; color: string };

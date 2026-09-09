@@ -6,6 +6,7 @@ import { parseFile } from '../utils/fileParser';
 import { filesFromDrop, pickDocumentAndSiblings } from '../utils/fileDrop';
 import { isAnnotatableFormat } from '../utils/annotatableFormats';
 import { storeUploadedDocument, storePastedDocument, storeHtmlDocument } from '../utils/documentStorage';
+import { ErrorDialog } from './ErrorDialog';
 
 interface UploadDocumentScreenProps {
   onNavigate: (screen: Screen, transition?: TransitionType) => void;
@@ -256,13 +257,15 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
         </div>
       )}
 
-      {/* Parse Error Alert */}
-      {parseError && (
-        <div className="p-3.5 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 flex items-center gap-2.5 text-red-800 dark:text-red-300 text-[12px]">
-          <AlertCircle className="w-4 h-4 shrink-0" />
-          <span>{parseError}</span>
-        </div>
-      )}
+      {/* Every way this screen can fail — an unreadable file, a store that would not write, a
+          submit with nothing chosen — says so in the same dialog rather than in a banner the
+          reader may already have scrolled past. */}
+      <ErrorDialog
+        open={Boolean(parseError)}
+        title="Could not add that document"
+        message={parseError ?? ''}
+        onClose={() => setParseError(null)}
+      />
 
       {/* Manual Paste Text Box */}
       <div className="space-y-2">

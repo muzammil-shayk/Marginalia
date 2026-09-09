@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { Screen, TransitionType, UserSettings, StickyNote } from './types';
+import { AnnotationFocus, Screen, TransitionType, UserSettings, StickyNote } from './types';
 import { initialSettings } from './data/mockData';
 import { fetchDocumentText, fetchRemoteSettings, saveRemoteSettings, StoredDocumentMeta } from './utils/documentStorage';
 import { CustomFormat } from './utils/documentExporter';
@@ -22,6 +22,8 @@ import { isAnnotatableFormat } from './utils/annotatableFormats';
 import { DocumentLibraryPanel } from './components/DocumentLibraryPanel';
 import { SearchModal } from './components/SearchModal';
 import { SidebarDrawer } from './components/SidebarDrawer';
+import { AnalysisModal } from './components/AnalysisModal';
+import { ErrorDialog } from './components/ErrorDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 // ── Storage Keys ──
@@ -137,6 +139,21 @@ export default function App() {
   );
   const [transitionType, setTransitionType] = useState<TransitionType>('push');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isAnalysisOpen, setIsAnalysisOpen] = useState(false);
+  /**
+   * Whether the workspace should pick up where the reader left off, or open at page one.
+   *
+   * Opening a book from the library is "start this book"; pressing Continue annotating is
+   * "carry on with it". Restoring the last page for both meant a book someone opened to read
+   * from the beginning dropped them two hundred pages in, with no obvious way back.
+   */
+  const [resumeAnnotating, setResumeAnnotating] = useState(false);
+  /**
+   * What the reader asked to be shown inside the document they just opened, when they opened it
+   * by tapping a book on the dashboard rather than opening it outright. Cleared on every other
+   * way in, so a later plain open does not resurrect an old request.
+   */
+  const [annotationFocus, setAnnotationFocus] = useState<AnnotationFocus | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [analysisDoc, setAnalysisDoc] = useState<AnalysisDoc>(
     savedSession?.analysisDoc || { title: '', text: '' }
@@ -306,9 +323,11 @@ export default function App() {
    * analyze even though the viewer renders the original file.
    */
   const handleOpenStoredDocument = useCallback(
-    async (meta: StoredDocumentMeta) => {
+    async (meta: StoredDocumentMeta, focus?: AnnotationFocus) => {
       const text = (await fetchDocumentText(meta.id)) || '';
       setDocumentLoadError(null);
+      setResumeAnnotating(false);
+      setAnnotationFocus(focus ?? null);
       setAnalysisDoc({ title: meta.title, text, format: meta.format, docId: meta.id });
       setUploadedLibrary((prev) => [
         {
@@ -400,6 +419,7 @@ export default function App() {
         hasActiveDocument={hasActiveDocument}
         collapsed={Boolean(settings.sidebarCollapsed)}
         onToggleCollapsed={() => setSettings((prev) => ({ ...prev, sidebarCollapsed: !prev.sidebarCollapsed }))}
+        onOpenAnalysis={() => setIsAnalysisOpen(true)}
       />
 
       {/* Main Content Area */}
@@ -422,6 +442,15 @@ export default function App() {
           onClose={() => setIsSidebarOpen(false)}
           onNavigate={navigate}
           isDark={isDark}
+          onOpenAnalysis={() => setIsAnalysisOpen(true)}
+        />
+
+        {/* Thematic analysis, opened from either sidebar rather than from a document. */}
+        <AnalysisModal
+          isOpen={isAnalysisOpen}
+          onClose={() => setIsAnalysisOpen(false)}
+          isDark={isDark}
+          onAddDocument={() => navigate('upload', 'push')}
         />
 
         {/* Screen Rendering */}
@@ -437,6 +466,8 @@ export default function App() {
               key={analysisDoc.docId}
               docId={analysisDoc.docId}
               documentTitle={analysisDoc.title}
+              resumeReading={resumeAnnotating}
+              focus={annotationFocus ?? undefined}
               settings={settings}
               isDark={isDark}
               onNavigate={navigate}
@@ -452,6 +483,7 @@ export default function App() {
             isDark={isDark}
             documentText={analysisDoc.text}
             documentTitle={analysisDoc.title}
+            docId={analysisDoc.docId}
             notes={analysisDoc.docId ? plainTextAnnotations.notes : documentNotes[analysisDoc.title] || []}
             onNotesChange={
               analysisDoc.docId
@@ -477,19 +509,14 @@ export default function App() {
               />
             </div>
 
-            {documentLoadError && (
-              <div className="mx-4 mt-3 p-3.5 rounded-2xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900/60 flex items-start justify-between gap-3 text-amber-900 dark:text-amber-200 text-[12px]">
-                <span>{documentLoadError}</span>
-                <button
-                  type="button"
-                  onClick={() => setDocumentLoadError(null)}
-                  className="shrink-0 font-bold opacity-60 hover:opacity-100 cursor-pointer"
-                  aria-label="Dismiss"
-                >
-                  ✕
-                </button>
-              </div>
-            )}
+            {/* A document that would not open is worth stopping for: the reader clicked it
+                expecting to read, and a banner above a scrolled library is easy to miss. */}
+            <ErrorDialog
+              open={Boolean(documentLoadError)}
+              title="Could not open that document"
+              message={documentLoadError ?? ''}
+              onClose={() => setDocumentLoadError(null)}
+            />
 
             {/* Active Screen Content with Animated Transition */}
             <div className="flex-1 flex flex-col">
@@ -514,7 +541,11 @@ export default function App() {
                         onSelectDocumentForAnalysis={handleSelectDocumentForAnalysis}
                         onOpenLibraryDocument={handleOpenLibraryDocument}
                         onOpenStoredDocument={handleOpenStoredDocument}
-                        onContinueAnnotating={() => navigate('workspace', 'push')}
+                        onContinueAnnotating={() => {
+                          setResumeAnnotating(true);
+                          setAnnotationFocus(null);
+                          navigate('workspace', 'push');
+                        }}
                         canAnnotateActive={Boolean(analysisDoc.docId && isAnnotatableFormat(analysisDoc.format))}
                         onDocumentDeleted={handleStoredDocumentDeleted}
                         onDocumentRenamed={handleStoredDocumentRenamed}

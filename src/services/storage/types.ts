@@ -1,3 +1,5 @@
+import type { ThematicAnalysisResult } from '../../types';
+
 /**
  * The storage contract every document backend implements. One exists today: the local
  * filesystem. The interface is kept so the store can be swapped without touching its callers.
@@ -8,6 +10,31 @@
  *   documents/{id}.json   metadata + extracted text + annotations
  *   originals/{id}{ext}   the raw uploaded file
  */
+
+/**
+ * A thematic analysis kept with the document it is about.
+ *
+ * Stored because a run costs real tokens and a minute of waiting — analysing the same book twice
+ * to read the same answer is the one thing worth caching in this app. `analysedAt` and `model`
+ * are kept so a result can be judged: an analysis from a year ago on a retired model is still
+ * worth showing, but the reader should be able to see that is what it is.
+ */
+export interface StoredAnalysis extends ThematicAnalysisResult {
+  analysedAt: string;
+  model: string;
+}
+
+/**
+ * Just enough of an analysis for the library to list it without loading every document's full
+ * result. Recomputed from `analysis` on every write, the same way `themeIds` is.
+ */
+export interface AnalysisSummary {
+  analysedAt: string;
+  /** The themes marked Primary, in the order the model gave them. What the Home screen shows. */
+  primaryThemes: string[];
+  /** How many themes were found in total, primary or not. */
+  themeCount: number;
+}
 
 /** Everything about a stored document except its (potentially huge) text and original bytes. */
 export interface DocumentMeta {
@@ -43,6 +70,14 @@ export interface DocumentMeta {
    * `themeIds` is; see `countTerminology`.
    */
   terminologyCount: number;
+  /** A one-line digest of this document's saved analysis, or null if it has never been analysed. */
+  analysis: AnalysisSummary | null;
+  /**
+   * How many marks this document carries under each theme id, so the library can say "4 marks
+   * under Key Concepts" rather than only "this book touches Key Concepts". `themeIds` is kept
+   * alongside it because a great deal of code only asks the yes/no question.
+   */
+  themeCounts: Record<string, number>;
 }
 
 /**
@@ -75,11 +110,15 @@ export interface ReadingState {
   viewMode: 'single' | 'spread';
 }
 
-export interface StoredDocument extends DocumentMeta {
+// `analysis` is narrowed rather than inherited: the meta carries only the digest, the stored
+// record carries the whole result.
+export interface StoredDocument extends Omit<DocumentMeta, 'analysis'> {
   text: string;
   annotations: StoredAnnotation[];
   /** Null until the reader has opened this document in the PDF workspace at least once. */
   readingState: ReadingState | null;
+  /** The last thematic analysis run on this document, kept so it need not be paid for twice. */
+  analysis: StoredAnalysis | null;
 }
 
 /**
@@ -93,6 +132,26 @@ export function computeThemeIds(annotations: StoredAnnotation[]): string[] {
     if (typeof a.themeId === 'string' && a.themeId) ids.add(a.themeId);
   }
   return Array.from(ids).sort();
+}
+
+/** How many annotations sit under each theme id. See `DocumentMeta.themeCounts`. */
+export function computeThemeCounts(annotations: StoredAnnotation[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const a of annotations) {
+    if (typeof a.themeId === 'string' && a.themeId) counts[a.themeId] = (counts[a.themeId] ?? 0) + 1;
+  }
+  return counts;
+}
+
+/** Digests a stored analysis for the library list. See `DocumentMeta.analysis`. */
+export function summarizeAnalysis(analysis: StoredAnalysis | null): AnalysisSummary | null {
+  if (!analysis) return null;
+  const themes = Array.isArray(analysis.themes) ? analysis.themes : [];
+  return {
+    analysedAt: analysis.analysedAt,
+    primaryThemes: themes.filter((t) => t.prominence === 'Primary').map((t) => t.themeName),
+    themeCount: themes.length
+  };
 }
 
 /** How many of this document's annotations are marked terminology. See `DocumentMeta.terminologyCount`. */
@@ -112,6 +171,7 @@ export interface UpdateDocumentParams {
   title?: string;
   annotations?: StoredAnnotation[];
   readingState?: ReadingState;
+  analysis?: StoredAnalysis;
 }
 
 export interface DocumentBackend {
@@ -189,6 +249,8 @@ export function buildMeta(id: string, params: SaveDocumentParams): DocumentMeta 
     expiresAt: RETENTION_DAYS > 0 ? new Date(now.getTime() + RETENTION_DAYS * 864e5).toISOString() : null,
     annotationCount: 0,
     themeIds: [],
-    terminologyCount: 0
+    themeCounts: {},
+    terminologyCount: 0,
+    analysis: null
   };
 }

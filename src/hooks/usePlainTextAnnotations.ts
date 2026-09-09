@@ -23,21 +23,39 @@ import { Annotation, fetchAnnotations, saveAnnotations } from '../utils/document
 
 const SAVE_DEBOUNCE_MS = 700;
 
-function splitEntries(raw: Annotation[]): { notes: StickyNote[]; formats: CustomFormat[] } {
+/**
+ * Splits a document's stored entries into the two this hook owns — and everything else.
+ *
+ * `others` is the important one. A document's annotations are ONE list, shared with the PDF
+ * workspace, whose marks carry no `kind`. Dropping them here and then writing back only notes and
+ * formats replaced every PDF mark in the document with nothing — and because the save fires as
+ * soon as the load completes, merely opening an annotated PDF was enough to erase it. Anything
+ * this hook does not understand is carried through untouched instead.
+ */
+export function splitEntries(raw: Annotation[]): {
+  notes: StickyNote[];
+  formats: CustomFormat[];
+  others: Annotation[];
+} {
   const notes: StickyNote[] = [];
   const formats: CustomFormat[] = [];
+  const others: Annotation[] = [];
   for (const entry of raw) {
     const { kind, ...rest } = entry as Annotation & { kind?: string };
     if (kind === 'format') formats.push(rest as unknown as CustomFormat);
     else if (kind === 'note') notes.push(rest as unknown as StickyNote);
-    // An entry with neither kind is dropped — defensive against a future schema change, not
-    // expected to happen given every write below always stamps one.
+    else others.push(entry);
   }
-  return { notes, formats };
+  return { notes, formats, others };
 }
 
-function mergeEntries(notes: StickyNote[], formats: CustomFormat[]): Annotation[] {
+export function mergeEntries(
+  notes: StickyNote[],
+  formats: CustomFormat[],
+  others: Annotation[]
+): Annotation[] {
   return [
+    ...others,
     ...notes.map((n) => ({ ...n, kind: 'note' as const })),
     ...formats.map((f) => ({ ...f, kind: 'format' as const }))
   ];
@@ -58,6 +76,8 @@ export function usePlainTextAnnotations(docId: string | undefined): PlainTextAnn
 
   const notesRef = useRef(notes);
   const formatsRef = useRef(formats);
+  /** Entries belonging to the PDF workspace, held only so every save can hand them back. */
+  const othersRef = useRef<Annotation[]>([]);
   useEffect(() => {
     notesRef.current = notes;
   }, [notes]);
@@ -75,8 +95,18 @@ export function usePlainTextAnnotations(docId: string | undefined): PlainTextAnn
       return;
     }
     setIsLoaded(false);
+    othersRef.current = [];
     fetchAnnotations(docId).then((stored) => {
-      const { notes: loadedNotes, formats: loadedFormats } = splitEntries(stored.annotations);
+      // A failed read is not an empty document. Leaving `isLoaded` false keeps the save effect
+      // below switched off, so a document whose marks could not be read is never written over
+      // with the nothing we managed to load.
+      if (!stored) return;
+      const {
+        notes: loadedNotes,
+        formats: loadedFormats,
+        others
+      } = splitEntries(stored.annotations);
+      othersRef.current = others;
       setNotesState(loadedNotes);
       setFormatsState(loadedFormats);
       setIsLoaded(true);
@@ -87,7 +117,10 @@ export function usePlainTextAnnotations(docId: string | undefined): PlainTextAnn
   useEffect(() => {
     if (!docId || !isLoaded) return;
     const timer = window.setTimeout(() => {
-      void saveAnnotations(docId, mergeEntries(notesRef.current, formatsRef.current));
+      void saveAnnotations(
+        docId,
+        mergeEntries(notesRef.current, formatsRef.current, othersRef.current)
+      );
     }, SAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [docId, isLoaded, notes, formats]);
@@ -97,7 +130,10 @@ export function usePlainTextAnnotations(docId: string | undefined): PlainTextAnn
   useEffect(() => {
     return () => {
       if (docId && (notesRef.current.length || formatsRef.current.length)) {
-        void saveAnnotations(docId, mergeEntries(notesRef.current, formatsRef.current));
+        void saveAnnotations(
+          docId,
+          mergeEntries(notesRef.current, formatsRef.current, othersRef.current)
+        );
       }
     };
   }, [docId]);

@@ -28,7 +28,14 @@ export function useAnchoredPanel(
   ref: RefObject<HTMLElement | null>,
   anchor: AnchorRect | null,
   /** Anything that changes the panel's own size, so it is re-measured when its contents change. */
-  deps: unknown[] = []
+  deps: unknown[] = [],
+  /**
+   * Height of anything already occupying the foot of the window — today the instance navigator.
+   * "Inside the viewport" is not the same as "not on top of something else": a panel clamped to
+   * the bottom edge landed squarely over the navigator pill, burying the controls the reader was
+   * mid-way through using. Treated as if the window ended that many pixels higher.
+   */
+  bottomInset = 0
 ): { left: number; top: number; visibility: 'hidden' | 'visible' } {
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
 
@@ -41,13 +48,14 @@ export function useAnchoredPanel(
 
     const measure = () => {
       const { width, height } = el.getBoundingClientRect();
+      const floor = window.innerHeight - bottomInset;
       const maxLeft = window.innerWidth - width - MARGIN;
-      const maxTop = window.innerHeight - height - MARGIN;
+      const maxTop = floor - height - MARGIN;
 
       // Below the anchor by preference, above it when that would overflow the bottom. The flip
       // is what keeps a panel off a mark near the foot of the page from being pushed up over the
       // mark it describes.
-      const below = anchor.bottom + height + MARGIN <= window.innerHeight;
+      const below = anchor.bottom + height + MARGIN <= floor;
       const top = below ? anchor.bottom + MARGIN : anchor.top - height - MARGIN;
 
       setPosition({
@@ -61,7 +69,7 @@ export function useAnchoredPanel(
     window.addEventListener('resize', measure);
     return () => window.removeEventListener('resize', measure);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ref, anchor?.left, anchor?.top, anchor?.bottom, ...deps]);
+  }, [ref, anchor?.left, anchor?.top, anchor?.bottom, bottomInset, ...deps]);
 
   return {
     left: position?.left ?? (anchor?.left ?? 0),

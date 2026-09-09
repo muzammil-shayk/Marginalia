@@ -47,7 +47,7 @@ export const Header: React.FC<HeaderProps> = ({
       initial="visible"
       animate={hidden ? "hidden" : "visible"}
       transition={{ type: 'spring', bounce: 0, duration: 0.4 }}
-      className={`sticky top-0 z-30 flex items-center justify-between px-5 py-4 transition-colors ${
+      className={`app-drag sticky top-0 z-30 flex items-center justify-between px-5 py-4 transition-colors ${
       isDark ? 'bg-[#121514] text-white border-b border-white/5' : 'bg-[#f9f9f7] text-[#1c2321] border-b border-black/4'
     }`}>
       {/* Menu Icon Button */}

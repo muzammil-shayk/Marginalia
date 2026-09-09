@@ -32,6 +32,7 @@ import {
   listStoredDocuments,
   renameStoredDocument
 } from '../utils/documentStorage';
+import { ErrorDialog } from './ErrorDialog';
 
 interface DocumentLibraryPanelProps {
   isOpen: boolean;
@@ -72,6 +73,8 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
   const [draftTitle, setDraftTitle] = useState('');
   const [confirmingDeleteId, setConfirmingDeleteId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  /** A rename or delete that the store refused. Both used to fail into nothing at all. */
+  const [failure, setFailure] = useState<string | null>(null);
 
   const bridge = desktopBridge();
 
@@ -100,6 +103,10 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
     if (updated) {
       setDocuments((prev) => prev.map((d) => (d.id === id ? updated : d)));
       onDocumentRenamed?.(id, updated.title);
+    } else {
+      // Without this the row silently snapped back to its old name, which reads like the app
+      // ignored the edit rather than like the write failed.
+      setFailure('Could not rename that document. Its name on disk is unchanged.');
     }
     setBusyId(null);
     setRenamingId(null);
@@ -111,6 +118,8 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
     if (deleted) {
       setDocuments((prev) => prev.filter((d) => d.id !== id));
       onDocumentDeleted?.(id);
+    } else {
+      setFailure('Could not delete that document. It is still in your library.');
     }
     setBusyId(null);
     setConfirmingDeleteId(null);
@@ -127,6 +136,8 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
       }`}
       aria-label="Document library"
     >
+      <ErrorDialog open={Boolean(failure)} message={failure ?? ''} onClose={() => setFailure(null)} />
+
       {/* Header */}
       <div className={`px-4 py-3 border-b shrink-0 ${isDark ? 'border-stone-800' : 'border-stone-200'}`}>
         <div className="flex items-center justify-between">

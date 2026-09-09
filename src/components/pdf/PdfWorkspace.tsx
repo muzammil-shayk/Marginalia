@@ -9,8 +9,8 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy } from 'pdfjs-dist';
-import { Loader2, FileWarning, ArrowLeft, PanelRightClose, PanelRightOpen, Check, StickyNote, X, PanelTop, PanelBottom, FileStack } from 'lucide-react';
-import { Screen, TransitionType, UserSettings } from '../../types';
+import { Loader2, FileWarning, ArrowLeft, PanelRightClose, PanelRightOpen, Check, StickyNote, X, PanelTop, PanelBottom, FileStack, Sparkles } from 'lucide-react';
+import { AnnotationFocus, Screen, TransitionType, UserSettings } from '../../types';
 import {
   Annotation,
   AnnotationKind,
@@ -35,6 +35,9 @@ import { useAnnotationHistory } from './useAnnotationHistory';
 import { PdfPage } from './PdfPage';
 import { PdfToolbar, NEUTRAL_COLORS } from './PdfToolbar';
 import { NotesList } from './NotesList';
+import { InstanceNavigator } from './InstanceNavigator';
+import { ErrorDialog } from '../ErrorDialog';
+import { ThematicAnalysisView } from '../ThematicAnalysisView';
 import { SelectionPopover, SelectionAnchor } from './SelectionPopover';
 import { LiveSelectionOverlay } from './LiveSelectionOverlay';
 import { MarkProperties } from './MarkProperties';
@@ -73,6 +76,15 @@ const SAVE_DEBOUNCE_MS = 700;
 
 /** The zoom a document opens at when nothing was remembered about it yet. */
 const DEFAULT_ZOOM = 1.25;
+
+/**
+ * What the instance navigator occupies at the foot of the window, pill plus its margin.
+ *
+ * Floating panels are told to stay above it. Staying inside the viewport is not the same as
+ * staying out of the way: a properties strip clamped to the bottom edge landed on top of the
+ * navigator and buried the controls the reader was mid-way through using.
+ */
+const NAVIGATOR_HEIGHT = 60;
 
 /** Wheel-zoom bounds — the same floor and ceiling `fitWidth` and the toolbar's own zoom steps
  *  already clamp to, so scrolling to zoom never reaches a size the rest of the app disagrees with. */
@@ -113,6 +125,19 @@ function saveDocState(docId: string, state: StoredDocState) {
 
 interface PdfWorkspaceProps {
   docId: string;
+  /**
+   * What the reader asked to be shown, when they opened this document by tapping a book on the
+   * library dashboard rather than opening it outright. Turns into the navigator at the foot of
+   * the page. See `AnnotationFocus`.
+   */
+  focus?: AnnotationFocus;
+  /**
+   * True when the reader asked to carry on with this book (Continue annotating), false when they
+   * opened it fresh from the library. Only the PAGE is affected: zoom and single/spread view are
+   * preferences about how a book is displayed and are restored either way, while the page is a
+   * position in it, and someone opening a book has not asked to be put back where they stopped.
+   */
+  resumeReading?: boolean;
   documentTitle: string;
   settings: UserSettings;
   isDark?: boolean;
@@ -122,6 +147,8 @@ interface PdfWorkspaceProps {
 export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   docId,
   documentTitle,
+  focus,
+  resumeReading = false,
   settings,
   isDark = false,
   onNavigate
@@ -234,7 +261,34 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [draftText, setDraftText] = useState('');
+  /**
+   * Whatever last failed in here.
+   *
+   * These operations used to fail into `console.error` or a bare `return`: an export that
+   * produced no file, an inserted page that never appeared, a save that silently did not happen.
+   * The last one is the reason this exists at all — marks the reader believes are on disk and are
+   * not is the only failure in Marginalia that loses work.
+   */
+  const [failure, setFailure] = useState<string | null>(null);
+
+  /**
+   * True once this document's zoom has been decided and applied.
+   *
+   * The instance navigator waits for it. Fitting the zoom re-lays out every page, which throws
+   * away any scroll offset set before it — so jumping to the first mark the moment the marks
+   * loaded landed correctly and was then silently undone, leaving the reader on page 1 of a
+   * 180-page book with a pill claiming to be showing them mark 1 of 2.
+   */
+  const [layoutSettled, setLayoutSettled] = useState(false);
+
+  /** Cleared when the reader dismisses the navigator; re-seeded if they arrive with a new focus. */
+  const [activeFocus, setActiveFocus] = useState(focus ?? null);
+  useEffect(() => setActiveFocus(focus ?? null), [focus]);
+
   const [isPanelOpen, setIsPanelOpen] = useState(false);
+  /** Which of the two things the side panel shows. One panel, not two: they compete for the same
+   *  strip of screen and nobody reads their notes and a thematic analysis at the same time. */
+  const [panelTab, setPanelTab] = useState<'notes' | 'analysis'>('notes');
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [isExporting, setIsExporting] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -296,6 +350,15 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     resetAnnotations([]);
     fetchAnnotations(docId).then((stored) => {
       if (cancelled) return;
+      if (!stored) {
+        // Deliberately NOT setting `isLoaded`: that flag is what unlocks the autosave, and saving
+        // an empty set we never actually read would erase this document's marks from disk. The
+        // workspace stays read-only until a real read succeeds.
+        setFailure(
+          'Could not read this document’s marks, so nothing can be saved. Close the workspace and open it again — your existing marks are untouched on disk.'
+        );
+        return;
+      }
       resetAnnotations((stored.annotations as unknown as Annotation[]) || []);
       setIsLoaded(true);
     });
@@ -318,6 +381,15 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     const timer = window.setTimeout(async () => {
       const ok = await saveAnnotations(docId, annotations as never);
       setSaveState(ok ? 'saved' : 'idle');
+      // Never stack: the save retries on every subsequent edit by itself, and one dialog per
+      // keystroke would bury the document it is warning about.
+      if (!ok) {
+        setFailure(
+          (current) =>
+            current ??
+            'Your most recent marks could not be saved to disk, so they exist only in this window. Do not close it until the Saved tick returns — every further change tries again.'
+        );
+      }
     }, SAVE_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
   }, [annotations, docId, isLoaded]);
@@ -939,6 +1011,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       fittedRef.current = docId;
       setScale(stored.scale);
       setViewMode(stored.viewMode);
+      setLayoutSettled(true);
       return;
     }
 
@@ -951,6 +1024,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       const badFit = renderedAtDefault < container.clientWidth * 0.5 || renderedAtDefault > container.clientWidth * 2.5;
       fittedRef.current = docId;
       setScale(badFit ? Math.max(0.5, Math.min(3, fit)) : DEFAULT_ZOOM);
+      setLayoutSettled(true);
     });
     return () => {
       cancelled = true;
@@ -961,13 +1035,14 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   useEffect(() => {
     if (!pdf || pageCount === 0 || restoredPageRef.current === docId) return;
     restoredPageRef.current = docId;
+    if (!resumeReading) return;
     const stored = loadDocState(docId);
     if (stored && stored.page > 1 && stored.page <= pageCount) {
       // The page elements render synchronously off `pageCount`, but a frame gives layout a
       // moment to settle before `scrollIntoView` measures it.
       requestAnimationFrame(() => goToPage(stored.page));
     }
-  }, [pdf, pageCount, docId, goToPage]);
+  }, [pdf, pageCount, docId, goToPage, resumeReading]);
 
   /**
    * Fetches the server's saved reading position once per document — the durable copy, since it
@@ -992,24 +1067,40 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     restoredPageRef.current = docId;
     setScale(remoteReadingState.scale);
     setViewMode(remoteReadingState.viewMode);
-    if (remoteReadingState.page > 1 && remoteReadingState.page <= pageCount) {
+    setLayoutSettled(true);
+    if (resumeReading && remoteReadingState.page > 1 && remoteReadingState.page <= pageCount) {
       requestAnimationFrame(() => goToPage(remoteReadingState.page));
     }
-    saveDocState(docId, remoteReadingState);
-  }, [remoteReadingState, pageCount, docId, goToPage]);
+    // The stored position is left as it is on a fresh open — the reader has not moved yet, and
+    // overwriting page 1 over it here would destroy the very position Continue annotating needs.
+    if (resumeReading) saveDocState(docId, remoteReadingState);
+  }, [remoteReadingState, pageCount, docId, goToPage, resumeReading]);
 
   /**
    * Remembers this document's zoom, page and view mode so reopening it resumes where the reader
    * left off — to localStorage immediately (fast, same-session cache) and to the server,
    * debounced, so scrolling through a book doesn't fire a write on every frame.
    */
+  /** Set the moment a fresh open actually leaves page one. See the save effect below. */
+  const movedRef = useRef(false);
   useEffect(() => {
     if (fittedRef.current !== docId) return;
-    const state: StoredDocState = { scale, page: currentPage, viewMode };
+    if (currentPage > 1) movedRef.current = true;
+
+    // A fresh open sits on page one having read nothing, so writing that as the position would
+    // erase wherever the reader actually stopped last time — the position Continue annotating
+    // exists to return to. Zoom and view mode are still recorded, since changing those IS an
+    // action the reader just took.
+    const keepStoredPage = !resumeReading && !movedRef.current;
+    const state: StoredDocState = {
+      scale,
+      page: keepStoredPage ? (loadDocState(docId)?.page ?? currentPage) : currentPage,
+      viewMode
+    };
     saveDocState(docId, state);
     const timer = setTimeout(() => { void saveReadingState(docId, state); }, SAVE_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [scale, currentPage, viewMode, docId]);
+  }, [scale, currentPage, viewMode, docId, resumeReading]);
 
   const fitWidth = useCallback(async () => {
     if (!pdf || !scrollRef.current) return;
@@ -1106,19 +1197,46 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     el.scrollTop = anchor.contentY * ratio - anchor.viewportY;
   }, [scale]);
 
+  /**
+   * Scrolls a mark into view, reporting whether it could.
+   *
+   * The boolean matters for the instance navigator, which jumps to the first match the moment the
+   * document loads — at which point the page elements may not be in the DOM yet. Returning false
+   * instead of failing silently is what lets the caller try again on the next frame rather than
+   * leaving the reader at page one of the book they asked to be shown a passage in.
+   */
   const scrollToAnnotation = useCallback(
-    (a: Annotation) => {
+    (a: Annotation): boolean => {
       const pageEl = scrollRef.current?.querySelector<HTMLElement>(`[data-page-number="${a.page}"]`);
       const bounds = annotationBounds(a);
-      if (!pageEl) return;
+      if (!pageEl || pageEl.offsetHeight === 0) return false;
       if (!bounds) {
         pageEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        return;
+        return true;
       }
       // Scroll so the mark itself lands near the middle of the viewport, not just its page.
       const container = scrollRef.current!;
-      const top = pageEl.offsetTop + bounds.y * pageEl.offsetHeight - container.clientHeight / 3;
-      container.scrollTo({ top, behavior: 'smooth' });
+      const targetTop = () =>
+        pageEl.offsetTop + bounds.y * pageEl.offsetHeight - container.clientHeight / 3;
+      container.scrollTo({ top: targetTop(), behavior: 'smooth' });
+
+      /**
+       * Correct the landing twice, briefly.
+       *
+       * Pages above this one are still settling to their real heights while the scroll runs —
+       * at 300% zoom in a 180-page book that is centimetres of drift, and it left a jump to a
+       * mark on page 3 sitting on page 2 with the mark off screen. Recomputing from the page's
+       * own offset after layout has caught up puts it where it was asked to go. Corrections are
+       * instant rather than smooth so they do not fight the animation already in flight, and
+       * they stop after 600ms so they can never fight the reader's own scrolling.
+       */
+      const correct = () => {
+        const drift = Math.abs(container.scrollTop - targetTop());
+        if (drift > 8) container.scrollTo({ top: targetTop(), behavior: 'auto' });
+      };
+      window.setTimeout(correct, 250);
+      window.setTimeout(correct, 600);
+      return true;
     },
     []
   );
@@ -1131,6 +1249,9 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       downloadBlob(blob, `${safe}_annotated.pdf`);
     } catch (err) {
       console.error('PDF export failed:', err);
+      setFailure(
+        'Could not build the annotated PDF. The source file may have changed on disk since this document was opened. Press Export PDF again to retry.'
+      );
     } finally {
       setIsExporting(false);
     }
@@ -1156,10 +1277,13 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     setIsInsertingPage(true);
     try {
       const result = await insertPage(docId, insertPlacement, insertHeight, currentPage);
-      if (!result) return;
+      if (!result) {
+        setFailure('Could not add the page. The document was left unchanged.');
+        return;
+      }
       setFileVersion((v) => v + 1);
       const stored = await fetchAnnotations(docId);
-      resetAnnotations((stored.annotations as unknown as Annotation[]) || []);
+      if (stored) resetAnnotations((stored.annotations as unknown as Annotation[]) || []);
       setInsertPageMenuOpen(false);
       if (result.insertedPages.length) setPendingPageJump(result.insertedPages[0]);
     } finally {
@@ -1177,10 +1301,13 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       setIsDeletingPage(true);
       try {
         const result = await deletePage(docId, pageNumber);
-        if (!result) return;
+        if (!result) {
+          setFailure(`Could not delete page ${pageNumber}. The document was left unchanged.`);
+          return;
+        }
         setFileVersion((v) => v + 1);
         const stored = await fetchAnnotations(docId);
-        resetAnnotations((stored.annotations as unknown as Annotation[]) || []);
+        if (stored) resetAnnotations((stored.annotations as unknown as Annotation[]) || []);
         // The page that took the deleted one's place, or the new last page if it was the last one.
         setPendingPageJump(Math.min(pageNumber, result.pageCount));
       } finally {
@@ -1248,7 +1375,9 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       }`}
     >
       <header
-        className={`flex items-center gap-3 px-4 py-2.5 border-b shrink-0 ${
+        // `app-drag`: the desktop build has no system title bar, so this header is what the
+        // window is moved by. Its own buttons opt out — see `.app-drag` in index.css.
+        className={`app-drag flex items-center gap-3 px-4 py-2.5 border-b shrink-0 ${
           isDark ? 'bg-[#181c19] border-stone-800' : 'bg-white border-stone-200'
         }`}
       >
@@ -1279,12 +1408,32 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         </span>
         <button
           type="button"
-          onClick={() => setIsPanelOpen((open) => !open)}
-          title={isPanelOpen ? 'Hide notes' : 'Show notes'}
+          onClick={() => {
+            setPanelTab('analysis');
+            setIsPanelOpen(!(isPanelOpen && panelTab === 'analysis'));
+          }}
+          title="Thematic analysis"
+          className={`p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer ${
+            isPanelOpen && panelTab === 'analysis' ? 'text-[#435c52] dark:text-emerald-400' : 'text-stone-500'
+          }`}
+        >
+          <Sparkles className="w-4 h-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setPanelTab('notes');
+            setIsPanelOpen(!(isPanelOpen && panelTab === 'notes'));
+          }}
+          title={isPanelOpen && panelTab === 'notes' ? 'Hide notes' : 'Show notes'}
           className="flex items-center gap-1.5 p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
         >
           <StickyNote className="w-4 h-4" />
-          {isPanelOpen ? <PanelRightClose className="w-4 h-4" /> : <PanelRightOpen className="w-4 h-4" />}
+          {isPanelOpen && panelTab === 'notes' ? (
+            <PanelRightClose className="w-4 h-4" />
+          ) : (
+            <PanelRightOpen className="w-4 h-4" />
+          )}
         </button>
       </header>
 
@@ -1412,7 +1561,17 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         </div>
 
         {isPanelOpen && (
-          <div className={`w-80 shrink-0 border-l min-h-0 hidden md:flex ${isDark ? 'border-stone-800' : 'border-stone-200'}`}>
+          <div
+            // Docked beside the pages on a wide window; an overlay once the window is too narrow
+            // to give it a column. It used to be `hidden md:flex`, which left both toggles in the
+            // header doing visibly nothing on a small window.
+            className={`flex flex-col min-h-0 border-l z-30 max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:w-full max-md:max-w-sm max-md:shadow-2xl md:w-80 md:shrink-0 ${
+              isDark ? 'bg-[#151917] border-stone-800' : 'bg-white border-stone-200'
+            }`}
+          >
+            {panelTab === 'analysis' ? (
+              <ThematicAnalysisView docId={docId} documentTitle={documentTitle} />
+            ) : (
             <NotesList
               annotations={annotations}
               settings={settings}
@@ -1427,9 +1586,30 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
               onDelete={deleteAnnotation}
               onEdit={startEditing}
             />
+            )}
           </div>
         )}
       </div>
+
+      <ErrorDialog open={Boolean(failure)} message={failure ?? ''} onClose={() => setFailure(null)} />
+
+      {/* Stepping through the marks the reader came here to find. Reads from live annotation
+          state, so marking or erasing while it is open changes the run under it. */}
+      {activeFocus && isLoaded && layoutSettled && (
+        <InstanceNavigator
+          focus={activeFocus}
+          annotations={annotations}
+          // Brings the mark into view and raises it, without selecting it. Selecting opens the
+          // properties strip, which is an editing gesture the reader did not ask for — stepping
+          // through marks is reading, and what to change is their decision to make afterwards.
+          onGoTo={(a) => {
+            setHoveredId(a.id);
+            return scrollToAnnotation(a);
+          }}
+          onClose={() => setActiveFocus(null)}
+          isDark={isDark}
+        />
+      )}
 
       {/* The page number, beside the scrollbar, while the reader is scrolling. */}
       <ScrollPageIndicator containerRef={scrollRef} pageCount={pageCount} isDark={isDark} />
@@ -1445,6 +1625,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
           // else (a custom colour, a neutral, the free picker) carries `null` — leaving the mark's
           // OLD themeId in place after its colour visibly stopped matching that theme is exactly
           // the mismatch that made a retagged mark silently miscount on the cross-document dashboard.
+          bottomInset={activeFocus ? NAVIGATOR_HEIGHT : 0}
           onColorChange={(color, themeId) => updateAnnotation(selectedMark.id, { color, themeId })}
           onWeightChange={(weight) => updateAnnotation(selectedMark.id, { weight })}
           onStrokeStyleChange={(strokeStyle) => updateAnnotation(selectedMark.id, { strokeStyle })}
@@ -1471,6 +1652,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         <SelectionPopover
           anchor={selectionAnchor}
           isDark={isDark}
+          bottomInset={activeFocus ? NAVIGATOR_HEIGHT : 0}
           toolColors={toolColors}
           themes={settings.activeThemes}
           activeThemeId={activeThemeId}

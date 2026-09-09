@@ -20,11 +20,13 @@ import {
   Copy,
   Info,
   Download,
+  Sparkles,
   X
 } from 'lucide-react';
 import { Screen, TransitionType, StickyNote, UserSettings } from '../types';
 import { CustomFormat } from '../utils/documentExporter';
 import { HoverTooltip } from './HoverTooltip';
+import { ThematicAnalysisView } from './ThematicAnalysisView';
 import {
   findParagraphElement,
   getSelectionCharacterOffsetWithin,
@@ -47,6 +49,10 @@ interface ReaderScreenProps {
   isDark?: boolean;
   documentText?: string;
   documentTitle?: string;
+  /** Id in the local document store. Absent for pasted text that was never saved, which is why
+   *  the AI tab is hidden rather than disabled in that case — there is nothing for the server to
+   *  read. */
+  docId?: string;
   /** Notes for the active document, lifted to App so they survive navigating away and back. */
   notes: StickyNote[];
   onNotesChange: (updater: (prev: StickyNote[]) => StickyNote[]) => void;
@@ -64,6 +70,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
   isDark = false,
   documentText,
   documentTitle,
+  docId,
   notes,
   onNotesChange,
   formats,
@@ -87,16 +94,17 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
   const [showNotesDrawer, setShowNotesDrawer] = useState<boolean>(true);
   const [selectedThemeFilter, setSelectedThemeFilter] = useState<string>('All');
 
-  const TAB_INDEXES: Record<'notes' | 'add' | 'export', number> = {
+  const TAB_INDEXES: Record<'notes' | 'add' | 'export' | 'analysis', number> = {
     notes: 0,
     add: 1,
     export: 2,
+    analysis: 3,
   };
 
-  const [activeControlTab, setActiveControlTab] = useState<'notes' | 'add' | 'export'>('notes');
+  const [activeControlTab, setActiveControlTab] = useState<'notes' | 'add' | 'export' | 'analysis'>('notes');
   const [slideDirection, setSlideDirection] = useState<number>(1);
 
-  const handleSwitchTab = (newTab: 'notes' | 'add' | 'export') => {
+  const handleSwitchTab = (newTab: 'notes' | 'add' | 'export' | 'analysis') => {
     if (newTab === activeControlTab) return;
     const currentIdx = TAB_INDEXES[activeControlTab];
     const newIdx = TAB_INDEXES[newTab];
@@ -402,7 +410,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
       </div>
 
       {/* Top Reader Navigation Bar */}
-      <header className={`sticky top-0 z-40 px-3 sm:px-6 h-18 border-b flex items-center justify-between gap-2 backdrop-blur-md transition-colors w-full max-w-full overflow-hidden ${
+      <header className={`app-drag sticky top-0 z-40 px-3 sm:px-6 h-18 border-b flex items-center justify-between gap-2 backdrop-blur-md transition-colors w-full max-w-full overflow-hidden ${
         isDark ? 'bg-[#121514]/90 border-stone-800' : 'bg-[#f9f9f7]/90 border-stone-200/80'
       }`}>
         {/* Left: Back button and Title tightly grouped */}
@@ -514,6 +522,27 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
               </span>
             )}
           </button>
+
+          {/* Thematic Analysis Pill — only for documents the server has a copy of. */}
+          {docId && (
+            <button
+              type="button"
+              onClick={() => handleSwitchTab('analysis')}
+              className={`flex items-center gap-1.5 transition-all duration-200 cursor-pointer shrink-0 ${
+                activeControlTab === 'analysis'
+                  ? 'bg-[#435c52] text-white px-3 py-1.5 rounded-xl font-semibold shadow-xs animate-in fade-in zoom-in-95'
+                  : 'p-2 rounded-xl bg-black/5 dark:bg-white/5 hover:bg-black/10 text-stone-700 dark:text-stone-300'
+              }`}
+              title="AI Thematic Analysis"
+            >
+              <Sparkles className="w-4 h-4" />
+              {activeControlTab === 'analysis' && (
+                <span className="whitespace-nowrap animate-in fade-in duration-150">
+                  AI Analysis
+                </span>
+              )}
+            </button>
+          )}
         </div>
       </div>
 
@@ -971,6 +1000,25 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                     </button>
                   </div>
                 </div>
+              </motion.div>
+            )}
+
+            {/* TAB 4: AI THEMATIC ANALYSIS */}
+            {activeControlTab === 'analysis' && docId && (
+              <motion.div
+                key="analysis-tab"
+                custom={slideDirection}
+                variants={tabVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+              >
+                <ThematicAnalysisView
+                  docId={docId}
+                  documentTitle={displayTitle}
+                  className="space-y-4"
+                />
               </motion.div>
             )}
           </AnimatePresence>
