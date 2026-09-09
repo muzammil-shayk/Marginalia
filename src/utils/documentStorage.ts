@@ -188,6 +188,43 @@ export async function renameStoredDocument(id: string, title: string): Promise<S
  * `inline` is what the PDF workspace loads: it makes the server send the file with its real
  * content type instead of as a download, which is what PDF.js needs to render the actual pages.
  */
+/** One hit from the library-wide search: a document, or a mark inside one. */
+export interface SearchHit {
+  kind: 'document' | 'mark';
+  /** The document's id, whichever kind this is. */
+  id: string;
+  title: string;
+  format: string;
+  snippet: string;
+  matches: number;
+  annotationId?: string;
+  page?: number;
+  themeId?: string | null;
+  themeName?: string;
+  themeColor?: string;
+  isTerminology?: boolean;
+}
+
+/**
+ * Searches every stored document — its text, and the marks in it.
+ *
+ * Server-side because the browser holds only metadata: document bodies and annotations live on
+ * disk and are fetched per document, so a search done in the renderer could only ever cover
+ * whatever happened to be open.
+ */
+export async function searchLibrary(query: string): Promise<SearchHit[]> {
+  const q = query.trim();
+  if (!q) return [];
+  try {
+    const res = await fetch(`/api/documents/search?q=${encodeURIComponent(q)}`);
+    if (!res.ok) return [];
+    const body = await res.json();
+    return Array.isArray(body.results) ? body.results : [];
+  } catch {
+    return [];
+  }
+}
+
 export interface GeminiConfig {
   configured: boolean;
   /** 'settings' when set from inside the app, 'environment' when it came from GEMINI_API_KEY. */

@@ -280,11 +280,66 @@ app.get("/api/documents/search", async (req, res) => {
   try {
     const metas = await listDocuments();
     const needle = query.toLowerCase();
-    const results: Array<{ id: string; title: string; format: string; snippet: string; matches: number }> = [];
+    const settings = (await getSettings()) ?? {};
+    const themes = Array.isArray(settings.activeThemes)
+      ? (settings.activeThemes as Array<{ id: string; name: string; color: string }>)
+      : [];
+    const themeById = new Map(themes.map((t) => [t.id, t]));
+
+    /**
+     * One hit. A document match points at the book; a mark match points at a passage inside it,
+     * and carries what the reader needs to recognise it — the words, the theme it is filed under,
+     * the page — plus enough for the app to open the book at that mark.
+     */
+    type Hit = {
+      kind: "document" | "mark";
+      id: string;
+      title: string;
+      format: string;
+      snippet: string;
+      matches: number;
+      annotationId?: string;
+      page?: number;
+      themeId?: string | null;
+      themeName?: string;
+      themeColor?: string;
+      isTerminology?: boolean;
+    };
+    const results: Hit[] = [];
 
     for (const meta of metas) {
       const doc = await getDocument(meta.id);
       if (!doc) continue;
+
+      /*
+       * Marks are searched as well as text: a reader looking for "mortality" wants the passages
+       * they marked about it at least as much as every incidental mention. A mark matches on the
+       * words it covers, on a note's own writing, on the theme it is filed under, and on the word
+       * "terminology" — so a theme's whole contents can be listed by naming it.
+       */
+      for (const a of doc.annotations) {
+        const quote = typeof a.quote === "string" ? a.quote : "";
+        const noteText = typeof a.text === "string" ? a.text : "";
+        const theme = typeof a.themeId === "string" ? themeById.get(a.themeId) : undefined;
+        const isTerm = a.isTerminology === true;
+        const fields = [quote, noteText, theme?.name ?? "", isTerm ? "terminology" : ""];
+        if (!fields.some((f) => f.toLowerCase().includes(needle))) continue;
+        results.push({
+          kind: "mark",
+          id: meta.id,
+          title: meta.title,
+          format: meta.format,
+          snippet: (quote || noteText || theme?.name || "Terminology").replace(/\s+/g, " ").trim().slice(0, 220),
+          matches: 1,
+          annotationId: String(a.id),
+          page: typeof a.page === "number" ? a.page : undefined,
+          themeId: typeof a.themeId === "string" ? a.themeId : null,
+          themeName: theme?.name,
+          themeColor: theme?.color,
+          isTerminology: isTerm
+        });
+      }
+
       const haystack = doc.text.toLowerCase();
       const titleHit = meta.title.toLowerCase().includes(needle);
       const firstIdx = haystack.indexOf(needle);
@@ -302,10 +357,12 @@ app.get("/api/documents/search", async (req, res) => {
       const snippetStart = firstIdx === -1 ? 0 : Math.max(0, firstIdx - 60);
       const snippet = doc.text.slice(snippetStart, snippetStart + 200).replace(/\s+/g, " ").trim();
 
-      results.push({ id: meta.id, title: meta.title, format: meta.format, snippet, matches });
+      results.push({ kind: "document", id: meta.id, title: meta.title, format: meta.format, snippet, matches });
     }
 
-    results.sort((a, b) => b.matches - a.matches);
+    // Marks first: a passage the reader chose to mark is a better answer than a word the book
+    // happens to contain, however many times it contains it.
+    results.sort((a, b) => (a.kind === b.kind ? b.matches - a.matches : a.kind === "mark" ? -1 : 1));
     res.json({ results });
   } catch (error) {
     console.error("Document search failed:", error);

@@ -1,52 +1,54 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Search, X, BookOpen, FileText, ArrowRight, StickyNote as StickyNoteIcon } from './icons';
-import { Screen, TransitionType, StickyNote } from '../types';
-
 /**
- * `text` is optional and `docId` new: document bodies live on disk now and are fetched by id when
- * a document is opened, so the library holds only metadata until then.
+ * Search across the whole library: documents, and every mark inside them.
+ *
+ * Server-backed, because the browser holds only metadata — document bodies and annotations live
+ * on disk. A search done here in the renderer could only ever cover whatever happened to be open,
+ * which is exactly what the old version did.
+ *
+ * A mark is a better answer than a word, so marks come first. Opening one takes the reader to
+ * that passage rather than to page one of the book it is in.
  */
-interface LibraryDoc {
-  id: string;
-  title: string;
-  text?: string;
-  date: string;
-  wordCount: number;
-  format?: string;
-  docId?: string;
-}
+
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Search, X, FileText, Tag, Sparkles, Loader2 } from './icons';
+import { AnnotationFocus, Screen, TransitionType } from '../types';
+import {
+  searchLibrary,
+  listStoredDocuments,
+  type SearchHit,
+  type StoredDocumentMeta
+} from '../utils/documentStorage';
 
 interface SearchModalProps {
   isOpen: boolean;
   onClose: () => void;
   onNavigate: (screen: Screen, transition?: TransitionType) => void;
   isDark?: boolean;
-  uploadedLibrary?: LibraryDoc[];
-  documentNotes?: Record<string, StickyNote[]>;
-  onSelectDocumentForAnalysis?: (title: string, text: string, format?: string, docId?: string) => void;
-  /** Reopens a stored document, fetching its text from disk first. */
-  onOpenLibraryDocument?: (doc: LibraryDoc) => void;
+  /** Opens a stored document, optionally stepping straight to a kind of mark inside it. */
+  onOpenStoredDocument?: (meta: StoredDocumentMeta, focus?: AnnotationFocus) => void;
 }
 
 export const SearchModal: React.FC<SearchModalProps> = ({
   isOpen,
   onClose,
-  onNavigate,
   isDark = false,
-  uploadedLibrary = [],
-  documentNotes = {},
-  onSelectDocumentForAnalysis,
-  onOpenLibraryDocument
+  onOpenStoredDocument
 }) => {
   const [query, setQuery] = useState('');
+  const [hits, setHits] = useState<SearchHit[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [library, setLibrary] = useState<StoredDocumentMeta[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Start each fresh open with a clean search box rather than whatever was typed last time.
   useEffect(() => {
-    if (isOpen) setQuery('');
+    if (!isOpen) return;
+    setQuery('');
+    setHits([]);
+    void listStoredDocuments().then(setLibrary);
+    // The field is the whole point of the dialog; nobody opens it to look at it.
+    window.setTimeout(() => inputRef.current?.focus(), 50);
   }, [isOpen]);
 
-  // Escape closes it, as it does every other dialog here. Without this the only way out was the
-  // X in the corner.
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (e: KeyboardEvent) => {
@@ -56,53 +58,56 @@ export const SearchModal: React.FC<SearchModalProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, onClose]);
 
-  const q = query.trim().toLowerCase();
-
-  const matchingDocs = useMemo(() => {
-    if (!q) return [];
-    // `text` is absent for anything with a `docId`: App strips document bodies before writing
-    // the session (they blow past the sessionStorage quota), so after a relaunch every entry has
-    // none. Reading it unguarded threw on the first keystroke, and this dialog sits outside both
-    // error boundaries — it took the whole app white.
-    return uploadedLibrary.filter(
-      (doc) => doc.title.toLowerCase().includes(q) || (doc.text ?? '').toLowerCase().includes(q)
-    );
-  }, [q, uploadedLibrary]);
-
-  const matchingNotes = useMemo(() => {
-    if (!q) return [];
-    const results: Array<{ docTitle: string; note: StickyNote }> = [];
-    Object.entries(documentNotes).forEach(([docTitle, notes]: [string, StickyNote[]]) => {
-      notes.forEach((note) => {
-        const haystack = `${note.title} ${note.content} ${note.quote || ''}`.toLowerCase();
-        if (haystack.includes(q)) results.push({ docTitle, note });
-      });
-    });
-    return results;
-  }, [q, documentNotes]);
-
-  const hasResults = matchingDocs.length > 0 || matchingNotes.length > 0;
-  const isSearching = q.length > 0;
-
-  const findDocText = (title: string) => uploadedLibrary.find((d) => d.title === title)?.text || '';
-  const findDocFormat = (title: string) => uploadedLibrary.find((d) => d.title === title)?.format;
-
-  /**
-   * Opens a result.
-   *
-   * Prefers the library opener, which fetches the document's text by id and routes it to the
-   * reader or the workspace as its format requires. The direct path below is the fallback for a
-   * pasted document that was never stored — it has no id, and its text is all there is.
-   */
-  const goToReader = (title: string, text: string, format?: string) => {
-    onClose();
-    const stored = uploadedLibrary.find((d) => d.title === title && d.docId);
-    if (stored && onOpenLibraryDocument) {
-      onOpenLibraryDocument(stored);
+  // Debounced: the search reads every document on disk, so it should not run per keystroke.
+  useEffect(() => {
+    const q = query.trim();
+    if (q.length < 2) {
+      setHits([]);
+      setSearching(false);
       return;
     }
-    if (onSelectDocumentForAnalysis) onSelectDocumentForAnalysis(title, text, format);
-    onNavigate('reader', 'push');
+    setSearching(true);
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      const found = await searchLibrary(q);
+      if (cancelled) return;
+      setHits(found);
+      setSearching(false);
+    }, 220);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [query]);
+
+  const grouped = useMemo(
+    () => ({
+      marks: hits.filter((h) => h.kind === 'mark').slice(0, 40),
+      documents: hits.filter((h) => h.kind === 'document').slice(0, 20)
+    }),
+    [hits]
+  );
+
+  const open = (hit: SearchHit) => {
+    const meta = library.find((d) => d.id === hit.id);
+    if (!meta) return;
+    onClose();
+    // A mark hit opens the book already stepping through marks of its kind, so the passage that
+    // matched is the first thing on screen.
+    const focus: AnnotationFocus | undefined =
+      hit.kind !== 'mark'
+        ? undefined
+        : hit.isTerminology
+          ? { kind: 'terminology', label: 'Terminology', color: hit.themeColor ?? '#8a8578' }
+          : hit.themeId
+            ? {
+                kind: 'theme',
+                themeId: hit.themeId,
+                label: hit.themeName ?? 'Theme',
+                color: hit.themeColor ?? '#435c52'
+              }
+            : undefined;
+    onOpenStoredDocument?.(meta, focus);
   };
 
   if (!isOpen) return null;
@@ -113,116 +118,110 @@ export const SearchModal: React.FC<SearchModalProps> = ({
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Search the library"
         onClick={(e) => e.stopPropagation()}
-        className={`w-full max-w-md rounded-3xl p-5 shadow-2xl border ${
-        isDark ? 'bg-[#1b201d] border-stone-700 text-white' : 'bg-white border-stone-200 text-stone-900'
-      }`}>
-        <div className="flex items-center gap-3 pb-3 border-b border-stone-200 dark:border-stone-800">
-          <Search className="w-5 h-5 text-stone-400" />
+        className={`w-full max-w-xl rounded-3xl shadow-2xl border overflow-hidden ${
+          isDark ? 'bg-[#1b201d] border-stone-700 text-white' : 'bg-white border-stone-200 text-stone-900'
+        }`}
+      >
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-stone-200 dark:border-stone-800">
+          <Search className="w-5 h-5 text-stone-400 shrink-0" />
           <input
+            ref={inputRef}
             type="text"
-            placeholder="Search themes, docs & notes..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            className="flex-1 min-w-0 bg-transparent text-[14px] focus:outline-none placeholder-stone-400"
-            autoFocus
+            placeholder="Search marks, themes, terminology and text…"
+            className="flex-1 bg-transparent outline-none text-[14px] placeholder:text-stone-400"
           />
+          {searching && <Loader2 className="w-4 h-4 animate-spin text-stone-400 shrink-0" />}
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 cursor-pointer"
+            aria-label="Close search"
+            className="p-1 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer shrink-0"
           >
-            <X className="w-5 h-5" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        <div className="mt-4 space-y-4 max-h-96 overflow-y-auto">
-          {isSearching ? (
-            hasResults ? (
-              <>
-                {matchingDocs.length > 0 && (
-                  <div className="space-y-1.5">
-                    <div className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider">
-                      Documents
-                    </div>
-                    {matchingDocs.map((doc) => (
-                      <div
-                        key={doc.id}
-                        onClick={() => goToReader(doc.title, doc.text, doc.format)}
-                        className="flex items-center justify-between p-2.5 rounded-xl hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <FileText className="w-4 h-4 text-emerald-600 shrink-0" />
-                          <p className="text-[13px] font-medium truncate">{doc.title}</p>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-stone-400 shrink-0" />
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {matchingNotes.length > 0 && (
-                  <div className="space-y-1.5">
-                    <div className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider">
-                      Notes
-                    </div>
-                    {matchingNotes.map(({ docTitle, note }) => (
-                      <div
-                        key={note.id}
-                        onClick={() => goToReader(docTitle, findDocText(docTitle), findDocFormat(docTitle))}
-                        className="flex items-center justify-between p-2.5 rounded-xl hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <StickyNoteIcon className="w-4 h-4 text-amber-500 shrink-0" />
-                          <div className="min-w-0">
-                            <p className="text-[13px] font-medium truncate">{note.title}</p>
-                            <p className="text-[11px] text-stone-400 truncate">in {docTitle}</p>
-                          </div>
-                        </div>
-                        <ArrowRight className="w-4 h-4 text-stone-400 shrink-0" />
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
-            ) : (
-              <p className="text-[13px] text-stone-500 text-center py-6">
-                No documents, themes, or notes match &ldquo;{query.trim()}&rdquo;.
-              </p>
-            )
+        <div className="max-h-[60vh] overflow-y-auto px-3 py-3 space-y-4">
+          {query.trim().length < 2 ? (
+            <p className="px-2 py-6 text-center text-[12.5px] text-stone-500 leading-relaxed">
+              Type to search everything on this computer — the words you highlighted, your notes,
+              a theme's name, terminology, and the full text of every book.
+            </p>
+          ) : !searching && hits.length === 0 ? (
+            <p className="px-2 py-6 text-center text-[12.5px] text-stone-500">
+              Nothing matches “{query.trim()}”.
+            </p>
           ) : (
             <>
-              <div className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider">
-                Quick Navigation
-              </div>
+              {grouped.marks.length > 0 && (
+                <section className="space-y-1">
+                  <h3 className="px-2 text-[10.5px] font-semibold tracking-wider uppercase text-stone-500">
+                    Marks · {grouped.marks.length}
+                  </h3>
+                  {grouped.marks.map((hit) => (
+                    <button
+                      key={`${hit.id}-${hit.annotationId}`}
+                      type="button"
+                      onClick={() => open(hit)}
+                      className="w-full flex items-start gap-2.5 px-2 py-2 rounded-xl text-left hover:bg-stone-500/[0.07] cursor-pointer transition-colors"
+                    >
+                      <span
+                        aria-hidden
+                        className="mt-1 w-2 h-2 rounded-[2px] shrink-0"
+                        style={{ backgroundColor: hit.themeColor ?? '#8a8578' }}
+                      />
+                      <span className="flex-1 min-w-0">
+                        <span className="block text-[12.5px] text-stone-800 dark:text-stone-200 line-clamp-2">
+                          {hit.snippet}
+                        </span>
+                        <span className="block text-[11px] text-stone-500 truncate">
+                          {hit.title}
+                          {hit.page ? ` · page ${hit.page}` : ''}
+                          {hit.isTerminology ? ' · Terminology' : hit.themeName ? ` · ${hit.themeName}` : ''}
+                        </span>
+                      </span>
+                      {hit.isTerminology ? (
+                        <Tag className="w-3.5 h-3.5 text-stone-400 shrink-0 mt-0.5" />
+                      ) : (
+                        <Sparkles className="w-3.5 h-3.5 text-stone-400 shrink-0 mt-0.5" />
+                      )}
+                    </button>
+                  ))}
+                </section>
+              )}
 
-              <div
-                onClick={() => { onClose(); onNavigate('reader', 'push'); }}
-                className="flex items-center justify-between p-2.5 rounded-xl hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
-              >
-                <div className="flex items-center gap-2.5">
-                  <BookOpen className="w-4 h-4 text-[#435c52]" />
-                  <div>
-                    <p className="text-[13px] font-medium">Active Reading Session</p>
-                    <p className="text-[11px] text-stone-400">Open active document text</p>
-                  </div>
-                </div>
-                <ArrowRight className="w-4 h-4 text-stone-400" />
-              </div>
-
-              <div
-                onClick={() => { onClose(); onNavigate('upload', 'push'); }}
-                className="flex items-center justify-between p-2.5 rounded-xl hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
-              >
-                <div className="flex items-center gap-2.5">
-                  <FileText className="w-4 h-4 text-emerald-600" />
-                  <div>
-                    <p className="text-[13px] font-medium">Upload & Analyze New Document</p>
-                    <p className="text-[11px] text-stone-400">PDF, EPUB, TXT, DOCX</p>
-                  </div>
-                </div>
-                <ArrowRight className="w-4 h-4 text-stone-400" />
-              </div>
+              {grouped.documents.length > 0 && (
+                <section className="space-y-1">
+                  <h3 className="px-2 text-[10.5px] font-semibold tracking-wider uppercase text-stone-500">
+                    In the text · {grouped.documents.length}
+                  </h3>
+                  {grouped.documents.map((hit) => (
+                    <button
+                      key={hit.id}
+                      type="button"
+                      onClick={() => open(hit)}
+                      className="w-full flex items-start gap-2.5 px-2 py-2 rounded-xl text-left hover:bg-stone-500/[0.07] cursor-pointer transition-colors"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-stone-400 shrink-0 mt-1" />
+                      <span className="flex-1 min-w-0">
+                        <span className="block font-serif text-[13px] text-stone-800 dark:text-stone-200 truncate">
+                          {hit.title}
+                        </span>
+                        <span className="block text-[11.5px] text-stone-500 line-clamp-2">{hit.snippet}</span>
+                      </span>
+                      <span className="text-[11px] text-stone-400 tabular-nums shrink-0 mt-1">
+                        {hit.matches}
+                      </span>
+                    </button>
+                  ))}
+                </section>
+              )}
             </>
           )}
         </div>

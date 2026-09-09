@@ -1721,10 +1721,18 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
             isPanelOpen ? 'flex' : 'hidden'
           } ${isDark ? 'bg-[#151917] border-stone-800' : 'bg-white border-stone-200'}`}
         >
-          <div className={`min-h-0 flex-1 ${panelTab === 'analysis' ? 'flex flex-col' : 'hidden'}`}>
+          <div
+            className={`min-h-0 flex-1 motion-safe:animate-[panel-in_200ms_var(--ease-out)] ${
+              panelTab === 'analysis' ? 'flex flex-col' : 'hidden'
+            }`}
+          >
             <ThematicAnalysisView docId={docId} documentTitle={documentTitle} />
           </div>
-          <div className={`min-h-0 flex-1 ${panelTab === 'notes' ? 'flex flex-col' : 'hidden'}`}>
+          <div
+            className={`min-h-0 flex-1 motion-safe:animate-[panel-in_200ms_var(--ease-out)] ${
+              panelTab === 'notes' ? 'flex flex-col' : 'hidden'
+            }`}
+          >
             <NotesList
               annotations={annotations}
               settings={settings}

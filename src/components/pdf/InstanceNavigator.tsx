@@ -13,7 +13,7 @@
  */
 
 import React from 'react';
-import { ChevronLeft, ChevronRight, X } from '../icons';
+import { ChevronLeft, ChevronRight, ChevronUp, X } from '../icons';
 import { AnnotationFocus } from '../../types';
 import { Annotation, annotationBounds } from './annotationModel';
 
@@ -29,6 +29,20 @@ export function matchingAnnotations(
     // Reading order: down the page, not creation order — someone stepping through marks is
     // walking the book, and the order they were drawn in is meaningless to that.
     .sort((a, b) => a.page - b.page || (annotationBounds(a)?.y ?? 0) - (annotationBounds(b)?.y ?? 0));
+}
+
+/**
+ * The words a mark stands for.
+ *
+ * Text-anchored marks store the passage they cover (`quote`); a sticky note stores what the
+ * reader wrote. A shape or a stroke has neither, so it is named by what it is and where.
+ */
+function preview(a: Annotation): string {
+  const quote = typeof a.quote === 'string' ? a.quote.trim() : '';
+  if (quote) return quote;
+  const text = typeof a.text === 'string' ? a.text.trim() : '';
+  if (text) return text;
+  return `${a.kind.charAt(0).toUpperCase()}${a.kind.slice(1)} on page ${a.page}`;
 }
 
 interface InstanceNavigatorProps {
@@ -52,6 +66,7 @@ export const InstanceNavigator: React.FC<InstanceNavigatorProps> = ({
     [annotations, focus]
   );
   const [index, setIndex] = React.useState(0);
+  const [listOpen, setListOpen] = React.useState(false);
   const jumpedFor = React.useRef<string | null>(null);
 
   /**
@@ -113,6 +128,47 @@ export const InstanceNavigator: React.FC<InstanceNavigatorProps> = ({
         }
       `}</style>
 
+      {/*
+        Every match, with the words it covers.
+        
+        Stepping one at a time answers "show me the next one"; it does not answer "what did I
+        mark in this book", which is the question a reader arriving from the library actually
+        has. The list sits above the pill so the pill stays where the hand already is.
+      */}
+      {listOpen && matches.length > 0 && (
+        <div
+          className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-[22rem] max-h-72 overflow-y-auto rounded-2xl border shadow-xl ${
+            isDark ? 'bg-[#1b201d] border-stone-700' : 'bg-white border-stone-200'
+          }`}
+        >
+          <ul className="p-1.5 space-y-0.5">
+            {matches.map((match, i) => (
+              <li key={match.id}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIndex(i);
+                    onGoTo(match);
+                  }}
+                  className={`w-full flex items-start gap-2 px-2 py-1.5 rounded-lg text-left transition-colors cursor-pointer ${
+                    i === safeIndex
+                      ? 'bg-stone-500/[0.12]'
+                      : 'hover:bg-stone-500/[0.07]'
+                  }`}
+                >
+                  <span className="text-[10.5px] text-stone-400 tabular-nums w-9 shrink-0 pt-0.5">
+                    p{match.page}
+                  </span>
+                  <span className="flex-1 min-w-0 text-[12px] text-stone-700 dark:text-stone-300 line-clamp-2">
+                    {preview(match)}
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <span
         aria-hidden
         className="w-2 h-2 rounded-[2px] shrink-0"
@@ -124,6 +180,18 @@ export const InstanceNavigator: React.FC<InstanceNavigatorProps> = ({
       <span className="text-[11.5px] text-stone-500 tabular-nums whitespace-nowrap ml-1">
         {matches.length === 0 ? 'none here' : `${safeIndex + 1} of ${matches.length}`}
       </span>
+
+      <button
+        type="button"
+        onClick={() => setListOpen((open) => !open)}
+        disabled={matches.length === 0}
+        aria-expanded={listOpen}
+        aria-label={listOpen ? 'Hide the list of marks' : 'List every mark'}
+        title={listOpen ? 'Hide the list' : 'List every mark'}
+        className="p-1 rounded-full text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 disabled:opacity-35 disabled:cursor-default cursor-pointer transition-[transform,color] duration-150 ease-out active:scale-[0.92]"
+      >
+        <ChevronUp className={`w-3.5 h-3.5 transition-transform duration-200 ${listOpen ? 'rotate-180' : ''}`} />
+      </button>
 
       <span className="w-px h-5 bg-stone-200 dark:bg-stone-700 mx-1" aria-hidden />
 

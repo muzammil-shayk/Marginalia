@@ -391,6 +391,17 @@ const ToolChip: React.FC<{
 };
 
 /** Zoom stops, so the buttons step through predictable sizes rather than drifting by a factor. */
+/**
+ * How this platform writes the undo shortcut.
+ *
+ * The tooltips said ⌘Z everywhere, including on Windows, where the key is Ctrl and the symbol
+ * means nothing. The keyboard handler already accepts either modifier; only the label was wrong.
+ */
+const IS_APPLE =
+  typeof navigator !== 'undefined' && /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent);
+const MODIFIER = IS_APPLE ? '⌘' : 'Ctrl+';
+const SHIFT_MODIFIER = IS_APPLE ? '⇧⌘' : 'Ctrl+Shift+';
+
 const ZOOM_STEPS = [0.5, 0.75, 1, 1.25, 1.5, 2, 2.5, 3, 4, 5];
 
 export const PdfToolbar: React.FC<PdfToolbarProps> = ({
@@ -582,7 +593,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
         {/* Undo and redo. Every edit goes through one history, so this covers drawing, moving,
             restyling, erasing and writing alike — not just the drawing tools. */}
         <div className="flex items-center gap-0.5">
-          <HoverTooltip label="Undo (⌘Z)">
+          <HoverTooltip label={`Undo (${MODIFIER}Z)`}>
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}
@@ -594,7 +605,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
               <Undo2 className="w-4 h-4" />
             </button>
           </HoverTooltip>
-          <HoverTooltip label="Redo (⇧⌘Z)">
+          <HoverTooltip label={`Redo (${SHIFT_MODIFIER}Z)`}>
             <button
               type="button"
               onMouseDown={(e) => e.preventDefault()}

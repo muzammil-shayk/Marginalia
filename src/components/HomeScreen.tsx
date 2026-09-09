@@ -43,8 +43,10 @@ import { documentThumbnail } from '../utils/documentThumbnail';
 import {
   StoredDocumentMeta,
   deleteStoredDocument,
+  fetchAnnotations,
   listStoredDocuments,
-  renameStoredDocument
+  renameStoredDocument,
+  type Annotation
 } from '../utils/documentStorage';
 import { ErrorDialog } from './ErrorDialog';
 
@@ -131,6 +133,121 @@ const DocumentCover: React.FC<{ doc: StoredDocumentMeta; className?: string }> =
   );
 };
 
+/**
+ * The two tab entrances, written out in full.
+ *
+ * Tailwind generates classes by scanning the source, so a class name assembled at runtime never
+ * reaches the stylesheet. Both directions have to appear literally for either to exist.
+ */
+const TAB_IN_FORWARD = 'motion-safe:animate-[tab-in-forward_220ms_var(--ease-out)]';
+const TAB_IN_BACK = 'motion-safe:animate-[tab-in-back_220ms_var(--ease-out)]';
+
+/**
+ * A book listed under a theme, with a caret that peeks at what is actually filed under it.
+ *
+ * The count answers "how much"; it does not answer "which passages", which is what a reader
+ * scanning a theme wants before opening a 400-page book. The marks are fetched only when the
+ * caret is pressed — the library list carries metadata, not annotations, and reading every
+ * document's marks up front to fill a row nobody expanded would be waste.
+ */
+const MarkPeekRow: React.FC<{
+  docId: string;
+  title: string;
+  count: number;
+  /** Null for terminology, which is a flag on a mark rather than a theme. */
+  themeId: string | null;
+  onOpen: () => void;
+}> = ({ docId, title, count, themeId, onOpen }) => {
+  const [open, setOpen] = useState(false);
+  const [marks, setMarks] = useState<Annotation[] | null>(null);
+
+  useEffect(() => {
+    if (!open || marks) return;
+    let cancelled = false;
+    void fetchAnnotations(docId).then((stored) => {
+      if (cancelled || !stored) return;
+      setMarks(
+        stored.annotations.filter((a) =>
+          themeId === null ? a.isTerminology === true : a.themeId === themeId
+        )
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, marks, docId, themeId]);
+
+  /** The words a mark stands for: the passage it covers, what was written on it, or what it is. */
+  const words = (a: Annotation) => {
+    const quote = typeof a.quote === 'string' ? a.quote.trim() : '';
+    const text = typeof a.text === 'string' ? a.text.trim() : '';
+    return quote || text || `${String(a.kind ?? 'Mark')} on page ${String(a.page ?? '?')}`;
+  };
+
+  return (
+    <li>
+      <div className="flex items-center gap-1 py-1.5 text-[12px]">
+        <button
+          type="button"
+          onClick={onOpen}
+          className="flex-1 min-w-0 text-left truncate pr-2 font-serif text-stone-700 dark:text-stone-300 hover:text-[#435c52] dark:hover:text-emerald-300 transition-colors cursor-pointer"
+        >
+          {title}
+        </button>
+        <span className="font-mono text-[11px] tabular-nums text-stone-500 dark:text-stone-400 shrink-0">
+          {count} {count === 1 ? 'mark' : 'marks'}
+        </span>
+        <button
+          type="button"
+          onClick={() => setOpen((wasOpen) => !wasOpen)}
+          aria-expanded={open}
+          aria-label={open ? `Hide marks in ${title}` : `Show marks in ${title}`}
+          title={open ? 'Hide these marks' : 'Show these marks'}
+          className="p-1 rounded-md text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer transition-colors shrink-0"
+        >
+          <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${open ? 'rotate-90' : ''}`} />
+        </button>
+      </div>
+
+      {open && (
+        <ul className="pb-1.5 ml-1 pl-2 space-y-0.5 border-l border-stone-200 dark:border-stone-800">
+          {marks === null ? (
+            <li className="text-[11.5px] text-stone-400 pl-2 py-1">Reading…</li>
+          ) : marks.length === 0 ? (
+            <li className="text-[11.5px] text-stone-400 pl-2 py-1">Nothing filed here any more.</li>
+          ) : (
+            <>
+              {marks.slice(0, 4).map((a) => (
+                <li key={String(a.id)}>
+                  <button
+                    type="button"
+                    onClick={onOpen}
+                    className="w-full text-left pl-2 pr-1 py-1 rounded-md text-[11.5px] text-stone-600 dark:text-stone-400 hover:bg-stone-500/[0.07] hover:text-stone-900 dark:hover:text-stone-100 cursor-pointer transition-colors line-clamp-2"
+                  >
+                    <span className="text-stone-400 tabular-nums mr-1.5">p{String(a.page ?? '?')}</span>
+                    {words(a)}
+                  </button>
+                </li>
+              ))}
+              {marks.length > 4 && (
+                <li className="pl-2 py-1">
+                  <button
+                    type="button"
+                    onClick={onOpen}
+                    className="text-[11px] font-semibold text-[#435c52] dark:text-emerald-400 hover:underline cursor-pointer"
+                  >
+                    {marks.length - 4} more — open the book
+                  </button>
+                </li>
+              )}
+            </>
+          )}
+        </ul>
+      )}
+    </li>
+  );
+};
+
 export const HomeScreen: React.FC<HomeScreenProps> = ({
   onNavigate,
   isDark = false,
@@ -162,6 +279,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
   // Knowledge Studio tabs: overview (bento), themes, terminology, ai
   const [studioTab, setStudioTab] = useState<'overview' | 'themes' | 'terminology' | 'ai'>('overview');
+  /**
+   * Which way the last tab change moved along the strip, so the incoming panel enters from the
+   * side it came from. Direction is the only thing that makes a tab transition mean anything: a
+   * panel that always slides in from the same edge is decoration.
+   */
+  const [studioDirection, setStudioDirection] = useState<1 | -1>(1);
+  const STUDIO_TABS = ['overview', 'themes', 'terminology', 'ai'] as const;
+  const goToStudioTab = useCallback(
+    (next: (typeof STUDIO_TABS)[number]) => {
+      setStudioDirection(
+        STUDIO_TABS.indexOf(next) >= STUDIO_TABS.indexOf(studioTab) ? 1 : -1
+      );
+      setStudioTab(next);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [studioTab]
+  );
 
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -528,7 +662,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
                     e.preventDefault();
                     const next = (at + (e.key === 'ArrowRight' ? 1 : -1) + order.length) % order.length;
-                    setStudioTab(order[next]);
+                    goToStudioTab(order[next]);
                     (e.currentTarget.children[next] as HTMLElement | undefined)?.focus();
                   }
                 }}
@@ -552,7 +686,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     aria-controls="knowledge-studio-body"
                     // Roving tabindex: the strip is one stop, and the arrow keys move within it.
                     tabIndex={studioTab === tab.id ? 0 : -1}
-                    onClick={() => setStudioTab(tab.id)}
+                    onClick={() => goToStudioTab(tab.id)}
                     className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                       studioTab === tab.id
                         ? 'bg-[#435c52] text-white shadow-2xs font-semibold'
@@ -602,7 +736,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               <div className="p-5">
                 {/* ── BENTO OVERVIEW MODE ── */}
                 {studioTab === 'overview' && (
-                  <div className="grid md:grid-cols-2 grid-cols-1 xl:grid-cols-3 gap-4">
+                  <div
+                    key={studioTab}
+                    className={`${studioDirection === 1 ? TAB_IN_FORWARD : TAB_IN_BACK} grid md:grid-cols-2 grid-cols-1 xl:grid-cols-3 gap-4`}
+                  >
                     {/* Bento Card 1: Thematic Atlas */}
                     <div
                       className={`flex flex-col rounded-xl border p-4.5 ${
@@ -678,7 +815,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                       <div className="mt-3 pt-3 border-t border-stone-200/60 dark:border-stone-800/80 flex items-center justify-between text-[11.5px]">
                         <button
                           type="button"
-                          onClick={() => setStudioTab('themes')}
+                          onClick={() => goToStudioTab('themes')}
                           className="font-semibold text-[#435c52] dark:text-emerald-400 hover:underline cursor-pointer"
                         >
                           View all {settings.activeThemes.length} themes →
@@ -761,7 +898,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                       <div className="mt-3 pt-3 border-t border-stone-200/60 dark:border-stone-800/80 flex items-center justify-between text-[11.5px]">
                         <button
                           type="button"
-                          onClick={() => setStudioTab('terminology')}
+                          onClick={() => goToStudioTab('terminology')}
                           className="font-semibold text-[#435c52] dark:text-emerald-400 hover:underline cursor-pointer"
                         >
                           All terminology marks ({terminologyMarks}) →
@@ -836,7 +973,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                       <div className="mt-3 pt-3 border-t border-stone-200/60 dark:border-stone-800/80 flex items-center justify-between text-[11.5px]">
                         <button
                           type="button"
-                          onClick={() => setStudioTab('ai')}
+                          onClick={() => goToStudioTab('ai')}
                           className="font-semibold text-[#435c52] dark:text-emerald-400 hover:underline cursor-pointer"
                         >
                           Deep insights ({analysedDocuments.length}) →
@@ -848,7 +985,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
                 {/* ── THEMES EXPANDED VIEW ── */}
                 {studioTab === 'themes' && (
-                  <div className="space-y-4">
+                  <div
+                    key={studioTab}
+                    className={`${studioDirection === 1 ? TAB_IN_FORWARD : TAB_IN_BACK} space-y-4`}
+                  >
                     <div className="flex items-center justify-between">
                       <h3 className="font-serif text-[15px] font-bold text-stone-900 dark:text-stone-100">
                         All Active Themes & Key Concepts
@@ -894,34 +1034,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                             {books.length > 0 ? (
                               <ul className="divide-y divide-stone-100 dark:divide-stone-800/60 mt-2">
                                 {books.map((doc) => (
-                                  <li key={doc.id}>
-                                    <button
-                                      type="button"
-                                      onClick={() =>
-                                        onOpenStoredDocument?.(doc, {
-                                          kind: 'theme',
-                                          themeId: theme.id,
-                                          label: theme.name,
-                                          color: theme.color
-                                        })
-                                      }
-                                      className="w-full flex items-center justify-between py-1.5 text-left text-[12px] hover:text-[#435c52] dark:hover:text-emerald-300 transition-colors cursor-pointer group"
-                                    >
-                                      <span className="truncate pr-2 font-serif text-stone-700 dark:text-stone-300 group-hover:text-current">
-                                        {doc.title}
-                                      </span>
-                                      <span className="flex items-center gap-1.5 font-mono text-[11px] tabular-nums shrink-0 ml-2">
-                                        {/* Marks under THIS theme. A book's total theme count
-                                            belongs to the book, not to the theme card it is
-                                            listed inside. */}
-                                        <span className="text-stone-500 dark:text-stone-400">
-                                          {doc.themeCounts?.[theme.id] ?? 0}{' '}
-                                          {(doc.themeCounts?.[theme.id] ?? 0) === 1 ? 'mark' : 'marks'}
-                                        </span>
-                                        <ChevronRight className="w-3.5 h-3.5 text-stone-400 shrink-0 group-hover:translate-x-0.5 transition-transform" />
-                                      </span>
-                                    </button>
-                                  </li>
+                                  <MarkPeekRow
+                                    key={doc.id}
+                                    docId={doc.id}
+                                    title={doc.title}
+                                    // Marks under THIS theme. A book's total theme count belongs
+                                    // to the book, not to the theme card it is listed inside.
+                                    count={doc.themeCounts?.[theme.id] ?? 0}
+                                    themeId={theme.id}
+                                    onOpen={() =>
+                                      onOpenStoredDocument?.(doc, {
+                                        kind: 'theme',
+                                        themeId: theme.id,
+                                        label: theme.name,
+                                        color: theme.color
+                                      })
+                                    }
+                                  />
                                 ))}
                               </ul>
                             ) : (
@@ -938,7 +1067,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
                 {/* ── LEXICON EXPANDED VIEW ── */}
                 {studioTab === 'terminology' && (
-                  <div className="space-y-4">
+                  <div
+                    key={studioTab}
+                    className={`${studioDirection === 1 ? TAB_IN_FORWARD : TAB_IN_BACK} space-y-4`}
+                  >
                     <div className="flex items-center justify-between">
                       <h3 className="font-serif text-[15px] font-bold text-stone-900 dark:text-stone-100">
                         Terminologies Across the Library
@@ -953,37 +1085,38 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         No terminology marks captured yet. Select a word in any book and tag it as Terminology.
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
                         {documentsWithTerminology.map((doc) => (
-                          <button
+                          <div
                             key={doc.id}
-                            type="button"
-                            onClick={() =>
-                              onOpenStoredDocument?.(doc, {
-                                kind: 'terminology',
-                                label: 'Terminology',
-                                color: settings.terminologyColor
-                              })
-                            }
-                            className={`p-3.5 rounded-xl border text-left transition-all hover:-translate-y-0.5 cursor-pointer ${
-                              isDark
-                                ? 'bg-[#1b201d]/60 border-stone-800 hover:border-stone-700'
-                                : 'bg-white border-stone-200/80 hover:border-stone-300 shadow-2xs'
+                            className={`p-3.5 rounded-xl border ${
+                              isDark ? 'bg-[#1b201d]/60 border-stone-800' : 'bg-white border-stone-200/80'
                             }`}
                           >
-                            <div className="flex items-center justify-between">
-                              <h4 className="font-serif text-[14px] font-semibold text-stone-900 dark:text-stone-100 truncate pr-2">
-                                {doc.title}
-                              </h4>
+                            <div className="flex items-center gap-2 mb-1">
                               <Tag className="w-3.5 h-3.5 text-stone-400 shrink-0" />
-                            </div>
-                            <div className="mt-2 flex items-center justify-between font-mono text-[11.5px]">
-                              <span className="text-[#435c52] dark:text-emerald-400 font-medium">
-                                {doc.terminologyCount} {doc.terminologyCount === 1 ? 'mark' : 'marks'}
+                              <span className="text-[11px] font-semibold tracking-wider uppercase text-stone-500">
+                                Terminology
                               </span>
-                              <span className="text-stone-400">Open terms →</span>
                             </div>
-                          </button>
+                            {/* The same expanding row as the theme cards: the caret shows the
+                                terms themselves rather than only how many there are. */}
+                            <ul>
+                              <MarkPeekRow
+                                docId={doc.id}
+                                title={doc.title}
+                                count={doc.terminologyCount}
+                                themeId={null}
+                                onOpen={() =>
+                                  onOpenStoredDocument?.(doc, {
+                                    kind: 'terminology',
+                                    label: 'Terminology',
+                                    color: settings.terminologyColor
+                                  })
+                                }
+                              />
+                            </ul>
+                          </div>
                         ))}
                       </div>
                     )}
@@ -992,7 +1125,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
                 {/* ── AI SYNTHESIS EXPANDED VIEW ── */}
                 {studioTab === 'ai' && (
-                  <div className="space-y-4">
+                  <div
+                    key={studioTab}
+                    className={`${studioDirection === 1 ? TAB_IN_FORWARD : TAB_IN_BACK} space-y-4`}
+                  >
                     <div className="flex items-center justify-between">
                       <h3 className="font-serif text-[15px] font-bold text-stone-900 dark:text-stone-100">
                         AI-Analyzed Works & Narrative Arc Motifs

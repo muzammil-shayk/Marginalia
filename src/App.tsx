@@ -484,10 +484,7 @@ export default function App() {
           onClose={() => setIsSearchOpen(false)}
           onNavigate={navigate}
           isDark={isDark}
-          uploadedLibrary={uploadedLibrary}
-          documentNotes={documentNotes}
-          onSelectDocumentForAnalysis={handleSelectDocumentForAnalysis}
-          onOpenLibraryDocument={handleOpenLibraryDocument}
+          onOpenStoredDocument={handleOpenStoredDocument}
         />
 
         {/* Sidebar Drawer (mobile menu) */}

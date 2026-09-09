@@ -130,3 +130,45 @@
 .dark :where(button, [role='button'], a, summary):focus-visible {
   outline-color: #6ee7b7;
 }
+
+/* ── Panel and tab transitions ─────────────────────────────────────────────
+   A panel revealed by a `hidden` toggle still runs its animation, because the
+   animation starts when `display` stops being `none`. That keeps both side
+   panels mounted (so an analysis survives a trip to the notes) while still
+   giving the one that appears a short entrance.
+
+   Direction carries meaning: a panel slides in from the edge it lives on, and a
+   tab from the side it sits on relative to the one being left. Everything is
+   `motion-safe`, so a reader who asked for less motion simply gets the content. */
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes tab-in-forward {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes tab-in-back {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
