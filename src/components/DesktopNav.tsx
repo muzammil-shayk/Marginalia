@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpen, Settings as SettingsIcon, PlusCircle, PanelLeftClose, PanelLeftOpen, Sparkles } from './icons';
+import { BookOpen, Settings as SettingsIcon, PlusCircle, PanelLeftClose, PanelLeftOpen, Sparkles, Search } from './icons';
 import { Screen, TransitionType } from '../types';
 import logo from '../assets/images/marginalia-logo.png';
 
@@ -20,6 +20,11 @@ interface DesktopNavProps {
   /** Opens the thematic analysis dialog. Not a screen: it asks which book to read and shows the
    *  result in place, so routing to it would leave a back button pointing at nothing. */
   onOpenAnalysis?: () => void;
+  /**
+   * Opens search. Its only trigger used to be the mobile header, which is `md:hidden` — and the
+   * desktop window's minimum is 900px, so search could not be opened in the desktop app at all.
+   */
+  onOpenSearch?: () => void;
 }
 
 export const DesktopNav: React.FC<DesktopNavProps> = ({
@@ -29,7 +34,8 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
   hasActiveDocument = true,
   collapsed,
   onToggleCollapsed,
-  onOpenAnalysis
+  onOpenAnalysis,
+  onOpenSearch
 }) => {
 
   const tabs: Array<{
@@ -159,6 +165,24 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
             </button>
           );
         })}
+
+        {onOpenSearch && (
+          <button
+            type="button"
+            onClick={onOpenSearch}
+            title={collapsed ? 'Search' : undefined}
+            className={`w-full flex items-center rounded-xl text-[13px] font-medium transition-all active:scale-[0.97] cursor-pointer ${
+              collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3.5 py-2.5'
+            } ${
+              isDark
+                ? 'text-stone-400 hover:text-stone-200 hover:bg-white/5'
+                : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100/80'
+            }`}
+          >
+            <Search className={`shrink-0 ${collapsed ? 'w-5.5 h-5.5' : 'w-4 h-4'}`} />
+            {!collapsed && <span>Search</span>}
+          </button>
+        )}
 
         {/* Analysis is a dialog rather than a tab: it can be opened over any screen, and it
             asks which book to read rather than assuming the one on screen. */}

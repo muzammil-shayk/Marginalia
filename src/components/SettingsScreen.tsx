@@ -199,12 +199,22 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
     setEditingThemeId(null);
   };
 
+  /**
+   * A theme the reader has asked twice to remove.
+   *
+   * Removing one used to happen on a single click of a small X, and marks reference a theme by
+   * id — so every mark filed under it silently stopped being counted anywhere while still sitting
+   * on the page. Worth a confirmation, and worth saying how much is filed under it first.
+   */
+  const [confirmingRemoveTheme, setConfirmingRemoveTheme] = useState<string | null>(null);
+
   const handleRemoveTheme = (id: string) => {
     onUpdateSettings((prev) => ({
       ...prev,
       activeThemes: prev.activeThemes.filter((t) => t.id !== id)
     }));
     if (editingThemeId === id) setEditingThemeId(null);
+    setConfirmingRemoveTheme(null);
   };
 
   const startRenamingTheme = (id: string, currentName: string) => {
@@ -691,14 +701,42 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                     >
                       <Palette className="w-3.5 h-3.5" />
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveTheme(theme.id)}
-                      className="p-1 rounded-lg text-stone-400 hover:text-red-500 transition-colors"
-                      aria-label={`Remove ${theme.name}`}
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                    {confirmingRemoveTheme === theme.id ? (
+                      <span className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveTheme(theme.id)}
+                          className="px-2 py-0.5 rounded-lg text-[11px] font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 cursor-pointer"
+                        >
+                          Remove
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setConfirmingRemoveTheme(null)}
+                          className="px-2 py-0.5 rounded-lg text-[11px] text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
+                        >
+                          Keep
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        // The last theme cannot go: `mergeSettings` restores the three defaults
+                        // for an empty list on the next launch, so removing it only looks like it
+                        // worked until the app restarts.
+                        disabled={settings.activeThemes.length <= 1}
+                        onClick={() => setConfirmingRemoveTheme(theme.id)}
+                        className="p-1 rounded-lg text-stone-400 hover:text-red-500 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default disabled:hover:text-stone-400"
+                        aria-label={`Remove ${theme.name}`}
+                        title={
+                          settings.activeThemes.length <= 1
+                            ? 'At least one theme is needed'
+                            : `Remove ${theme.name}`
+                        }
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
 

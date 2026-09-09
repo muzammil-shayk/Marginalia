@@ -35,7 +35,8 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   isDark = false,
   uploadedLibrary = [],
   documentNotes = {},
-  onSelectDocumentForAnalysis
+  onSelectDocumentForAnalysis,
+  onOpenLibraryDocument
 }) => {
   const [query, setQuery] = useState('');
 
@@ -44,12 +45,27 @@ export const SearchModal: React.FC<SearchModalProps> = ({
     if (isOpen) setQuery('');
   }, [isOpen]);
 
+  // Escape closes it, as it does every other dialog here. Without this the only way out was the
+  // X in the corner.
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [isOpen, onClose]);
+
   const q = query.trim().toLowerCase();
 
   const matchingDocs = useMemo(() => {
     if (!q) return [];
+    // `text` is absent for anything with a `docId`: App strips document bodies before writing
+    // the session (they blow past the sessionStorage quota), so after a relaunch every entry has
+    // none. Reading it unguarded threw on the first keystroke, and this dialog sits outside both
+    // error boundaries — it took the whole app white.
     return uploadedLibrary.filter(
-      (doc) => doc.title.toLowerCase().includes(q) || doc.text.toLowerCase().includes(q)
+      (doc) => doc.title.toLowerCase().includes(q) || (doc.text ?? '').toLowerCase().includes(q)
     );
   }, [q, uploadedLibrary]);
 
@@ -71,8 +87,20 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   const findDocText = (title: string) => uploadedLibrary.find((d) => d.title === title)?.text || '';
   const findDocFormat = (title: string) => uploadedLibrary.find((d) => d.title === title)?.format;
 
+  /**
+   * Opens a result.
+   *
+   * Prefers the library opener, which fetches the document's text by id and routes it to the
+   * reader or the workspace as its format requires. The direct path below is the fallback for a
+   * pasted document that was never stored — it has no id, and its text is all there is.
+   */
   const goToReader = (title: string, text: string, format?: string) => {
     onClose();
+    const stored = uploadedLibrary.find((d) => d.title === title && d.docId);
+    if (stored && onOpenLibraryDocument) {
+      onOpenLibraryDocument(stored);
+      return;
+    }
     if (onSelectDocumentForAnalysis) onSelectDocumentForAnalysis(title, text, format);
     onNavigate('reader', 'push');
   };
@@ -80,8 +108,13 @@ export const SearchModal: React.FC<SearchModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4 bg-black/60 backdrop-blur-xs">
-      <div className={`w-full max-w-md rounded-3xl p-5 shadow-2xl border ${
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center pt-16 px-4 bg-black/60 backdrop-blur-xs"
+      onClick={onClose}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        className={`w-full max-w-md rounded-3xl p-5 shadow-2xl border ${
         isDark ? 'bg-[#1b201d] border-stone-700 text-white' : 'bg-white border-stone-200 text-stone-900'
       }`}>
         <div className="flex items-center gap-3 pb-3 border-b border-stone-200 dark:border-stone-800">

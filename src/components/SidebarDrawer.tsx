@@ -115,7 +115,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
 
         {/* Footer info */}
         <div className="pt-4 border-t border-stone-200 dark:border-stone-800 text-[11px] text-stone-400 space-y-1">
-          <p className="font-semibold text-stone-500 dark:text-stone-300">Marginalia v2.4</p>
+          <p className="font-semibold text-stone-500 dark:text-stone-300">Marginalia</p>
           <p>Mindful reading and AI thematic synthesis</p>
           <p className="italic pt-1">
             For close readers,

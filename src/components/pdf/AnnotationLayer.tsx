@@ -49,6 +49,8 @@ interface AnnotationLayerProps {
   pageRef: React.RefObject<HTMLDivElement | null>;
   /** The page's rendered width in CSS pixels, used to turn fractional weights into stroke widths. */
   pageWidth: number;
+  /** Rendered height of the page, for anything sized against the page rather than its width. */
+  pageHeight: number;
   annotations: Annotation[];
   tool: PdfTool;
   activeColor: string;
@@ -116,6 +118,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
   pageNumber,
   pageRef,
   pageWidth,
+  pageHeight,
   annotations,
   tool,
   activeColor,
@@ -217,6 +220,9 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
   });
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Left button only. A right-click with the Note tool dropped a note, and with a drawing tool
+    // started a stroke that then had no matching release.
+    if (e.button !== 0) return;
     const box = pageBox();
     if (!box) return;
     const point = pointToFraction(e.clientX, e.clientY, box);
@@ -546,7 +552,12 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       strokeWidth: width,
       strokeDasharray: dashArray(a.strokeStyle, width),
       strokeLinecap: 'round' as const,
-      vectorEffect: 'non-scaling-stroke' as const
+      vectorEffect: 'non-scaling-stroke' as const,
+      // `emphasis` was computed and then never used, so hovering an ink stroke or a shape — from
+      // the notes panel, or while stepping through marks with the instance navigator — raised
+      // nothing at all and the reader had no idea which one they had arrived at. A halo rather
+      // than a colour change, for the reason in `emphasis`'s own comment: the colour is data.
+      filter: emphasis(a) ? `drop-shadow(0 0 ${width * 1.5}px ${a.color})` : undefined
     };
   };
 
@@ -906,7 +917,12 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                   color: ink,
                   fontFamily: "'Caveat Variable', 'Caveat', 'Patrick Hand', cursive",
                   // Scales with the page rather than the window, so a note keeps its proportions.
-                  fontSize: 'clamp(12px, 1.5vw, 24px)',
+                  // Sized from the note's own box, exactly as the export sizes it
+                // (`exportAnnotatedPdf`'s `boxHeight / 4.5`). It used to be `1.5vw`, which is
+                // relative to the WINDOW: the handwriting did not grow with zoom, so a note was a
+                // huge box of tiny text at 400% and overflowed its box at 30% — and the exported
+                // note wrapped to a different number of lines than the one on screen.
+                fontSize: Math.max(8, Math.min(16, (a.box?.h ?? 0) * pageHeight / 4.5)),
                   lineHeight: 1.25,
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word',

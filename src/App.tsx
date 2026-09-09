@@ -446,6 +446,7 @@ export default function App() {
         collapsed={Boolean(settings.sidebarCollapsed)}
         onToggleCollapsed={() => setSettings((prev) => ({ ...prev, sidebarCollapsed: !prev.sidebarCollapsed }))}
         onOpenAnalysis={() => setIsAnalysisOpen(true)}
+        onOpenSearch={() => setIsSearchOpen(true)}
       />
 
       {/* Main Content Area */}

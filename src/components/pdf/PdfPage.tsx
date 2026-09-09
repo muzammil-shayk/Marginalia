@@ -272,6 +272,9 @@ export const PdfPage: React.FC<PdfPageProps> = ({
     <div
       ref={containerRef}
       data-page-number={pageNumber}
+      // False until pdf.js has reported this page's real size. Until then the element still has
+      // a height — a 60vh placeholder — so anything measuring it lands on a guess.
+      data-page-sized={String(Boolean(size))}
       className={`group relative mx-auto shadow-lg rounded-sm ${isDark ? 'bg-stone-200' : 'bg-white'}`}
       style={{
         width: size ? `${size.width}px` : '100%',
@@ -359,6 +362,7 @@ export const PdfPage: React.FC<PdfPageProps> = ({
         pageNumber={pageNumber}
         pageRef={containerRef}
         pageWidth={size?.width ?? 0}
+        pageHeight={size?.height ?? 0}
         annotations={annotations}
         tool={tool}
         activeColor={activeColor}

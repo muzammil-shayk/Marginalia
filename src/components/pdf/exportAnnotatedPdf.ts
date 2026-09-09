@@ -34,6 +34,7 @@ import {
   PDFHexString,
   StandardFonts,
   LineCapStyle,
+  degrees,
   rgb
 } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
@@ -393,6 +394,32 @@ export async function exportAnnotatedPdf(
       return [Math.min(ax, bx), Math.min(ay, by), Math.max(ax, bx), Math.max(ay, by)];
     };
 
+    /**
+     * How to turn anything drawn onto the content stream so it faces the reader.
+     *
+     * `toPdf` puts geometry in the right PLACE on a `/Rotate` page, but a glyph or an image is
+     * drawn upright in the page's native space — which is what the viewer then rotates. On a
+     * 90-degree page that left every reaction glyph and every line of note text lying on its
+     * side. Turning them the other way cancels the viewer's rotation out.
+     *
+     * The anchor moves with it: pdf-lib rotates about the draw origin, so on a rotated page the
+     * x/y a caller computed as "bottom-left" is no longer the corner the content grows away from.
+     * `anchorFor` returns the corner to pass for a given native rectangle.
+     */
+    const contentRotation = degrees((360 - rotation) % 360);
+    const anchorFor = (x1: number, y1: number, x2: number, y2: number): [number, number] => {
+      switch (rotation) {
+        case 90:
+          return [x2, y1];
+        case 180:
+          return [x2, y2];
+        case 270:
+          return [x1, y2];
+        default:
+          return [x1, y1];
+      }
+    };
+
     const context = pdfDoc.context;
     const annots: any[] = [];
 
@@ -534,9 +561,27 @@ export async function exportAnnotatedPdf(
         const char = reactionChar(a.kind);
         const size = Math.max(8, (a.fontSize ?? DEFAULT_TEXT_SIZE) * pw);
         const font = await reactionFont();
-        const x = x1 + (x2 - x1 - font.widthOfTextAtSize(char, size)) / 2;
-        const y = y1 + (y2 - y1 - size) / 2;
-        page.drawText(char, { x, y, size, font, color: rgb(r, g, b) });
+        // Centred on the box either way, but on a rotated page the glyph is turned to face the
+        // reader and drawn from the corner it grows away from once turned.
+        const glyphW = font.widthOfTextAtSize(char, size);
+        const cx = (x1 + x2) / 2;
+        const cy = (y1 + y2) / 2;
+        const [gx, gy] =
+          rotation === 90
+            ? [cx + size / 2, cy - glyphW / 2]
+            : rotation === 180
+              ? [cx + glyphW / 2, cy + size / 2]
+              : rotation === 270
+                ? [cx - size / 2, cy + glyphW / 2]
+                : [cx - glyphW / 2, cy - size / 2];
+        page.drawText(char, {
+          x: gx,
+          y: gy,
+          size,
+          font,
+          color: rgb(r, g, b),
+          rotate: contentRotation
+        });
         common(
           a,
           [x1, y1, x2, y2],
@@ -713,7 +758,14 @@ export async function exportAnnotatedPdf(
           });
           if (rasterized) {
             const image = await pdfDoc.embedPng(rasterized.bytes);
-            page.drawImage(image, { x: x1, y: y2 - rasterized.heightPt, width: rasterized.widthPt, height: rasterized.heightPt });
+            const [ix, iy] = anchorFor(x1, y2 - rasterized.heightPt, x1 + rasterized.widthPt, y2);
+            page.drawImage(image, {
+              x: ix,
+              y: iy,
+              width: rasterized.widthPt,
+              height: rasterized.heightPt,
+              rotate: contentRotation
+            });
           } else {
             // Canvas rasterization is unavailable — fall back to native PDF text rather than
             // silently dropping the reader's words.
@@ -727,6 +779,7 @@ export async function exportAnnotatedPdf(
               page.drawText(line, {
                 x,
                 y: y2 - size * 0.85 - index * lineHeight,
+                rotate: contentRotation,
                 size,
                 font,
                 color: rgb(r, g, b)
@@ -775,7 +828,17 @@ export async function exportAnnotatedPdf(
         // The heavy left edge — on screen a 5px border distinct from the 1px that runs around the
         // rest of the note, and what makes the colour readable at a glance on the outline style.
         const edge = Math.max(2, Math.min(5, boxWidth * 0.02));
-        page.drawRectangle({ x: x1, y: y1, width: edge, height: boxHeight, color: rgb(r, g, b) });
+        // Native-left is only the reader's left on an unrotated page; on a 90-degree page it is
+        // the top, and the spine has to follow the side the reader actually sees it on.
+        const spine =
+          rotation === 90
+            ? { x: x1, y: y2 - edge, width: boxWidth, height: edge }
+            : rotation === 180
+              ? { x: x2 - edge, y: y1, width: edge, height: boxHeight }
+              : rotation === 270
+                ? { x: x1, y: y1, width: boxWidth, height: edge }
+                : { x: x1, y: y1, width: edge, height: boxHeight };
+        page.drawRectangle({ ...spine, color: rgb(r, g, b) });
 
         const text = (a.text || '').trim();
         if (text) {
@@ -800,11 +863,18 @@ export async function exportAnnotatedPdf(
           });
           if (rasterized) {
             const image = await pdfDoc.embedPng(rasterized.bytes);
+            const [nx, ny] = anchorFor(
+              x1 + edge + padX,
+              y2 - padY - rasterized.heightPt,
+              x1 + edge + padX + rasterized.widthPt,
+              y2 - padY
+            );
             page.drawImage(image, {
-              x: x1 + edge + padX,
-              y: y2 - padY - rasterized.heightPt,
+              x: nx,
+              y: ny,
               width: rasterized.widthPt,
-              height: rasterized.heightPt
+              height: rasterized.heightPt,
+              rotate: contentRotation
             });
           } else {
             // Canvas rasterization is unavailable — fall back to native PDF text rather than
@@ -815,6 +885,7 @@ export async function exportAnnotatedPdf(
               page.drawText(line, {
                 x: x1 + edge + padX,
                 y: y2 - padY - size * 0.85 - index * lineHeight,
+                rotate: contentRotation,
                 size,
                 font: noteFont,
                 color: ink

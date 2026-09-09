@@ -386,6 +386,8 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   const isLoadedRef = useRef(false);
   /** True while the server is renumbering pages; see the save effect. */
   const repaginatingRef = useRef(false);
+  /** Set the first time the reader changes zoom or view mode themselves. */
+  const zoomTouchedRef = useRef(false);
   useEffect(() => {
     annotationsRef.current = annotations;
   }, [annotations]);
@@ -1116,8 +1118,12 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     appliedReadingStateFor.current = docId;
     fittedRef.current = docId;
     restoredPageRef.current = docId;
-    setScale(remoteReadingState.scale);
-    setViewMode(remoteReadingState.viewMode);
+    // Not applied over a zoom the reader set while the fetch was in flight — pressing Zoom In
+    // twice on open used to snap back to the stored value when the response landed.
+    if (!zoomTouchedRef.current) {
+      setScale(remoteReadingState.scale);
+      setViewMode(remoteReadingState.viewMode);
+    }
     setLayoutSettled(true);
     if (resumeReading && remoteReadingState.page > 1 && remoteReadingState.page <= pageCount) {
       requestAnimationFrame(() => goToPage(remoteReadingState.page));
@@ -1172,6 +1178,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
    */
   const handleViewModeChange = useCallback(
     (mode: 'single' | 'spread') => {
+      zoomTouchedRef.current = true;
       setViewMode(mode);
       if (mode !== 'spread' || !pdf || !scrollRef.current) return;
       const container = scrollRef.current;
@@ -1272,7 +1279,11 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   const scrollToAnnotation = useCallback((a: Annotation): boolean => {
     const container = scrollRef.current;
     const pageEl = container?.querySelector<HTMLElement>(`[data-page-number="${a.page}"]`);
-    if (!container || !pageEl || pageEl.offsetHeight === 0) return false;
+    // A page that has not been measured yet still has a height — `PdfPage` gives it a 60vh
+    // placeholder — so "it rendered" is not the same as "it is the right size". Jumping against a
+    // placeholder lands near the mark rather than on it, and the caller's retry never fired
+    // because this reported success.
+    if (!container || !pageEl || pageEl.dataset.pageSized !== 'true') return false;
 
     const bounds = annotationBounds(a);
     /**
@@ -1588,7 +1599,10 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
           if (!open) submenuClosedAt.current = { tool: id, at: performance.now() };
         }}
         scale={scale}
-        onScaleChange={setScale}
+        onScaleChange={(next) => {
+          zoomTouchedRef.current = true;
+          setScale(next);
+        }}
         onFitWidth={() => void fitWidth()}
         currentPage={currentPage}
         pageCount={pageCount}
