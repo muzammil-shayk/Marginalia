@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpen, Settings as SettingsIcon, PlusCircle, PanelLeftClose, PanelLeftOpen, Sparkles } from 'lucide-react';
+import { BookOpen, Settings as SettingsIcon, PlusCircle, PanelLeftClose, PanelLeftOpen, Sparkles } from './icons';
 import { Screen, TransitionType } from '../types';
 import logo from '../assets/images/marginalia-logo.png';
 
@@ -56,7 +56,10 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
     <aside
       id="desktop-sidebar-nav"
       className={`relative hidden md:flex flex-col shrink-0 h-screen sticky top-0 transition-all duration-200 overflow-hidden ${
-        collapsed ? 'w-16' : 'w-55'
+        // 80px, not 64: macOS's three window buttons span about 78px including their margin, so a
+        // narrower collapsed rail put the zoom button half over the content area with the
+        // sidebar's own edge running between them. The rail is now wider than they are.
+        collapsed ? 'w-20' : 'w-55'
       } ${isDark ? 'bg-[#121514]' : 'bg-[#f9f9f7]'}`}
     >
       {/*
@@ -71,7 +74,7 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
       */}
       <span
         aria-hidden
-        className={`absolute top-9 right-0 bottom-0 w-px ${isDark ? 'bg-white/5' : 'bg-black/4'}`}
+        className={`absolute top-12 right-0 bottom-0 w-px ${isDark ? 'bg-white/5' : 'bg-black/4'}`}
       />
       {/* Brand, and the control that gives the window back to the document. */}
       {/* Also a drag handle: on macOS the traffic lights sit in this corner and the rest of the
@@ -100,7 +103,7 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
             title="Marginalia"
             className="shrink-0 rounded-xl cursor-pointer transition-transform duration-150 ease-out hover:opacity-85 active:scale-[0.94]"
           >
-            <img src="/favicon.png" alt="Marginalia" className="w-9 h-9 rounded-xl" />
+            <img src="/favicon.png" alt="Marginalia" className="w-10 h-10 rounded-xl" />
           </button>
         )}
         <button
@@ -111,7 +114,9 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
           aria-expanded={!collapsed}
           className="p-1.5 rounded-lg shrink-0 text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-200/70 dark:hover:bg-white/5 cursor-pointer transition-colors"
         >
-          {collapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
+          {/* One glyph, mirrored. Phosphor has no open/close pair for a sidebar, and the
+              direction is the whole message: the panel opens the way the icon points. */}
+          <PanelLeftOpen className={`transition-transform duration-200 ${collapsed ? 'w-5 h-5' : 'w-4 h-4 scale-x-[-1]'}`} />
         </button>
       </div>
 
@@ -147,7 +152,9 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
               }`}
               title={isDisabled ? 'Upload a document to start reading' : collapsed ? tab.label : undefined}
             >
-              <Icon className="w-4 h-4 shrink-0" />
+              {/* Larger when collapsed: with the labels gone the glyph is the whole control, and
+                  a 16px icon alone in an 80px rail reads as an afterthought. */}
+              <Icon className={`shrink-0 ${collapsed ? 'w-5.5 h-5.5' : 'w-4 h-4'}`} />
               {!collapsed && <span className="truncate whitespace-nowrap">{tab.label}</span>}
             </button>
           );
@@ -168,7 +175,7 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
                 : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100/80'
             }`}
           >
-            <Sparkles className="w-4 h-4 shrink-0" />
+            <Sparkles className={`shrink-0 ${collapsed ? 'w-5.5 h-5.5' : 'w-4 h-4'}`} />
             {!collapsed && <span className="truncate whitespace-nowrap">AI Analysis</span>}
           </button>
         )}

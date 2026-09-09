@@ -11,7 +11,7 @@
  */
 
 import React, { useRef } from 'react';
-import { Highlighter, Underline, Strikethrough, StickyNote, Tag, X } from 'lucide-react';
+import { Highlighter, Underline, Strikethrough, StickyNote, Tag, X } from '../icons';
 import { AnnotationKind, REACTION_KINDS, reactionChar } from './annotationModel';
 import { UserSettings } from '../../types';
 import { HoverTooltip } from '../HoverTooltip';

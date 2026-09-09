@@ -9,7 +9,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import { ChevronDown, Plus, Sparkles, X, Check, Palette, Droplet, HardDrive, FolderOpen, Loader2, Info, RotateCcw, DownloadCloud, AlertTriangle, Scale, ExternalLink, Tag } from 'lucide-react';
+import { ChevronDown, Plus, Sparkles, X, Check, Palette, Droplet, HardDrive, FolderOpen, Loader2, Info, RotateCcw, DownloadCloud, AlertTriangle, Scale, ExternalLink, Tag } from './icons';
 import { Screen, TransitionType, UserSettings } from '../types';
 import privacyText from '../../PRIVACY.md?raw';
 import termsText from '../../TERMS.md?raw';

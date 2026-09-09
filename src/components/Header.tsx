@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Menu, Search } from 'lucide-react';
+import { Menu, Search } from './icons';
 import { Screen } from '../types';
 import { motion, useScroll, useMotionValueEvent } from 'motion/react';
 import logo from '../assets/images/marginalia-logo.png';

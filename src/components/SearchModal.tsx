@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Search, X, BookOpen, FileText, ArrowRight, StickyNote as StickyNoteIcon } from 'lucide-react';
+import { Search, X, BookOpen, FileText, ArrowRight, StickyNote as StickyNoteIcon } from './icons';
 import { Screen, TransitionType, StickyNote } from '../types';
 
 /**

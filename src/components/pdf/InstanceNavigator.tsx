@@ -13,7 +13,7 @@
  */
 
 import React from 'react';
-import { ChevronLeft, ChevronRight, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X } from '../icons';
 import { AnnotationFocus } from '../../types';
 import { Annotation, annotationBounds } from './annotationModel';
 

@@ -31,7 +31,7 @@ import {
   Upload,
   FileText,
   ChevronRight
-} from 'lucide-react';
+} from './icons';
 import { useThematicAnalysis } from '../hooks/useThematicAnalysis';
 import { ErrorDialog } from './ErrorDialog';
 import {

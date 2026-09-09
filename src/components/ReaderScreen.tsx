@@ -22,7 +22,7 @@ import {
   Download,
   Sparkles,
   X
-} from 'lucide-react';
+} from './icons';
 import { Screen, TransitionType, StickyNote, UserSettings } from '../types';
 import { CustomFormat } from '../utils/documentExporter';
 import { HoverTooltip } from './HoverTooltip';

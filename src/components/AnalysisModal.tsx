@@ -7,7 +7,7 @@
  */
 
 import React from 'react';
-import { X } from 'lucide-react';
+import { X } from './icons';
 import { ThematicAnalysisView } from './ThematicAnalysisView';
 
 interface AnalysisModalProps {

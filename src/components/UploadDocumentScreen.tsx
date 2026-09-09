@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileText, Sparkles, Clock, MoreVertical, CheckCircle2, Loader2, AlertCircle } from 'lucide-react';
+import { Upload, FileText, BookOpen, Clock, MoreVertical, CheckCircle2, Loader2, AlertCircle } from './icons';
 import { Screen, TransitionType } from '../types';
 import type { LibraryDocument } from '../App';
 import { parseFile } from '../utils/fileParser';
@@ -293,7 +293,10 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
             disabled={isParsing || isStoring || (!selectedFile && !parsedText && !pastedText.trim())}
             className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-[#435c52] hover:bg-[#374c43] text-white font-semibold text-[13px] transition-all shadow-xs cursor-pointer disabled:opacity-50"
           >
-            {isStoring ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+            {/* Not a sparkle: this button saves the document and opens it to read. Nothing is
+                sent to Gemini here — analysis is a separate, deliberate press inside the reader,
+                and a wand on the button that merely opens a book promised otherwise. */}
+            {isStoring ? <Loader2 className="w-4 h-4 animate-spin" /> : <BookOpen className="w-4 h-4" />}
             <span>
               {isStoring
                 ? parsedFormat === 'HTML'
@@ -301,7 +304,7 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
                   : 'Saving Document…'
                 : isAnnotatableFormat(parsedFormat)
                   ? 'Open & Annotate'
-                  : 'Start Analysis'}
+                  : 'Open & Read'}
             </span>
           </button>
         </div>

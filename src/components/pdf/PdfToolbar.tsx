@@ -40,7 +40,7 @@ import {
   BookOpen,
   FileText,
   FilePlus2
-} from 'lucide-react';
+} from '../icons';
 import {
   BracketSide,
   NoteStyle,
@@ -106,6 +106,8 @@ interface PdfToolbarProps {
   onTextItalicChange: (italic: boolean) => void;
   /** Opens this tool's style submenu — set after applying a tool from the selection menu. */
   openSubmenuFor?: string | null;
+  /** Tells the workspace which tool's options are on screen right now. */
+  onSubmenuOpenChange?: (tool: string, open: boolean) => void;
   onSubmenuOpened?: () => void;
   onUndo: () => void;
   onRedo: () => void;
@@ -131,6 +133,8 @@ interface PdfToolbarProps {
    * document's other controls are. They belong with the rest of the tools.
    */
   panelControls?: React.ReactNode;
+  /** Tighten the row's spacing, for when the expanded sidebar has taken its width. */
+  compact?: boolean;
   isDark?: boolean;
 }
 
@@ -205,6 +209,9 @@ const ToolChip: React.FC<{
   onTextItalicChange?: (italic: boolean) => void;
   /** Opens the menu from outside — used when a tool is applied from the selection menu. */
   forceOpen?: boolean;
+  /** Reports the menu opening and closing, so the toolbar's owner knows what is on screen and a
+   *  second tap on the tool can close it rather than reopening what was just dismissed. */
+  onOpenChange?: (open: boolean) => void;
   onForceHandled?: () => void;
 }> = ({
   color,
@@ -232,6 +239,7 @@ const ToolChip: React.FC<{
   textItalic,
   onTextItalicChange,
   forceOpen,
+  onOpenChange,
   onForceHandled
 }) => {
   const [open, setOpen] = useState(false);
@@ -285,6 +293,13 @@ const ToolChip: React.FC<{
     setOpen(true);
     onForceHandled?.();
   }, [forceOpen, onForceHandled]);
+
+  useEffect(() => {
+    onOpenChange?.(open);
+    // `onOpenChange` is not a dependency on purpose: callers pass an inline closure, and
+    // including it would report on every render of the toolbar rather than on a real change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
   // Closing on any press outside, and on Escape, is shared with every other floating surface in
   // the workspace — see `useDismiss` for why it listens for pointerdown rather than click.
@@ -406,6 +421,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
   textItalic,
   onTextItalicChange,
   openSubmenuFor,
+  onSubmenuOpenChange,
   onSubmenuOpened,
   onUndo,
   onRedo,
@@ -424,6 +440,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
   onExport,
   isExporting,
   panelControls,
+  compact = false,
   isDark = false
 }) => {
   const stepZoom = (direction: 1 | -1) => {
@@ -457,10 +474,16 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
         the cursor. Scrolling sideways keeps the row one row: the tools nearest the left are the
         ones reached most, and nothing is ever hidden without a way to reach it.
       */}
-      <div className="flex items-center gap-1 flex-nowrap px-3 py-2 overflow-x-auto [scrollbar-width:thin] [&>*]:shrink-0">
+      <div
+        className={`flex items-center flex-nowrap py-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0 ${
+          compact ? 'gap-0.5 px-2' : 'gap-1 px-3'
+        }`}
+      >
         {TOOL_GROUPS.map((group, groupIndex) => (
           <React.Fragment key={groupIndex}>
-            {groupIndex > 0 && <div className={`w-px h-6 mx-1 ${isDark ? 'bg-stone-800' : 'bg-stone-200'}`} />}
+            {groupIndex > 0 && (
+              <div className={`w-px h-6 ${compact ? 'mx-0.5' : 'mx-1'} ${isDark ? 'bg-stone-800' : 'bg-stone-200'}`} />
+            )}
             {group.map(({ id, label, icon: Icon, hint }) => {
               const isActive = tool === id;
               // A text tool with text already selected will act on that selection right now, so
@@ -484,7 +507,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
                       onClick={() => onToolChange(id)}
                       aria-label={label}
                       aria-pressed={isActive}
-                      className={`p-2 rounded-lg transition-all cursor-pointer ${
+                      className={`${compact ? 'p-1.5' : 'p-2'} rounded-lg transition-all cursor-pointer ${
                         isActive
                           ? 'bg-[#435c52] text-white shadow-xs'
                           : actsNow
@@ -494,7 +517,10 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
                               : 'text-stone-500 hover:bg-stone-100 hover:text-stone-800'
                       }`}
                     >
-                      <Icon className="w-4 h-4" />
+                      {/* Selected tools thicken as well as change colour. A single-weight icon
+                          set could only recolour; this is what Phosphor's weights are for, and it
+                          reads at a glance without another chip on an already busy row. */}
+                      <Icon className="w-4 h-4" weight={isActive ? 'fill' : 'regular'} />
                     </button>
                   </HoverTooltip>
                   {hasChip ? (
@@ -531,6 +557,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
                       textItalic={id === 'text' ? textItalic : undefined}
                       onTextItalicChange={id === 'text' ? onTextItalicChange : undefined}
                       forceOpen={openSubmenuFor === id}
+                      onOpenChange={(isOpen) => onSubmenuOpenChange?.(id, isOpen)}
                       onForceHandled={onSubmenuOpened}
                     />
                   ) : (
@@ -542,7 +569,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
           </React.Fragment>
         ))}
 
-        <div className={`w-px h-6 mx-1 ${isDark ? 'bg-stone-800' : 'bg-stone-200'}`} />
+        <div className={`w-px h-6 mx-0.5 ${isDark ? 'bg-stone-800' : 'bg-stone-200'}`} />
 
         {/* Undo and redo. Every edit goes through one history, so this covers drawing, moving,
             restyling, erasing and writing alike — not just the drawing tools. */}
@@ -601,7 +628,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
           </HoverTooltip>
         </div>
 
-        <div className={`w-px h-6 mx-1 ${isDark ? 'bg-stone-800' : 'bg-stone-200'}`} />
+        <div className={`w-px h-6 mx-0.5 ${isDark ? 'bg-stone-800' : 'bg-stone-200'}`} />
 
         <div className="flex items-center gap-0.5">
           <HoverTooltip label="Zoom out">
@@ -624,7 +651,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
           </HoverTooltip>
         </div>
 
-        <div className={`w-px h-6 mx-1 ${isDark ? 'bg-stone-800' : 'bg-stone-200'}`} />
+        <div className={`w-px h-6 mx-0.5 ${isDark ? 'bg-stone-800' : 'bg-stone-200'}`} />
 
         <HoverTooltip label={viewMode === 'spread' ? 'Switch to single-page view' : 'Switch to two-page spread view'}>
           <button
@@ -653,14 +680,14 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
           </button>
         </HoverTooltip>
 
-        <div className={`w-px h-6 mx-1 ${isDark ? 'bg-stone-800' : 'bg-stone-200'}`} />
+        <div className={`w-px h-6 mx-0.5 ${isDark ? 'bg-stone-800' : 'bg-stone-200'}`} />
 
         <HoverTooltip label="Export a PDF with your marks embedded as real PDF annotations">
           <button
             type="button"
             onClick={onExport}
             disabled={isExporting}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-stone-700 dark:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer disabled:opacity-50"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold text-stone-700 dark:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer disabled:opacity-50"
           >
             {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             <span className="hidden lg:inline">Export PDF</span>
@@ -677,7 +704,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
 
         {panelControls && (
           <>
-            <div className={`w-px h-6 mx-1 ${isDark ? 'bg-stone-800' : 'bg-stone-200'}`} />
+            <div className={`w-px h-6 mx-0.5 ${isDark ? 'bg-stone-800' : 'bg-stone-200'}`} />
             {panelControls}
           </>
         )}

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Zap, Sparkles, Globe, BookOpen, Upload, FileText, Clock, Settings } from 'lucide-react';
+import { Zap, Sparkles, Globe, BookOpen, Upload, FileText, Clock, Settings } from './icons';
 
 interface SkeletonProps {
   isDark?: boolean;

@@ -21,7 +21,7 @@ import {
   Type,
   Trash2,
   Pencil
-} from 'lucide-react';
+} from '../icons';
 import { Annotation, AnnotationKind } from './annotationModel';
 import { UserSettings } from '../../types';
 

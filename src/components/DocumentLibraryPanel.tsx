@@ -22,7 +22,7 @@ import {
   HardDrive,
   RefreshCw,
   MessageSquare
-} from 'lucide-react';
+} from './icons';
 import {
   StoredDocumentMeta,
   StorageInfo,

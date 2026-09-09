@@ -12,7 +12,7 @@
  */
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Lock, Unlock } from 'lucide-react';
+import { Lock, Unlock } from '../icons';
 import {
   Annotation,
   BOX_KINDS,

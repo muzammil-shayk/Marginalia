@@ -9,7 +9,7 @@
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy } from 'pdfjs-dist';
-import { Loader2, FileWarning, ArrowLeft, PanelRightClose, PanelRightOpen, Check, StickyNote, X, PanelTop, PanelBottom, FileStack, Sparkles } from 'lucide-react';
+import { Loader2, FileWarning, ArrowLeft, PanelRightClose, PanelRightOpen, Check, StickyNote, X, PanelTop, PanelBottom, FileStack, Sparkles } from '../icons';
 import { AnnotationFocus, Screen, TransitionType, UserSettings } from '../../types';
 import {
   Annotation,
@@ -310,6 +310,17 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   const [selectionAnchor, setSelectionAnchor] = useState<SelectionAnchor | null>(null);
   /** Which tool's colour/thickness submenu to open next — see the selection menu below. */
   const [openSubmenuFor, setOpenSubmenuFor] = useState<string | null>(null);
+  /**
+   * When a tool's options panel last closed, and which tool's it was.
+   *
+   * A press on the tool button lands outside the panel, so the panel dismisses itself on
+   * `pointerdown` — before the button's `click` handler has run. By the time the handler asks
+   * "is this panel open?" the answer is already no, and it would dutifully open it again: the
+   * panel would flicker shut and back, and could never be closed by tapping the tool. Recording
+   * the moment it closed is how the handler tells "the press I am handling closed it" from "it
+   * was closed long before this press".
+   */
+  const submenuClosedAt = useRef<{ tool: string; at: number } | null>(null);
 
   /**
    * Bumped after a page is inserted, to force the PDF to be refetched. `fileUrl` is otherwise a
@@ -934,6 +945,25 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         return;
       }
 
+      /*
+        Tapping the tool you are already holding shows and hides its options. It does NOT put the
+        tool down: picking a tool both arms it and opens its colour and thickness controls, and
+        the reader's next thought is usually "chosen — now get this panel out of my way".
+        Disarming there would mean the gesture for dismissing a panel silently disarmed the
+        highlighter mid-passage. Escape is what puts a tool down.
+
+        The panel closes itself the moment this button is pressed, since a press outside it
+        dismisses it. So closing is simply declining to ask for it back.
+      */
+      if (next === tool && next !== 'select') {
+        const justClosed =
+          submenuClosedAt.current?.tool === next &&
+          performance.now() - submenuClosedAt.current.at < 350;
+        if (justClosed) return;
+        setOpenSubmenuFor(next);
+        return;
+      }
+
       setTool(next);
       // Picking up a tool opens its options with it. Colour and thickness are chosen far more
       // often at the moment of switching tools than at any other time, and requiring a second
@@ -942,7 +972,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       // the single setting in Settings → Terminology, not a per-tool choice.
       setOpenSubmenuFor(next === 'select' || next === 'erase' || next === 'terminology' ? null : next);
     },
-    [pendingSelection, applyTextMark]
+    [pendingSelection, applyTextMark, tool]
   );
 
   /**
@@ -1197,46 +1227,72 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     el.scrollTop = anchor.contentY * ratio - anchor.viewportY;
   }, [scale]);
 
+  /** The scroll animation in flight, so a new jump replaces it rather than fighting it. */
+  const scrollAnimation = useRef<number | null>(null);
+
   /**
-   * Scrolls a mark into view, reporting whether it could.
+   * Brings a mark into view, reporting whether it could.
+   *
+   * Animated by hand rather than with `scrollTo({ behavior: 'smooth' })`, because the target
+   * moves while the scroll runs: pages above are still settling to their real heights, which at
+   * high zoom in a long book is centimetres of drift. The browser's smooth scroll commits to the
+   * distance it was given and lands short, so this used to fire two corrective jumps after it —
+   * a glide, then a stutter, then another. Recomputing the destination every frame absorbs that
+   * drift continuously instead, and the mark simply arrives.
+   *
+   * Cubic ease-out over 380ms: fast at the start, where the eye is watching, settling at the end.
+   * A jump already on screen is left alone — re-centring something the reader can already see is
+   * movement for its own sake — and `prefers-reduced-motion` gets the destination with no travel.
    *
    * The boolean matters for the instance navigator, which jumps to the first match the moment the
-   * document loads — at which point the page elements may not be in the DOM yet. Returning false
-   * instead of failing silently is what lets the caller try again on the next frame rather than
-   * leaving the reader at page one of the book they asked to be shown a passage in.
+   * document loads, when the page elements may not exist yet. Returning false rather than failing
+   * silently is what lets the caller try again on the next frame.
    */
-  const scrollToAnnotation = useCallback(
-    (a: Annotation): boolean => {
-      const pageEl = scrollRef.current?.querySelector<HTMLElement>(`[data-page-number="${a.page}"]`);
-      const bounds = annotationBounds(a);
-      if (!pageEl || pageEl.offsetHeight === 0) return false;
-      if (!bounds) {
-        pageEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        return true;
-      }
-      // Scroll so the mark itself lands near the middle of the viewport, not just its page.
-      const container = scrollRef.current!;
-      const targetTop = () =>
-        pageEl.offsetTop + bounds.y * pageEl.offsetHeight - container.clientHeight / 3;
-      container.scrollTo({ top: targetTop(), behavior: 'smooth' });
+  const scrollToAnnotation = useCallback((a: Annotation): boolean => {
+    const container = scrollRef.current;
+    const pageEl = container?.querySelector<HTMLElement>(`[data-page-number="${a.page}"]`);
+    if (!container || !pageEl || pageEl.offsetHeight === 0) return false;
 
-      /**
-       * Correct the landing twice, briefly.
-       *
-       * Pages above this one are still settling to their real heights while the scroll runs —
-       * at 300% zoom in a 180-page book that is centimetres of drift, and it left a jump to a
-       * mark on page 3 sitting on page 2 with the mark off screen. Recomputing from the page's
-       * own offset after layout has caught up puts it where it was asked to go. Corrections are
-       * instant rather than smooth so they do not fight the animation already in flight, and
-       * they stop after 600ms so they can never fight the reader's own scrolling.
-       */
-      const correct = () => {
-        const drift = Math.abs(container.scrollTop - targetTop());
-        if (drift > 8) container.scrollTo({ top: targetTop(), behavior: 'auto' });
-      };
-      window.setTimeout(correct, 250);
-      window.setTimeout(correct, 600);
+    const bounds = annotationBounds(a);
+    const destination = () => {
+      const raw = bounds
+        ? pageEl.offsetTop + bounds.y * pageEl.offsetHeight - container.clientHeight / 3
+        : pageEl.offsetTop;
+      return Math.max(0, Math.min(raw, container.scrollHeight - container.clientHeight));
+    };
+
+    // Already comfortably in view: leave it where it is.
+    if (bounds) {
+      const markTop = pageEl.offsetTop + bounds.y * pageEl.offsetHeight - container.scrollTop;
+      const markBottom = markTop + bounds.h * pageEl.offsetHeight;
+      const margin = container.clientHeight * 0.12;
+      if (markTop > margin && markBottom < container.clientHeight - margin) return true;
+    }
+
+    if (scrollAnimation.current !== null) cancelAnimationFrame(scrollAnimation.current);
+
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      container.scrollTop = destination();
       return true;
+    }
+
+    const from = container.scrollTop;
+    const startedAt = performance.now();
+    const DURATION_MS = 380;
+    const easeOut = (t: number) => 1 - Math.pow(1 - t, 3);
+    const step = (now: number) => {
+      const t = Math.min(1, (now - startedAt) / DURATION_MS);
+      container.scrollTop = from + (destination() - from) * easeOut(t);
+      scrollAnimation.current = t < 1 ? requestAnimationFrame(step) : null;
+    };
+    scrollAnimation.current = requestAnimationFrame(step);
+    return true;
+  }, []);
+
+  // A workspace torn down mid-jump must not leave a frame callback writing to a dead node.
+  useEffect(
+    () => () => {
+      if (scrollAnimation.current !== null) cancelAnimationFrame(scrollAnimation.current);
     },
     []
   );
@@ -1409,6 +1465,10 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       </header>
 
       <PdfToolbar
+        // The expanded sidebar takes 220px off this row, which is what forced the tools together.
+        // With it collapsed there is room to breathe, so the tools get their ordinary spacing back
+        // rather than staying cramped for a constraint that is no longer there.
+        compact={!settings.sidebarCollapsed}
         panelControls={
           <>
             <button
@@ -1424,7 +1484,10 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
                   : 'text-stone-500'
               }`}
             >
-              <Sparkles className="w-4 h-4" />
+              <Sparkles
+                className="w-4 h-4"
+                weight={isPanelOpen && panelTab === 'analysis' ? 'fill' : 'regular'}
+              />
             </button>
             <button
               type="button"
@@ -1433,14 +1496,19 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
                 setIsPanelOpen(!(isPanelOpen && panelTab === 'notes'));
               }}
               title={isPanelOpen && panelTab === 'notes' ? 'Hide notes' : 'Show notes'}
-              className="flex items-center gap-1.5 p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer transition-[background-color,transform] duration-150 ease-out active:scale-[0.94]"
+              // One glyph, not two. The note and the panel chevron said the same thing twice, and
+              // read as two controls crammed into one button. Open state is carried by weight and
+              // colour, the same way every other tool in this row shows it.
+              className={`p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer transition-[background-color,transform] duration-150 ease-out active:scale-[0.94] ${
+                isPanelOpen && panelTab === 'notes'
+                  ? 'text-[#435c52] dark:text-emerald-400'
+                  : 'text-stone-500'
+              }`}
             >
-              <StickyNote className="w-4 h-4" />
-              {isPanelOpen && panelTab === 'notes' ? (
-                <PanelRightClose className="w-4 h-4" />
-              ) : (
-                <PanelRightOpen className="w-4 h-4" />
-              )}
+              <StickyNote
+                className="w-4 h-4"
+                weight={isPanelOpen && panelTab === 'notes' ? 'fill' : 'regular'}
+              />
             </button>
           </>
         }
@@ -1476,6 +1544,9 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         canRedo={canRedo}
         openSubmenuFor={openSubmenuFor}
         onSubmenuOpened={() => setOpenSubmenuFor(null)}
+        onSubmenuOpenChange={(id, open) => {
+          if (!open) submenuClosedAt.current = { tool: id, at: performance.now() };
+        }}
         scale={scale}
         onScaleChange={setScale}
         onFitWidth={() => void fitWidth()}

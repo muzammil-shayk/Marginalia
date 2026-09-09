@@ -35,7 +35,7 @@ import {
   Compass,
   ArrowUpDown,
   BookMarked
-} from 'lucide-react';
+} from './icons';
 import { motion, AnimatePresence } from 'motion/react';
 import { isAnnotatableFormat } from '../utils/annotatableFormats';
 import { AnnotationFocus, Screen, TransitionType, UserSettings } from '../types';

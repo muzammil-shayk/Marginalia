@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, BookOpen, PlusCircle, Settings, Sparkles } from 'lucide-react';
+import { X, BookOpen, PlusCircle, Settings, Sparkles } from './icons';
 import { Screen, TransitionType } from '../types';
 import { AnimatePresence, motion } from 'motion/react';
 import logo from '../assets/images/marginalia-logo.png';

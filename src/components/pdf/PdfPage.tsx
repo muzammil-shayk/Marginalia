@@ -14,7 +14,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist';
 import { TextLayer } from 'pdfjs-dist';
-import { Trash2 } from 'lucide-react';
+import { Trash2 } from '../icons';
 import {
   Annotation,
   BracketSide,

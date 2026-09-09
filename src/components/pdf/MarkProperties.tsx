@@ -14,7 +14,7 @@
  */
 
 import React, { useRef } from 'react';
-import { Trash2, Pencil } from 'lucide-react';
+import { Trash2, Pencil } from '../icons';
 import {
   Annotation,
   BracketSide,

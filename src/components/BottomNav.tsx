@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BookOpen, Settings as SettingsIcon, PlusCircle } from 'lucide-react';
+import { BookOpen, Settings as SettingsIcon, PlusCircle } from './icons';
 import { Screen, TransitionType } from '../types';
 import { motion, useScroll, useMotionValueEvent } from 'motion/react';
 
