@@ -505,7 +505,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
               const strokes = isStroked(id as never);
               return (
                 <div key={id} className="flex flex-col items-center gap-0.5">
-                  <HoverTooltip label={actsNow ? `${label} the selected text (tap again to undo)` : hint}>
+                  <HoverTooltip label={actsNow ? `${label} the selected text` : hint}>
                     <button
                       type="button"
                       // Pressing a button moves focus, which would clear the text selection before

@@ -186,6 +186,17 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         onClick={() => fileInputRef.current?.click()}
+        // A dropzone is a control, and once a file is chosen the inner "Choose File" button is
+        // replaced by the file's details — which left no keyboard path to pick a different one.
+        role="button"
+        tabIndex={0}
+        aria-label="Choose a document, or drop one here"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            fileInputRef.current?.click();
+          }
+        }}
         className={`p-6 rounded-3xl border-2 border-dashed transition-all cursor-pointer text-center space-y-3 ${
           isDragging
             ? 'border-emerald-500 bg-emerald-500/10'
@@ -333,6 +344,15 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
             {uploadedLibrary.map((doc) => (
               <div
                 key={doc.id}
+                role="button"
+                tabIndex={0}
+                aria-label={`Open ${doc.title}`}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onOpenLibraryDocument?.(doc);
+                  }
+                }}
                 // The handler fetches the document's text and navigates once it has it. Calling
                 // `onNavigate` here too raced it: the workspace opened on whichever book was
                 // loaded before, and a failed fetch left the reader stranded on it.

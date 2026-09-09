@@ -24,7 +24,6 @@ import {
   Loader2,
   Type,
   Highlighter,
-  Palette,
   Sparkles,
   Lightbulb,
   Tag,
@@ -519,6 +518,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             {!isStudioCollapsed && (
               <div
                 role="tablist"
+                aria-label="Knowledge Studio views"
+                // Arrow keys move between tabs, which is what `role="tablist"` promises a screen
+                // reader and a keyboard user. Without it the role was a claim the widget did not
+                // honour, which is worse than no role at all.
+                onKeyDown={(e) => {
+                  const order = ['overview', 'themes', 'terminology', 'ai'] as const;
+                  const at = order.indexOf(studioTab);
+                  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    const next = (at + (e.key === 'ArrowRight' ? 1 : -1) + order.length) % order.length;
+                    setStudioTab(order[next]);
+                    (e.currentTarget.children[next] as HTMLElement | undefined)?.focus();
+                  }
+                }}
                 className={`flex items-center p-0.5 rounded-lg border text-[11.5px] font-medium ${
                   isDark ? 'bg-[#121514] border-stone-800' : 'bg-white border-stone-200'
                 }`}
@@ -534,7 +547,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   <button
                     key={tab.id}
                     role="tab"
+                    id={`studio-tab-${tab.id}`}
                     aria-selected={studioTab === tab.id}
+                    aria-controls="knowledge-studio-body"
+                    // Roving tabindex: the strip is one stop, and the arrow keys move within it.
+                    tabIndex={studioTab === tab.id ? 0 : -1}
                     onClick={() => setStudioTab(tab.id)}
                     className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                       studioTab === tab.id
@@ -552,6 +569,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               type="button"
               onClick={toggleStudioCollapsed}
               title={isStudioCollapsed ? 'Expand Studio' : 'Collapse Studio'}
+              aria-label={isStudioCollapsed ? 'Expand Knowledge Studio' : 'Collapse Knowledge Studio'}
+              aria-expanded={!isStudioCollapsed}
+              aria-controls="knowledge-studio-body"
               className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
                 isDark
                   ? 'border-stone-800 text-stone-400 hover:bg-stone-800'
@@ -571,6 +591,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         <AnimatePresence initial={false}>
           {!isStudioCollapsed && (
             <motion.div
+              id="knowledge-studio-body"
+              role="tabpanel"
+              aria-labelledby={`studio-tab-${studioTab}`}
               initial={{ height: 0, opacity: 0 }}
               animate={{ height: 'auto', opacity: 1 }}
               exit={{ height: 0, opacity: 0 }}
@@ -579,7 +602,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               <div className="p-5">
                 {/* ── BENTO OVERVIEW MODE ── */}
                 {studioTab === 'overview' && (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="grid md:grid-cols-2 grid-cols-1 xl:grid-cols-3 gap-4">
                     {/* Bento Card 1: Thematic Atlas */}
                     <div
                       className={`flex flex-col rounded-xl border p-4.5 ${
@@ -597,7 +620,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                           </h3>
                         </div>
                         <span className="font-mono text-[11px] text-stone-400 tabular-nums">
-                          {keyConceptMarks} concepts
+                          {keyConceptMarks} marks
                         </span>
                       </div>
 
@@ -689,7 +712,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                           </h3>
                         </div>
                         <span className="font-mono text-[11px] text-stone-400 tabular-nums">
-                          {terminologyMarks} terms
+                          {terminologyMarks} marks
                         </span>
                       </div>
 
@@ -722,7 +745,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                                   {doc.title}
                                 </span>
                                 <span className="font-mono text-[11px] text-stone-400 tabular-nums shrink-0 ml-2">
-                                  {doc.terminologyCount} terms
+                                  {doc.terminologyCount} marks
                                 </span>
                               </button>
                             ))}
@@ -741,7 +764,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                           onClick={() => setStudioTab('terminology')}
                           className="font-semibold text-[#435c52] dark:text-emerald-400 hover:underline cursor-pointer"
                         >
-                          All terminologies ({terminologyMarks}) →
+                          All terminology marks ({terminologyMarks}) →
                         </button>
                       </div>
                     </div>
@@ -839,7 +862,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                       </button>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
                       {settings.activeThemes.map((theme) => {
                         const books = booksByTheme.get(theme.id) ?? [];
                         const totalMarksForTheme = books.reduce(
@@ -921,7 +944,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         Terminologies Across the Library
                       </h3>
                       <span className="font-mono text-[12px] text-stone-500 tabular-nums">
-                        {terminologyMarks} terms in {documentsWithTerminology.length} books
+                        {terminologyMarks} marks in {documentsWithTerminology.length} books
                       </span>
                     </div>
 
@@ -930,7 +953,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         No terminology marks captured yet. Select a word in any book and tag it as Terminology.
                       </div>
                     ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-3">
                         {documentsWithTerminology.map((doc) => (
                           <button
                             key={doc.id}
@@ -956,7 +979,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                             </div>
                             <div className="mt-2 flex items-center justify-between font-mono text-[11.5px]">
                               <span className="text-[#435c52] dark:text-emerald-400 font-medium">
-                                {doc.terminologyCount} {doc.terminologyCount === 1 ? 'term' : 'terms'} marked
+                                {doc.terminologyCount} {doc.terminologyCount === 1 ? 'mark' : 'marks'}
                               </span>
                               <span className="text-stone-400">Open terms →</span>
                             </div>
@@ -1126,6 +1149,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 type="button"
                 onClick={() => setViewMode('grid')}
                 title="Grid view"
+                aria-label="Grid view"
                 className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
                   viewMode === 'grid'
                     ? 'bg-[#435c52] text-white'
@@ -1138,6 +1162,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 type="button"
                 onClick={() => setViewMode('list')}
                 title="Bibliography list view"
+                aria-label="Bibliography list view"
                 className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
                   viewMode === 'list'
                     ? 'bg-[#435c52] text-white'
@@ -1273,7 +1298,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                           <button
                             type="button"
                             onClick={() => void commitRename(doc.id)}
-                            disabled={busyId === doc.id}
+                            aria-label="Save the new title"
+                                title="Save the new title"
+                                disabled={busyId === doc.id}
                             className="p-1 text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 rounded cursor-pointer"
                           >
                             <Check className="w-4 h-4" />
@@ -1281,7 +1308,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                           <button
                             type="button"
                             onClick={() => setRenamingId(null)}
-                            className="p-1 text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 rounded cursor-pointer"
+                            aria-label="Cancel renaming"
+                                title="Cancel renaming"
+                                className="p-1 text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 rounded cursor-pointer"
                           >
                             <X className="w-4 h-4" />
                           </button>

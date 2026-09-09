@@ -208,7 +208,10 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     arrow: 0.0028,
     line: 0.0028,
     underline: 0.0028,
-    strikeout: 0.0028
+    strikeout: 0.0028,
+    // Stroked like the shapes, and without an entry its weight picker opened with no step
+    // selected until the reader picked one.
+    bracket: 0.0028
   });
   const setToolWeight = useCallback(
     (which: string, weight: number) => setToolWeights((prev) => ({ ...prev, [which]: weight })),
@@ -1180,11 +1183,15 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     (mode: 'single' | 'spread') => {
       zoomTouchedRef.current = true;
       setViewMode(mode);
-      if (mode !== 'spread' || !pdf || !scrollRef.current) return;
+      if (!pdf || !scrollRef.current) return;
       const container = scrollRef.current;
       void pdf.getPage(currentPage).then((page) => {
         const unscaled = page.getViewport({ scale: 1 });
-        const fit = (container.clientWidth - 48 - SPREAD_GAP_PX) / (2 * unscaled.width);
+        // Spread halves the width each page gets, so it refits to two-up. Going back refits to
+        // one — without that the document stayed at the shrunken spread zoom, half the size of
+        // the window, and the reader had to zoom back by hand.
+        const usable = container.clientWidth - 48;
+        const fit = mode === 'spread' ? (usable - SPREAD_GAP_PX) / (2 * unscaled.width) : usable / unscaled.width;
         setScale(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, fit)));
       });
     },
@@ -1387,7 +1394,11 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       }
       setFileVersion((v) => v + 1);
       const stored = await fetchAnnotations(docId);
-      if (stored) resetAnnotations((stored.annotations as unknown as Annotation[]) || []);
+      // `commit`, not `reset`: resetting clears the undo stack, so adding a page threw away the
+      // history of every unrelated edit made earlier in the session. The renumbering itself is
+      // not undoable — the page is really in the file — but everything before it still should be.
+      if (stored) setAnnotations((stored.annotations as unknown as Annotation[]) || []);
+      else setFailure('The page was added, but this document\'s marks could not be re-read. Reopen it before marking anything else.');
       setInsertPageMenuOpen(false);
       if (result.insertedPages.length) setPendingPageJump(result.insertedPages[0]);
     } finally {
@@ -1413,7 +1424,9 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         }
         setFileVersion((v) => v + 1);
         const stored = await fetchAnnotations(docId);
-        if (stored) resetAnnotations((stored.annotations as unknown as Annotation[]) || []);
+        // See `handleInsertPage`: committing keeps the session's undo history alive.
+        if (stored) setAnnotations((stored.annotations as unknown as Annotation[]) || []);
+        else setFailure('The page was deleted, but this document\'s marks could not be re-read. Reopen it before marking anything else.');
         // The page that took the deleted one's place, or the new last page if it was the last one.
         setPendingPageJump(Math.min(pageNumber, result.pageCount));
       } finally {

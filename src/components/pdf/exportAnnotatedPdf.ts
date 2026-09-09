@@ -561,6 +561,10 @@ export async function exportAnnotatedPdf(
         const char = reactionChar(a.kind);
         const size = Math.max(8, (a.fontSize ?? DEFAULT_TEXT_SIZE) * pw);
         const font = await reactionFont();
+        // Centred on the CAP HEIGHT, not the em box. `y1 + (h - size) / 2` centres the box the
+        // glyph sits in, which leaves the visible mark about 0.15em low — the descender space is
+        // empty for `?`, `*` and `!`. Roughly 0.7 of the size is cap height for these faces.
+        const capHeight = size * 0.7;
         // Centred on the box either way, but on a rotated page the glyph is turned to face the
         // reader and drawn from the corner it grows away from once turned.
         const glyphW = font.widthOfTextAtSize(char, size);
@@ -568,12 +572,12 @@ export async function exportAnnotatedPdf(
         const cy = (y1 + y2) / 2;
         const [gx, gy] =
           rotation === 90
-            ? [cx + size / 2, cy - glyphW / 2]
+            ? [cx + capHeight / 2, cy - glyphW / 2]
             : rotation === 180
-              ? [cx + glyphW / 2, cy + size / 2]
+              ? [cx + glyphW / 2, cy + capHeight / 2]
               : rotation === 270
-                ? [cx - size / 2, cy + glyphW / 2]
-                : [cx - glyphW / 2, cy - size / 2];
+                ? [cx - capHeight / 2, cy + glyphW / 2]
+                : [cx - glyphW / 2, cy - capHeight / 2];
         page.drawText(char, {
           x: gx,
           y: gy,
@@ -676,9 +680,15 @@ export async function exportAnnotatedPdf(
           // A solid triangle at the far end, never dashed whatever the shaft is — the same rule
           // the on-screen SVG marker follows.
           const angle = Math.atan2(y2 - y1, x2 - x1);
-          const headLen = widthPts * 3.2;
-          const headHalfWidth = widthPts * 1.4;
-          const back: [number, number] = [x2 - headLen * Math.cos(angle), y2 - headLen * Math.sin(angle)];
+          // Matched to the on-screen marker rather than guessed: it is a 4x4 box in stroke-width
+          // units (`markerUnits="strokeWidth"`), so the head is 4 widths long and 4 wide — and
+          // its `refX=3` puts the tip one width PAST the line's end. The exported head was 3.2
+          // long and 2.8 wide, ending exactly at the line, which read as visibly smaller.
+          const headLen = widthPts * 4;
+          const headHalfWidth = widthPts * 2;
+          const tipX = x2 + widthPts * Math.cos(angle);
+          const tipY = y2 + widthPts * Math.sin(angle);
+          const back: [number, number] = [tipX - headLen * Math.cos(angle), tipY - headLen * Math.sin(angle)];
           const left: [number, number] = [
             back[0] - headHalfWidth * Math.sin(angle),
             back[1] + headHalfWidth * Math.cos(angle)
@@ -688,7 +698,7 @@ export async function exportAnnotatedPdf(
             back[1] - headHalfWidth * Math.cos(angle)
           ];
           const d = [
-            `M ${x2.toFixed(2)} ${(-y2).toFixed(2)}`,
+            `M ${tipX.toFixed(2)} ${(-tipY).toFixed(2)}`,
             `L ${left[0].toFixed(2)} ${(-left[1]).toFixed(2)}`,
             `L ${right[0].toFixed(2)} ${(-right[1]).toFixed(2)}`,
             'Z'
@@ -847,7 +857,10 @@ export async function exportAnnotatedPdf(
           const size = Math.max(8, Math.min(16, boxHeight / 4.5));
           const lineHeight = size * 1.25;
           const padX = boxWidth * 0.05;
-          const padY = boxHeight * 0.04;
+          // Both paddings measured against the WIDTH, because that is what the screen's
+          // `padding: '4% 5%'` does — a percentage padding resolves against the containing
+          // block's width on both axes.
+          const padY = boxWidth * 0.04;
           const textWidth = boxWidth - padX * 2 - edge;
           const maxLines = Math.max(1, Math.floor((boxHeight - padY * 2) / lineHeight));
           // Ink chosen against the fill, the same rule `AnnotationLayer` uses (and the same exact

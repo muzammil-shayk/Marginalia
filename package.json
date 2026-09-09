@@ -78,6 +78,7 @@
       "dist/**/*",
       "electron/**/*",
       "package.json",
+      "build/icon.*",
       "!node_modules/vite/**/*",
       "!**/*.map"
     ],
@@ -109,7 +110,7 @@
       ]
     },
     "win": {
-      "icon": "build/icon.png",
+      "icon": "build/icon.ico",
       "target": [
         {
           "target": "nsis",

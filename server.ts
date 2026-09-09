@@ -346,7 +346,10 @@ app.get("/api/documents/:id/original", async (req, res) => {
     return;
   }
   const ext = path.extname(original.filename).toLowerCase();
-  const safeName = original.filename.replace(/"/g, "");
+  // Header values cannot contain control characters — Node throws ERR_INVALID_CHAR and the
+  // download 500s. The filename comes from the client at upload time, so it is stripped rather
+  // than trusted.
+  const safeName = original.filename.replace(/[\r\n\u0000-\u001f\u007f"]/g, "").trim() || "document";
 
   if (req.query.disposition === "inline") {
     res.setHeader("Content-Type", INLINE_CONTENT_TYPES[ext] || "application/octet-stream");
@@ -719,6 +722,18 @@ export async function startServer(options: { staticRoot?: string } = {}): Promis
 
   return new Promise<number>((resolve, reject) => {
     const server = app.listen(PORT, "127.0.0.1", () => {
+      /**
+       * No request timeout.
+       *
+       * Node's default is 300 seconds, and a thematic analysis can legitimately exceed it: the
+       * poll for Gemini's file processing alone allows five minutes, with generation on top. The
+       * socket being destroyed underneath a finished analysis is the worst outcome — the result
+       * is already saved by then, but the reader is told the app could not be reached and offered
+       * a Retry that spends tokens repeating work that succeeded. Nothing here is exposed to a
+       * network, so a slow request is a slow request, not an attack.
+       */
+      server.requestTimeout = 0;
+      server.headersTimeout = 0;
       const address = server.address();
       const boundPort = typeof address === "object" && address ? address.port : PORT;
       console.log(`Marginalia server running on http://127.0.0.1:${boundPort}`);

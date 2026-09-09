@@ -307,8 +307,14 @@ export function mergeRectsIntoLines(rects: DOMRect[]): DOMRect[] {
     const line = lines.find((group) => {
       const ref = group[0];
       const overlap = Math.min(ref.bottom, rect.bottom) - Math.max(ref.top, rect.top);
-      // More than half the shorter rectangle's height in common means the same line.
-      return overlap > Math.min(ref.height, rect.height) * 0.5;
+      // More than half the shorter rectangle's height in common means the same line…
+      if (overlap <= Math.min(ref.height, rect.height) * 0.5) return false;
+      // …and near enough horizontally to be the same run of words. Vertical overlap alone put
+      // both columns of a two-column page on one "line": selecting a paragraph that crosses the
+      // column break drew a rectangle spanning the gutter and the unselected text beside it. A
+      // gap wider than about one and a half line-heights is a different column, not a word space.
+      const gap = Math.max(rect.left - Math.max(...group.map((r) => r.right)), 0);
+      return gap <= Math.min(ref.height, rect.height) * 1.5;
     });
     if (line) line.push(rect);
     else lines.push([rect]);
@@ -318,7 +324,19 @@ export function mergeRectsIntoLines(rects: DOMRect[]): DOMRect[] {
     const top = Math.min(...group.map((r) => r.top));
     const right = Math.max(...group.map((r) => r.right));
     const bottom = Math.max(...group.map((r) => r.bottom));
-    return new DOMRect(left, top, right - left, bottom - top);
+    // A plain object rather than `new DOMRect`: callers only read these six numbers, and not
+    // reaching for a DOM constructor keeps this function testable outside a browser.
+    return {
+      x: left,
+      y: top,
+      left,
+      top,
+      right,
+      bottom,
+      width: right - left,
+      height: bottom - top,
+      toJSON: () => ({ x: left, y: top, width: right - left, height: bottom - top })
+    } as DOMRect;
   });
 }
 

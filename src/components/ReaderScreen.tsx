@@ -3,7 +3,6 @@ import { AnimatePresence, motion } from 'motion/react';
 import {
   ArrowLeft,
   Settings as SettingsIcon,
-  BookOpen,
   StickyNote as StickyNoteIcon,
   Plus,
   Trash2,
@@ -11,17 +10,9 @@ import {
   Check,
   Highlighter,
   Underline,
-  MessageSquare,
-  Zap,
-  Lightbulb,
-  CheckCircle2,
-  Sliders,
   Filter,
-  Copy,
-  Info,
   Download,
-  Sparkles,
-  X
+  Sparkles
 } from './icons';
 import { Screen, TransitionType, StickyNote, UserSettings } from '../types';
 import { CustomFormat } from '../utils/documentExporter';
@@ -156,7 +147,6 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
   const readerContentRef = useRef<HTMLDivElement>(null);
 
   // Note Modal state (for both creating & editing)
-  const [isNoteModalOpen, setIsNoteModalOpen] = useState<boolean>(false);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteFormTitle, setNoteFormTitle] = useState<string>('');
   const [noteFormText, setNoteFormText] = useState<string>('');
@@ -210,7 +200,6 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     setNoteFormText('');
     setNoteFormQuote(quote || selectedText);
     setNoteFormThemeId(activeThemeId);
-    setIsNoteModalOpen(true);
     setSelectedText('');
     setSelectionRange(null);
     setPendingSelection(null);
@@ -224,7 +213,6 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     setNoteFormText(note.content);
     setNoteFormQuote(note.quote || '');
     setNoteFormThemeId(note.themeId);
-    setIsNoteModalOpen(true);
   };
 
   // Save (Create or Update) note form
@@ -264,8 +252,6 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
       };
       onNotesChange((prev) => [newNote, ...prev]);
     }
-
-    setIsNoteModalOpen(false);
   };
 
   const handleDeleteNote = (id: string) => {

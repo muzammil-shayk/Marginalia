@@ -39,7 +39,23 @@ const DEFAULT_STORE_DIR = path.join(app.getPath('userData'), 'library');
  * exists — which in practice means only in an unpackaged `npm run desktop` run, where Electron
  * otherwise shows its own generic icon in the Dock and taskbar instead of Marginalia's.
  */
-const APP_ICON_PATH = path.join(__dirname, '..', 'build', 'icon.png');
+const APP_ICON_PATH = (() => {
+  /**
+   * The icon this process hands to the OS, per platform.
+   *
+   * Windows draws its taskbar icon from whatever the BrowserWindow is given, falling back to the
+   * executable's embedded one. `build/` was not in electron-builder's `files`, so in a packaged
+   * app this path did not exist at all, `icon` came through undefined, and the taskbar was left
+   * with whatever the installer had baked in — which is why the icon went missing after an
+   * update. `build/icon.*` now ships with the app.
+   *
+   * The format is NOT interchangeable. Windows wants the .ico, because it carries the small sizes
+   * Windows actually draws at; macOS cannot decode one, and handing it to `app.dock.setIcon`
+   * throws "Failed to load image from path" during startup and takes the whole app down with it.
+   */
+  const file = process.platform === 'win32' ? 'icon.ico' : 'icon.png';
+  return path.join(__dirname, '..', 'build', file);
+})();
 
 function readConfig() {
   try {
