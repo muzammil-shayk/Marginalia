@@ -168,4 +168,23 @@ jobs:
             echo "Release is missing:$MISSING"
             exit 1
           fi
-          echo "Release carries installers and update manifests for both platforms."
+
+          # Every filename a manifest points at must actually be on the release. This is not
+          # implied by the checks above: GitHub rewrites spaces in an uploaded filename to dots,
+          # so an installer built as "Marginalia Setup 2.2.0.exe" arrives as
+          # "Marginalia.Setup.2.2.0.exe" while latest.yml still asks for the hyphenated name
+          # electron-builder's own publisher would have used. The release then looks complete,
+          # the app finds the manifest, and the download 404s — which the app reports as being
+          # unable to check for updates at all. Installer filenames are pinned space-free in
+          # package.json so this cannot recur; this check is what would notice if it did.
+          for MANIFEST in latest.yml latest-mac.yml; do
+            gh release download "${GITHUB_REF_NAME}" --pattern "$MANIFEST" --output "$MANIFEST" --clobber
+            for WANTED in $(grep -oE '^\s+- url: .+$' "$MANIFEST" | sed 's/.*url: //'); do
+              echo "$NAMES" | grep -qxF "$WANTED" || {
+                echo "$MANIFEST points at '$WANTED', which is not on the release."
+                exit 1
+              }
+            done
+          done
+          echo "Release carries installers and update manifests for both platforms,"
+          echo "and every file the manifests reference is present."

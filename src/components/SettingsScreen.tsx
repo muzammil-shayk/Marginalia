@@ -1159,8 +1159,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
               {updateStatus.state === 'error' && (
                 <>
                   <AlertTriangle className="w-3.5 h-3.5 shrink-0 text-amber-600" />
-                  <span className="text-stone-500 dark:text-stone-400 truncate" title={updateStatus.message}>
-                    Couldn't check for updates.
+                  {/* The reason, not just the fact. This read "Couldn't check for updates." with
+                      the real message hidden in a `title` — which this frameless window does not
+                      reliably draw — so a release whose manifest pointed at a filename that was
+                      not on it looked identical to being offline, and stayed unexplained. */}
+                  <span className="text-stone-500 dark:text-stone-400 line-clamp-2">
+                    Update check failed{updateStatus.message ? `: ${updateStatus.message}` : '.'}
                   </span>
                 </>
               )}
