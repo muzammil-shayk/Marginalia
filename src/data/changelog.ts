@@ -22,9 +22,42 @@ export interface ReleaseNote {
   highlights: ChangelogItem[];
 }
 
-export const CURRENT_APP_VERSION = '2.1.0';
+export const CURRENT_APP_VERSION = '2.2.0';
 
 export const CHANGELOG_RELEASES: ReleaseNote[] = [
+  {
+    version: '2.2.0',
+    title: 'What Changed, and Where Things Are Kept',
+    date: 'September 2026',
+    summary:
+      'This dialog, for one — plus the fixes behind it, all of them about the app remembering things properly across a restart.',
+    highlights: [
+      {
+        category: 'feature',
+        title: 'Release notes on first launch',
+        description:
+          'A short account of what changed, shown once after an update and reachable any time from Settings under About.'
+      },
+      {
+        category: 'fix',
+        title: 'The dialog stays dismissed',
+        description:
+          'Which version you have already seen is kept with your settings rather than in browser storage. The desktop app starts its own server on a new port each launch, and browser storage does not survive that — so a note kept there came back every single time you opened the app.'
+      },
+      {
+        category: 'fix',
+        title: 'Your themes survive an update',
+        description:
+          'A settings file that could not be read at startup looked exactly like a first launch, and the app wrote the default themes over your own. It now tells the two apart, waits for the file, and never writes settings it has not managed to read.'
+      },
+      {
+        category: 'fix',
+        title: 'The Windows taskbar icon is back',
+        description:
+          'The icon was never packaged with the app, so after an update Windows had nothing to draw. It now ships, at every size Windows asks for.'
+      }
+    ]
+  },
   {
     version: '2.1.0',
     title: 'Knowledge Studio & Global Library Search',
@@ -36,7 +69,7 @@ export const CHANGELOG_RELEASES: ReleaseNote[] = [
         category: 'feature',
         title: 'The Knowledge Studio',
         description:
-          'Transformed the library dashboard with an editorial Knowledge Studio: Thematic Atlas for discovering recurring conceptual motifs, Living Lexicon for key terminology, and an AI Synthesis spotlight.'
+          'Transformed the library dashboard with an editorial Knowledge Studio: Thematic Atlas for discovering recurring conceptual motifs, Terminologies for the vocabulary you mark, and an AI Synthesis spotlight.'
       },
       {
         category: 'feature',
@@ -48,7 +81,7 @@ export const CHANGELOG_RELEASES: ReleaseNote[] = [
         category: 'feature',
         title: 'Direct Gemini API Key Configuration',
         description:
-          'Configure your custom Google Gemini API key directly inside Settings without restarting or modifying environment files. Your key stays private and stored securely on your local device.'
+          'Configure your custom Google Gemini API key directly inside Settings without restarting or modifying environment files. The key is stored on this computer, beside your library, and is sent to Google only when you ask for an analysis.'
       },
       {
         category: 'improvement',
@@ -85,9 +118,9 @@ export const CHANGELOG_RELEASES: ReleaseNote[] = [
       },
       {
         category: 'feature',
-        title: 'Thematic Motif Engine',
+        title: 'Thematic Analysis',
         description:
-          'Autonomous motif discovery powered by Gemini that maps ideas, recurring questions, and metaphors throughout your texts.'
+          'Gemini reads a book on request and reports the themes running through it — the text itself, or a scanned book\'s page images. Nothing is sent anywhere until you press the button, and the copy is deleted as soon as the analysis returns.'
       },
       {
         category: 'improvement',
