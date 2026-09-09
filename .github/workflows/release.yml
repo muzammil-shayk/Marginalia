@@ -11,6 +11,13 @@
 # matching the version in package.json, so it ends up with installers for both platforms; because
 # releaseType is set to "release" in package.json, it goes live immediately with no manual step.
 #
+# Each platform job uploads into a DRAFT release, and a final job publishes that draft once both
+# have finished. electron-builder can only attach assets to a release it created itself or to one
+# still in draft: against an already-published release it tries to create the tag again and gets
+# `422 already_exists`, having already uploaded a blockmap or two. That is what left v2.0.0 with
+# macOS installers, no Windows installer and no latest.yml — and on one of the two repos the job
+# reported success while doing it, so the release looked fine and Windows could not update at all.
+#
 # Triggered by pushing a version tag (`v1.2.3`), or manually from the Actions tab — either way,
 # bump "version" in package.json first, or the publish step will collide with the last release.
 # The git tag only decides when this workflow runs; the release name, installer filenames, and
@@ -92,3 +99,52 @@ jobs:
           name: marginalia-${{ matrix.os }}
           path: ${{ matrix.artifacts }}
           if-no-files-found: error
+
+  # The draft holds every platform's assets by the time this runs, so publishing it is the moment
+  # the release becomes real — and it becomes real complete, rather than going live after the
+  # first platform and leaving the second unable to attach to it.
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    # Only for a real tag. A manual run still produces downloadable build artifacts, but it should
+    # not flip a draft live.
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publish the draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "Tag $TAG does not match package.json version $VERSION — refusing to publish."
+            echo "electron-builder names the release from package.json, not the tag, so these"
+            echo "must agree or the draft this publishes is not the one that was just built."
+            exit 1
+          fi
+          gh release view "$TAG" --json assets \
+            --jq '.assets[].name' | sort | sed 's/^/  /'
+          gh release edit "$TAG" --draft=false --latest
+          echo "Published $TAG"
+
+      # A release with no Windows installer is the failure this workflow exists to prevent, and it
+      # is invisible unless something checks. Both update manifests must be there too, or a
+      # running copy of the app cannot see the release at all.
+      - name: Check the release is complete
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NAMES="$(gh release view "${GITHUB_REF_NAME}" --json assets --jq '.assets[].name')"
+          MISSING=""
+          echo "$NAMES" | grep -q '\.exe$'      || MISSING="$MISSING Windows-installer"
+          echo "$NAMES" | grep -q '\.dmg$'      || MISSING="$MISSING macOS-dmg"
+          echo "$NAMES" | grep -qx 'latest.yml'  || MISSING="$MISSING latest.yml"
+          echo "$NAMES" | grep -qx 'latest-mac.yml' || MISSING="$MISSING latest-mac.yml"
+          if [ -n "$MISSING" ]; then
+            echo "Release is missing:$MISSING"
+            exit 1
+          fi
+          echo "Release carries installers and update manifests for both platforms."
