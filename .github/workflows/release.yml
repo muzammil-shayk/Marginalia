@@ -80,8 +80,13 @@ jobs:
       - name: Build the app
         run: npm run build
 
-      - name: Package and publish the release
-        run: npx electron-builder ${{ matrix.target }} --publish always
+      # `--publish never`: NEITHER platform job talks to GitHub. Both used to, and the second one
+      # to run recreated the release and dropped what the first had uploaded — which is how
+      # v2.0.0 and v2.1.0 both ended up with one platform's installers and not the other's. The
+      # update manifests are still generated here, because a publish provider is configured; they
+      # just travel as build artifacts like everything else.
+      - name: Package the app
+        run: npx electron-builder ${{ matrix.target }} --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Unsigned builds. Without this electron-builder looks for signing identities on macOS
@@ -103,6 +108,8 @@ jobs:
   # The draft holds every platform's assets by the time this runs, so publishing it is the moment
   # the release becomes real — and it becomes real complete, rather than going live after the
   # first platform and leaving the second unable to attach to it.
+  # One writer. Every installer and manifest is collected here and uploaded in a single pass, so
+  # nothing can be recreated out from under anything else.
   publish:
     needs: build
     runs-on: ubuntu-latest
@@ -113,7 +120,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Publish the draft release
+      - name: Collect every platform's installers
+        uses: actions/download-artifact@v4
+        with:
+          path: incoming
+
+      - name: Publish the release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -121,13 +133,22 @@ jobs:
           VERSION="$(node -p "require('./package.json').version")"
           if [ "$TAG" != "v$VERSION" ]; then
             echo "Tag $TAG does not match package.json version $VERSION — refusing to publish."
-            echo "electron-builder names the release from package.json, not the tag, so these"
-            echo "must agree or the draft this publishes is not the one that was just built."
+            echo "The release is named from package.json, so these must agree."
             exit 1
           fi
-          gh release view "$TAG" --json assets \
-            --jq '.assets[].name' | sort | sed 's/^/  /'
-          gh release edit "$TAG" --draft=false --latest
+
+          # Flatten: download-artifact nests each artifact under its own directory.
+          mkdir -p upload
+          cp incoming/*/* upload/
+          echo "Uploading:"
+          ls -1 upload | sed 's/^/  /'
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" upload/* --clobber
+            gh release edit "$TAG" --draft=false --latest
+          else
+            gh release create "$TAG" upload/* --title "$TAG" --generate-notes --latest
+          fi
           echo "Published $TAG"
 
       # A release with no Windows installer is the failure this workflow exists to prevent, and it
