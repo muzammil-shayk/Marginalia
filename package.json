@@ -1,7 +1,7 @@
 {
   "name": "marginalia",
   "private": true,
-  "version": "2.3.1",
+  "version": "2.3.2",
   "type": "module",
   "license": "MIT",
   "author": {
@@ -131,7 +131,8 @@
     "nsis": {
       "artifactName": "${productName}-Setup-${version}.${ext}",
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "differentialPackage": false
     }
   }
 }

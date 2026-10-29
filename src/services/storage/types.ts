@@ -128,6 +128,23 @@ export interface StoredDocument extends Omit<DocumentMeta, 'analysis'> {
    * slot costs almost nothing and turns "your annotations are gone" into "restore them".
    */
   annotationsBackup: { annotations: StoredAnnotation[]; savedAt: string; wasCount: number } | null;
+  /**
+   * Set only between a page edit committing its renumbered marks and swapping the edited PDF
+   * (`originals/{id}.next`) into place. Seeing it after a crash means "finish the swap".
+   */
+  pendingOriginal?: true;
+}
+
+/** What a page edit receives (read inside the document's lock) and must return. */
+export interface PdfPageEditInput {
+  pdf: Buffer;
+  filename: string;
+  annotations: StoredAnnotation[];
+}
+export interface PdfPageEditOutput<T> {
+  pdf: Uint8Array;
+  annotations: StoredAnnotation[];
+  result: T;
 }
 
 /**
@@ -197,6 +214,12 @@ export interface DocumentBackend {
   listDocuments(): Promise<DocumentMeta[]>;
   updateDocument(id: string, params: UpdateDocumentParams): Promise<DocumentMeta | null>;
   deleteDocument(id: string): Promise<boolean>;
+  /**
+   * Edits a stored PDF and its marks as one locked step: `edit` gets the current bytes and marks
+   * (read inside the lock) and returns both changed. Returns `result`, or null if the document
+   * or its original is missing. Keeps the previous PDF as `originals/{id}.prev`.
+   */
+  editPdfPages<T>(id: string, edit: (input: PdfPageEditInput) => Promise<PdfPageEditOutput<T>>): Promise<T | null>;
   /** Deletes every document past its retention window; returns how many were removed. */
   sweepExpiredDocuments(): Promise<number>;
   /**
@@ -208,7 +231,10 @@ export interface DocumentBackend {
    * lives in the OS per-user application-data directory and survives both.
    */
   getSettings(): Promise<Record<string, unknown> | null>;
-  saveSettings(settings: Record<string, unknown>): Promise<void>;
+  /** Merges `patch` into the stored settings, under the same lock as `saveClientSettings`. */
+  saveSettings(patch: Record<string, unknown>): Promise<void>;
+  /** Merges the client's settings into the stored ones; `gemini*` fields are never changed here. */
+  saveClientSettings(incoming: Record<string, unknown>): Promise<void>;
 }
 
 /**
@@ -264,4 +290,16 @@ export function buildMeta(id: string, params: SaveDocumentParams): DocumentMeta 
     terminologyCount: 0,
     analysis: null
   };
+}
+
+/** A Gemini setting (key, model, …): server-only. Any case, matching the client's settingsCache filter. */
+export const isGeminiKey = (key: string): boolean => /^gemini/i.test(key);
+
+/**
+ * Settings as the renderer may see them: every `gemini*` field removed, so the API key never
+ * reaches the client. Settings asks `/api/gemini-config` whether a key is configured instead.
+ */
+export function publicSettings(settings: Record<string, unknown> | null): Record<string, unknown> | null {
+  if (!settings) return settings;
+  return Object.fromEntries(Object.entries(settings).filter(([key]) => !isGeminiKey(key)));
 }

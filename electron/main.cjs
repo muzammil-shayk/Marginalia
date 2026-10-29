@@ -19,6 +19,9 @@ const { app, BrowserWindow, shell, dialog, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
+const { tryMigrateLibrary } = require('./storage.cjs');
+const { RENDER_PARTITION, guardRenderWindow } = require('./renderGuard.cjs');
+const { requestFlush, createExitGuard } = require('./flushOnExit.cjs');
 
 /**
  * Where the app remembers the user's chosen library folder.
@@ -171,6 +174,10 @@ const DIST_PATH = app.isPackaged
 
 let mainWindow = null;
 let serverPort = null;
+/** Longest a close or quit waits for the renderer to save what is pending. */
+const FLUSH_TIMEOUT_MS = 3000;
+/** Set once the quit-time flush has finished, so window closes during the quit do not wait again. */
+let quitFlushed = false;
 /** The loaded server module, kept so IPC handlers can re-point the store at runtime. */
 let serverModule = null;
 
@@ -187,8 +194,16 @@ async function renderPdfWithElectron(options) {
 
   const win = new BrowserWindow({
     show: false,
-    webPreferences: { offscreen: true, sandbox: true, contextIsolation: true, javascript: true }
+    webPreferences: {
+      offscreen: true,
+      sandbox: true,
+      contextIsolation: true,
+      javascript: true,
+      partition: RENDER_PARTITION
+    }
   });
+  // No navigation, no requests beyond this temp file and data: URIs (see renderGuard.cjs).
+  const releaseGuard = guardRenderWindow(win, tmpFile);
 
   try {
     await win.loadFile(tmpFile);
@@ -224,6 +239,7 @@ async function renderPdfWithElectron(options) {
     });
   } finally {
     win.destroy();
+    releaseGuard();
     fs.promises.unlink(tmpFile).catch(() => {});
   }
 }
@@ -266,6 +282,22 @@ function createWindow() {
   });
 
   mainWindow.once('ready-to-show', () => mainWindow.show());
+
+  // Pending debounced saves (marks, notes, reading position) are flushed before the window goes.
+  // A quit has already flushed by the time it closes windows, so that close skips the wait.
+  const win = mainWindow;
+  const closeGuard = createExitGuard(
+    () => requestFlush(win.webContents, ipcMain, FLUSH_TIMEOUT_MS),
+    () => quitFlushed
+  );
+  win.on('close', (event) =>
+    closeGuard(event, () => {
+      if (!win.isDestroyed()) win.close();
+    })
+  );
+  // The renderer may not veto a close or quit (a save that keeps failing would block it forever);
+  // pending saves were already flushed over IPC by the guard above.
+  win.webContents.on('will-prevent-unload', (event) => event.preventDefault());
   mainWindow.loadURL(`http://127.0.0.1:${serverPort}`);
 
   /**
@@ -324,33 +356,16 @@ ipcMain.handle('marginalia:reveal-storage-dir', async () => {
   shell.openPath(storeDir);
 });
 
-/**
- * Copies an existing library into a new location.
- *
- * Copy-then-delete rather than `fs.rename`, because the two folders are very often on different
- * volumes — moving the library to an external drive is one of the main reasons to change it at
- * all — and rename fails across devices. The originals are only removed once the copy has
- * finished, so an interrupted move leaves the old library intact rather than losing documents.
- */
-async function migrateLibrary(from, to) {
-  if (!fs.existsSync(from)) return { moved: 0 };
-  await fs.promises.mkdir(to, { recursive: true });
+// Moving the library: see migrateLibrary in storage.cjs.
 
-  let moved = 0;
-  for (const sub of ['documents', 'originals']) {
-    const sourceDir = path.join(from, sub);
-    if (!fs.existsSync(sourceDir)) continue;
-    await fs.promises.mkdir(path.join(to, sub), { recursive: true });
-    for (const name of await fs.promises.readdir(sourceDir)) {
-      await fs.promises.copyFile(path.join(sourceDir, name), path.join(to, sub, name));
-      moved++;
-    }
-  }
-
-  for (const sub of ['documents', 'originals']) {
-    await fs.promises.rm(path.join(from, sub), { recursive: true, force: true }).catch(() => {});
-  }
-  return { moved };
+/** Tells the user a library move failed (nothing was switched) and returns the IPC error shape. */
+async function reportMigrationFailure(message) {
+  await dialog.showMessageBox(mainWindow, {
+    type: 'error',
+    message: 'Your documents could not be moved.',
+    detail: `${message}\n\nNothing was changed: Marginalia is still using the previous folder.`
+  });
+  return { changed: false, error: 'migration-failed' };
 }
 
 /**
@@ -399,16 +414,9 @@ ipcMain.handle('marginalia:choose-storage-dir', async () => {
     });
     if (response === 2) return { changed: false };
     if (response === 0) {
-      try {
-        ({ moved: movedCount } = await migrateLibrary(storeDir, chosen));
-      } catch (err) {
-        await dialog.showMessageBox(mainWindow, {
-          type: 'error',
-          message: 'Your documents could not be moved.',
-          detail: String((err && err.message) || err)
-        });
-        return { changed: false, error: 'migration-failed' };
-      }
+      const migration = await tryMigrateLibrary(storeDir, chosen);
+      if (!migration.ok) return reportMigrationFailure(migration.message);
+      movedCount = migration.moved;
     }
   }
 
@@ -422,8 +430,10 @@ ipcMain.handle('marginalia:choose-storage-dir', async () => {
 /** Puts the library back in the default per-user location. */
 ipcMain.handle('marginalia:reset-storage-dir', async () => {
   if (storeDir === DEFAULT_STORE_DIR) return { changed: false, path: storeDir };
-  const previous = storeDir;
-  await migrateLibrary(previous, DEFAULT_STORE_DIR).catch(() => {});
+  // A failed copy must not switch folders: the library would open empty and the reader's
+  // documents would sit unseen in the old folder. Stay put and say why, like the choose action.
+  const migration = await tryMigrateLibrary(storeDir, DEFAULT_STORE_DIR);
+  if (!migration.ok) return reportMigrationFailure(migration.message);
   storeDir = DEFAULT_STORE_DIR;
   serverModule?.setStoreDirectory(storeDir);
   const saveError = await persistStoreDir(undefined);
@@ -459,6 +469,8 @@ function broadcastUpdateStatus(status) {
 }
 
 autoUpdater.autoDownload = true;
+// Always fetch the whole package: a differential patch is one more step that can fail mid-update.
+autoUpdater.disableDifferentialDownload = true;
 // Left at the default of true: if a downloaded update is never actioned from Settings, it installs
 // itself the next time the user quits, rather than leaving them on a stale build indefinitely.
 autoUpdater.autoInstallOnAppQuit = true;
@@ -552,6 +564,14 @@ if (!app.requestSingleInstanceLock()) {
   if (process.platform === 'darwin' && !app.isPackaged && app.dock && fs.existsSync(APP_ICON_PATH)) {
     app.dock.setIcon(APP_ICON_PATH);
   }
+
+  // The first quit waits (at most FLUSH_TIMEOUT_MS) for pending saves, then quits for real.
+  const quitGuard = createExitGuard(() =>
+    requestFlush(mainWindow && mainWindow.webContents, ipcMain, FLUSH_TIMEOUT_MS).finally(() => {
+      quitFlushed = true;
+    })
+  );
+  app.on('before-quit', (event) => quitGuard(event, () => app.quit()));
 
   app.whenReady().then(async () => {
     try {

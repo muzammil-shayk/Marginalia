@@ -22,29 +22,6 @@ function rangesOverlap(a: { start: number; end: number }, b: { start: number; en
   return Math.max(a.start, b.start) < Math.min(a.end, b.end);
 }
 
-/**
- * Computes the {start, end} character offsets of the live browser selection within `element`,
- * measured in plain-text characters from the start of the element's own text content.
- */
-export function getSelectionCharacterOffsetWithin(element: HTMLElement): { start: number; end: number } {
-  let start = 0;
-  let end = 0;
-  const doc = element.ownerDocument || document;
-  const win = doc.defaultView || window;
-  if (typeof win.getSelection !== 'undefined') {
-    const sel = win.getSelection();
-    if (sel && sel.rangeCount > 0) {
-      const range = sel.getRangeAt(0);
-      const preCaretRange = range.cloneRange();
-      preCaretRange.selectNodeContents(element);
-      preCaretRange.setEnd(range.startContainer, range.startOffset);
-      start = preCaretRange.toString().length;
-      end = start + range.toString().length;
-    }
-  }
-  return { start, end };
-}
-
 /** Re-selects a previously-computed character range within `element`, e.g. so a second toolbar tap can stack another format on the same selection. */
 export function restoreSelectionCharacterOffset(element: HTMLElement, start: number, end: number): void {
   const doc = element.ownerDocument || document;
@@ -85,21 +62,6 @@ export function restoreSelectionCharacterOffset(element: HTMLElement, start: num
     sel.removeAllRanges();
     sel.addRange(range);
   }
-}
-
-/** Walks up from `node` to find the nearest ancestor whose id starts with `idPrefix`, returning it plus the paragraph index encoded in the rest of that id. */
-export function findParagraphElement(
-  node: Node | null,
-  idPrefix: string
-): { element: HTMLElement; index: number } | null {
-  let current = node;
-  while (current && current !== document.body) {
-    if (current instanceof HTMLElement && current.id && current.id.startsWith(idPrefix)) {
-      return { element: current, index: parseInt(current.id.slice(idPrefix.length), 10) };
-    }
-    current = current.parentNode;
-  }
-  return null;
 }
 
 /** "Does this exact sub-span already have unbroken coverage" check, used by `toggleFormatRange` to decide whether toggling a format should add or remove it. */
@@ -318,4 +280,89 @@ export function renderHighlightedText(
   }
 
   return nodes.length > 0 ? nodes : paraText;
+}
+
+/** One paragraph's share of a reader selection, in that paragraph's own character offsets. */
+export interface ParagraphRange {
+  paraIdx: number;
+  start: number;
+  end: number;
+}
+
+/**
+ * Splits the live selection into the paragraphs it covers under `root` (elements whose id starts
+ * with `idPrefix` + paragraph index), each with offsets into that paragraph's own text. The old
+ * single-paragraph version measured from the anchor paragraph only, so a selection across
+ * paragraphs kept the first one and gave it an end offset past its text.
+ */
+export function selectionParagraphParts(
+  root: ParentNode,
+  idPrefix: string
+): { index: number; text: string; start: number; end: number }[] {
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0) return [];
+  const range = sel.getRangeAt(0);
+  const parts: { index: number; text: string; start: number; end: number }[] = [];
+  root.querySelectorAll<HTMLElement>(`[id^="${idPrefix}"]`).forEach((el) => {
+    if (!range.intersectsNode(el)) return;
+    const offsetOf = (node: Node, offset: number) => {
+      const pre = document.createRange();
+      pre.selectNodeContents(el);
+      pre.setEnd(node, offset);
+      return pre.toString().length;
+    };
+    const text = el.textContent ?? '';
+    parts.push({
+      index: parseInt(el.id.slice(idPrefix.length), 10),
+      text,
+      start: el.contains(range.startContainer) ? offsetOf(range.startContainer, range.startOffset) : 0,
+      end: el.contains(range.endContainer) ? offsetOf(range.endContainer, range.endOffset) : text.length
+    });
+  });
+  return parts;
+}
+
+/**
+ * Turns the per-paragraph pieces of a selection into ranges to mark. Pieces are clamped to their
+ * paragraph's text, and a piece holding no visible character (a selection that merely touches a
+ * paragraph's edge, or only its spaces) is dropped.
+ */
+export function rangesFromSelectionParts(parts: { index: number; text: string; start: number; end: number }[]): ParagraphRange[] {
+  const ranges: ParagraphRange[] = [];
+  for (const part of parts) {
+    const start = Math.max(0, Math.min(part.start, part.text.length));
+    const end = Math.max(start, Math.min(part.end, part.text.length));
+    if (/\S/.test(part.text.slice(start, end))) ranges.push({ paraIdx: part.index, start, end });
+  }
+  return ranges;
+}
+
+/**
+ * What the floating selection popover should hold: any selection with one visible character or
+ * more inside the text, or null — and null means CLEAR it, so it never acts on an older passage.
+ */
+export function selectionState(text: string, ranges: ParagraphRange[]): { text: string; ranges: ParagraphRange[] } | null {
+  if (!/\S/.test(text) || ranges.length === 0) return null;
+  return { text, ranges };
+}
+
+/**
+ * `toggleFormatRange` over a selection spanning several paragraphs, as one toggle: if every
+ * range already carries the format it comes off all of them; otherwise it is added wherever it is
+ * missing, and ranges already carrying it are left as they are.
+ */
+export function toggleFormatRanges(
+  existing: CustomFormat[],
+  ranges: ParagraphRange[],
+  type: CustomFormat['type'],
+  color: string | undefined,
+  themeId: string | null
+): CustomFormat[] {
+  const covered = (list: CustomFormat[], r: ParagraphRange) => isRangeFullyCoveredByType(list, r.paraIdx, r.start, r.end, type);
+  const removing = ranges.every((r) => covered(existing, r));
+  return ranges.reduce(
+    (list, r) =>
+      removing || !covered(list, r) ? toggleFormatRange(list, r.paraIdx, r.start, r.end, type, color, themeId) : list,
+    existing
+  );
 }

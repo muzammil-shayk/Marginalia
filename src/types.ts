@@ -33,6 +33,8 @@ export interface StickyNote {
   content: string;
   author: string;
   timestamp: string;
+  /** ISO time the note was made. Newer notes only; export prefers it over `timestamp`. */
+  createdAt?: string;
   /** References `UserSettings.activeThemes[].id`, or `null` when untagged. An id rather than a
    *  name so renaming a theme in Settings never orphans a note tagged with it. */
   themeId: string | null;

@@ -28,6 +28,8 @@ import { UpdatePrompt } from './components/UpdatePrompt';
 import { CURRENT_APP_VERSION } from './data/changelog';
 import { ErrorDialog } from './components/ErrorDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { withoutSecrets } from './hooks/settingsCache';
+import { flushAllPending, handleBeforeUnload } from './hooks/unloadFlush';
 
 // ── Storage Keys ──
 const SETTINGS_KEY = 'marginalia_settings';       // localStorage — persists across sessions
@@ -58,13 +60,14 @@ function mergeSettings(stored: Partial<UserSettings>): UserSettings {
 function loadSettings(): UserSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
-    if (raw) return mergeSettings(JSON.parse(raw) as Partial<UserSettings>);
+    // Stripped on read too, so a key cached by an older version never reaches the app from here.
+    if (raw) return mergeSettings(withoutSecrets(JSON.parse(raw) as Partial<UserSettings>));
   } catch (e) { /* ignore */ }
   return initialSettings;
 }
 
 function saveSettings(s: UserSettings) {
-  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (e) { /* ignore */ }
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(withoutSecrets(s))); } catch (e) { /* ignore */ }
 }
 
 /** One document in the library. `text` is present only in memory — see `saveSession`. */
@@ -389,6 +392,27 @@ export default function App() {
     const timer = window.setTimeout(() => { void saveRemoteSettings(settings as unknown as Record<string, unknown>); }, 400);
     return () => window.clearTimeout(timer);
   }, [settings]);
+
+  /**
+   * Saves pending annotation autosaves (PDF workspace and text reader) when the window closes,
+   * reloads or the app quits — see `hooks/unloadFlush`. In the desktop app the main process can
+   * also ask for an awaited flush before it quits or closes the window; that hook is used only
+   * when the preload offers it.
+   */
+  useEffect(() => {
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      handleBeforeUnload(event);
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    const desktop = (window as unknown as {
+      marginaliaDesktop?: { onFlushPendingSaves?: (handler: () => Promise<boolean>) => () => void };
+    }).marginaliaDesktop;
+    const unsubscribe = desktop?.onFlushPendingSaves?.(flushAllPending);
+    return () => {
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      unsubscribe?.();
+    };
+  }, []);
 
   /**
    * Persist the session, debounced.

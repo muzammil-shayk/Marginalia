@@ -22,9 +22,54 @@ export interface ReleaseNote {
   highlights: ChangelogItem[];
 }
 
-export const CURRENT_APP_VERSION = '2.3.1';
+export const CURRENT_APP_VERSION = '2.3.2';
 
 export const CHANGELOG_RELEASES: ReleaseNote[] = [
+  {
+    version: '2.3.2',
+    title: 'Into the Book, and Safer Work',
+    date: 'October 2026',
+    summary:
+      'Read now zooms into the book, marking text works in more places, and your files, settings and updates are better protected.',
+    highlights: [
+      {
+        category: 'feature',
+        title: 'Read zooms into the book',
+        description:
+          'Press Read on the desk and the view pushes in on the open book until its first page fills the window. The reader then takes over on that page. It is one smooth move; with reduced motion on, it is a fade.'
+      },
+      {
+        category: 'fix',
+        title: 'Your work is safer',
+        description:
+          'Inserting or deleting PDF pages can no longer damage the file or misplace marks if something crashes; the previous version is kept. Encrypted PDFs cannot be page-edited. Edits made just before you quit are saved. A damaged record recovers from its backup instead of disappearing.'
+      },
+      {
+        category: 'fix',
+        title: 'Settings and your Gemini key',
+        description:
+          'Moving your library now brings your themes and settings along. Changing settings can no longer erase your Gemini key, and the key stays in the app\'s back end.'
+      },
+      {
+        category: 'improvement',
+        title: 'Marking text in text, EPUB and DOCX books',
+        description:
+          'A selection across several paragraphs now marks all of them. Single words and short selections can be marked. Notes show when they were written. EPUB chapters keep their paragraphs on import.'
+      },
+      {
+        category: 'improvement',
+        title: 'Search and export',
+        description:
+          'Search finds the words inside your notes. On export, marks land in the right place on cropped PDFs, and exported notes carry their dates.'
+      },
+      {
+        category: 'fix',
+        title: 'Safer imports and updates',
+        description:
+          'Imported web pages can no longer reach the internet or other files on your computer. Updates go back to downloading the complete app, and each download is verified before it installs, so nothing can break mid-update.'
+      }
+    ]
+  },
   {
     version: '2.3.1',
     title: 'A Shelf That Fits',

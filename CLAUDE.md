@@ -12,3 +12,5 @@
 - Release: bump `package.json`, `package-lock.json` and `CURRENT_APP_VERSION` in `src/data/changelog.ts`. Add a changelog entry, commit on `main`, tag `vX.Y.Z` (annotated), and push main + tag to `origin` (muzammil-shayk) and `upstream` (shamawork95-cmyk). CI publishes each repo's release.
 - Mac builds are unsigned (no paid Apple account), so Mac auto-update can't install. Windows auto-update works.
 - 2.3.0 (2026-10-29): bookshelf, whole-app restyle, platform update dialogs, safer config writes.
+- 2.3.1 (2026-10-29): theme-matched shelf, ~1.4 s open/close with scroll follow, sage nav pill, keyboard-only focus rings, word-boundary search snippets.
+- Updates always download the full installer: `autoUpdater.disableDifferentialDownload = true`, no blockmaps published (2026-10-29).

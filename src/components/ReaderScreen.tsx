@@ -19,11 +19,14 @@ import { CustomFormat } from '../utils/documentExporter';
 import { HoverTooltip } from './HoverTooltip';
 import { ThematicAnalysisView } from './ThematicAnalysisView';
 import {
-  findParagraphElement,
-  getSelectionCharacterOffsetWithin,
+  ParagraphRange,
+  rangesFromSelectionParts,
   renderHighlightedText,
-  toggleFormatRange
+  selectionParagraphParts,
+  selectionState,
+  toggleFormatRanges
 } from '../utils/textFormatting';
+import { noteTimeLabel } from '../hooks/noteTimestamp';
 
 import {
   exportToPDF,
@@ -142,8 +145,8 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
   // Selection Popover State
   const [selectedText, setSelectedText] = useState<string>('');
   const [selectionRange, setSelectionRange] = useState<{ x: number; y: number } | null>(null);
-  /** The exact character range the floating tooltip's actions apply to, computed alongside the plain selected text. */
-  const [pendingSelection, setPendingSelection] = useState<{ paraIdx: number; start: number; end: number } | null>(null);
+  /** The exact character ranges (one per paragraph) the floating tooltip's actions apply to. */
+  const [pendingSelection, setPendingSelection] = useState<ParagraphRange[] | null>(null);
   const readerContentRef = useRef<HTMLDivElement>(null);
 
   // Note Modal state (for both creating & editing)
@@ -158,33 +161,31 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
   useEffect(() => {
     const handleMouseUp = () => {
       const selection = window.getSelection();
-      if (!selection || selection.isCollapsed || !selection.toString().trim()) {
+      // Every mouseup replaces the popover state outright, cleared when there is nothing markable,
+      // so the popover can never act on the PREVIOUS passage. Any visible character can be marked.
+      const state =
+        selection && !selection.isCollapsed
+          ? selectionState(
+              selection.toString().trim(),
+              rangesFromSelectionParts(selectionParagraphParts(readerContentRef.current ?? document, PARA_TEXT_ID_PREFIX))
+            )
+          : null;
+      if (!state) {
         setSelectedText('');
         setSelectionRange(null);
         setPendingSelection(null);
         return;
       }
-
-      const text = selection.toString().trim();
-      if (text.length > 3) {
-        const found = findParagraphElement(selection.anchorNode, PARA_TEXT_ID_PREFIX);
-        const offsets = found ? getSelectionCharacterOffsetWithin(found.element) : null;
-        if (!found || !offsets || offsets.start === offsets.end) {
-          setPendingSelection(null);
-          return;
-        }
-        setPendingSelection({ paraIdx: found.index, start: offsets.start, end: offsets.end });
-        setSelectedText(text);
-        try {
-          const range = selection.getRangeAt(0);
-          const rect = range.getBoundingClientRect();
-          setSelectionRange({
-            x: Math.max(16, rect.left + rect.width / 2),
-            y: Math.max(10, rect.top - 10 + window.scrollY)
-          });
-        } catch {
-          setSelectionRange(null);
-        }
+      setPendingSelection(state.ranges);
+      setSelectedText(state.text);
+      try {
+        const rect = selection!.getRangeAt(0).getBoundingClientRect();
+        setSelectionRange({
+          x: Math.max(16, rect.left + rect.width / 2),
+          y: Math.max(10, rect.top - 10 + window.scrollY)
+        });
+      } catch {
+        setSelectionRange(null);
       }
     };
 
@@ -239,7 +240,8 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
       );
     } else {
       // Create new manual note
-      const newNote: StickyNote = {
+      const created = new Date();
+      const newNote: StickyNote & { createdAt: string } = {
         id: `note-${Date.now()}`,
         paragraphIndex: targetParagraph,
         color: themeColor(noteFormThemeId),
@@ -247,7 +249,9 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
         content: noteFormText.trim(),
         quote: noteFormQuote.trim() || undefined,
         author: settings.name,
-        timestamp: 'Just now',
+        // `timestamp` stays a readable date for exports; the card shows a relative time from `createdAt`.
+        timestamp: created.toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }),
+        createdAt: created.toISOString(),
         themeId: noteFormThemeId
       };
       onNotesChange((prev) => [newNote, ...prev]);
@@ -261,8 +265,8 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
   /** Applies the currently active theme's colour to a highlight or underline over the pending selection. */
   const applyFormatToSelection = (type: 'highlight' | 'underline') => {
     if (!pendingSelection) return;
-    const { paraIdx, start, end } = pendingSelection;
-    onFormatsChange((prev) => toggleFormatRange(prev, paraIdx, start, end, type, themeColor(activeThemeId), activeThemeId));
+    const ranges = pendingSelection;
+    onFormatsChange((prev) => toggleFormatRanges(prev, ranges, type, themeColor(activeThemeId), activeThemeId));
     setSelectedText('');
     setSelectionRange(null);
     setPendingSelection(null);
@@ -357,7 +361,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
             type="button"
             onClick={() => {
               handleSwitchTab('add');
-              handleOpenManualNote(pendingSelection?.paraIdx ?? activeParagraphIndex ?? 0, selectedText);
+              handleOpenManualNote(pendingSelection?.[0]?.paraIdx ?? activeParagraphIndex ?? 0, selectedText);
             }}
             className="flex items-center gap-1.5 px-2.5 py-1 rounded-full hover:bg-stone-800 text-stone-200 hover:text-white font-medium transition-all cursor-pointer"
           >
@@ -538,7 +542,8 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
       {/* Main Reader View Body */}
       <div className="flex-1 flex max-w-6xl mx-auto w-full overflow-hidden">
         {/* Main Reading Text Column */}
-        <main className="flex-1 max-w-2xl mx-auto w-full px-5 py-6 space-y-6 pb-8">
+        {/* data-zoom-target: where the shelf's Read zoom lands page one (see zoomIntoReader in Bookshelf). */}
+        <main data-zoom-target tabIndex={-1} className="flex-1 max-w-2xl mx-auto w-full px-5 py-6 space-y-6 pb-8">
           <AnimatePresence mode="wait" custom={slideDirection}>
             {/* TAB 1: READING PASSAGES & MARGIN NOTES */}
             {activeControlTab === 'notes' && (
@@ -711,7 +716,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                                 <span className="font-medium flex items-center gap-1">
                                   {note.author}
                                 </span>
-                                <span>{note.timestamp}</span>
+                                <span>{noteTimeLabel(note, new Date())}</span>
                               </div>
                             </div>
                           ))}

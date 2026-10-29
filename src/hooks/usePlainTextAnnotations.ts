@@ -2,9 +2,8 @@
  * Server-backed, docId-keyed persistence for the plain-text/EPUB reader's sticky notes and
  * inline formats.
  *
- * Mirrors `PdfWorkspace`'s own load/debounce/flush pattern exactly (`isLoaded` gate, a
- * `ref`-mirrored copy of the state so a pending debounce can be flushed on unmount without
- * closing over a stale value, 700ms debounce) — replacing what used to be a `sessionStorage` map
+ * Uses the same load gate and debounced saver as `PdfWorkspace` (`hooks/debouncedSaver`, 700ms,
+ * flushed on unmount and on window close/reload/quit via `hooks/unloadFlush`) — replacing what used to be a `sessionStorage` map
  * keyed by document TITLE, which was wiped on every app restart and collision-prone since titles
  * are neither unique nor stable. Reuses the existing, deliberately opaque
  * `/api/documents/:id/annotations` endpoint PDF annotations already go through rather than adding
@@ -16,10 +15,12 @@
  * back to session-only state in that case.
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { StickyNote } from '../types';
 import { CustomFormat } from '../utils/documentExporter';
 import { Annotation, fetchAnnotations, saveAnnotations } from '../utils/documentStorage';
+import { createDebouncedSaver } from './debouncedSaver';
+import { registerUnloadFlush } from './unloadFlush';
 
 const SAVE_DEBOUNCE_MS = 700;
 
@@ -74,18 +75,33 @@ export function usePlainTextAnnotations(docId: string | undefined): PlainTextAnn
   const [formats, setFormatsState] = useState<CustomFormat[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  const notesRef = useRef(notes);
-  const formatsRef = useRef(formats);
-  /** Mirrors `isLoaded` for the unmount flush, which cannot read state from its closure. */
-  const isLoadedRef = useRef(false);
+  /**
+   * The document whose entries are loaded into state. Unlike `isLoaded` (state, still true in the
+   * render where `docId` changes) this is cleared synchronously by the load effect, so the save
+   * effect below can never schedule the previous document's notes under the new id.
+   */
+  const loadedForRef = useRef<string | undefined>(undefined);
   /** Entries belonging to the PDF workspace, held only so every save can hand them back. */
   const othersRef = useRef<Annotation[]>([]);
-  useEffect(() => {
-    notesRef.current = notes;
-  }, [notes]);
-  useEffect(() => {
-    formatsRef.current = formats;
-  }, [formats]);
+
+  /** One saver per document; also flushed on window close/reload/quit (see `unloadFlush`). */
+  const saver = useMemo(
+    () =>
+      docId
+        ? createDebouncedSaver<Annotation[]>({ save: (entries) => saveAnnotations(docId, entries), delayMs: SAVE_DEBOUNCE_MS })
+        : null,
+    [docId]
+  );
+  useEffect(
+    () =>
+      saver
+        ? registerUnloadFlush(saver, (entries) => ({
+            url: `/api/documents/${docId}/annotations`,
+            body: JSON.stringify({ annotations: entries })
+          }))
+        : undefined,
+    [saver, docId]
+  );
 
   // Load whenever the document changes, resetting to empty state until the fetch resolves so a
   // save effect below can never fire against the PREVIOUS document's leftover state.
@@ -97,7 +113,7 @@ export function usePlainTextAnnotations(docId: string | undefined): PlainTextAnn
       return;
     }
     setIsLoaded(false);
-    isLoadedRef.current = false;
+    loadedForRef.current = undefined;
     othersRef.current = [];
     // Cancelled when the document changes, because a slow read for the PREVIOUS document must
     // never land as this one's. Without it, opening A then B while A's read is in flight installs
@@ -118,7 +134,7 @@ export function usePlainTextAnnotations(docId: string | undefined): PlainTextAnn
       othersRef.current = others;
       setNotesState(loadedNotes);
       setFormatsState(loadedFormats);
-      isLoadedRef.current = true;
+      loadedForRef.current = docId;
       setIsLoaded(true);
     });
     return () => {
@@ -126,32 +142,16 @@ export function usePlainTextAnnotations(docId: string | undefined): PlainTextAnn
     };
   }, [docId]);
 
-  // Debounced save whenever either array changes, only once the initial load has completed.
+  // Debounced save whenever either array changes, only once this document's load has completed.
   useEffect(() => {
-    if (!docId || !isLoaded) return;
-    const timer = window.setTimeout(() => {
-      void saveAnnotations(
-        docId,
-        mergeEntries(notesRef.current, formatsRef.current, othersRef.current)
-      );
-    }, SAVE_DEBOUNCE_MS);
-    return () => window.clearTimeout(timer);
-  }, [docId, isLoaded, notes, formats]);
+    if (!saver || !isLoaded || loadedForRef.current !== docId) return;
+    saver.schedule(mergeEntries(notes, formats, othersRef.current));
+  }, [saver, docId, isLoaded, notes, formats]);
 
-  // Flush on unmount / docId change, via the refs, so a still-pending debounce is never lost to
-  // a navigate-away.
-  useEffect(() => {
-    return () => {
-      // Gated on having LOADED, not on having something to write. The old length check meant
-      // deleting your only note wrote nothing on the way out, and the note came back on reopen.
-      if (docId && isLoadedRef.current) {
-        void saveAnnotations(
-          docId,
-          mergeEntries(notesRef.current, formatsRef.current, othersRef.current)
-        );
-      }
-    };
-  }, [docId]);
+  // Flush on unmount / docId change, so a still-pending debounce is never lost to a navigate-away.
+  // Every load and every edit (deleting the only note included) schedules a save, so "pending"
+  // covers what the old unconditional write did.
+  useEffect(() => () => void saver?.flush(), [saver]);
 
   return {
     notes,

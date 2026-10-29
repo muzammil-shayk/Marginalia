@@ -32,6 +32,8 @@ import {
   rectToFraction
 } from './annotationModel';
 import { useAnnotationHistory } from './useAnnotationHistory';
+import { createDebouncedSaver, gateWhileBusy, runPageOperation } from '../../hooks/debouncedSaver';
+import { registerUnloadFlush } from '../../hooks/unloadFlush';
 import { PdfPage } from './PdfPage';
 import { PdfToolbar, NEUTRAL_COLORS } from './PdfToolbar';
 import { NotesList } from './NotesList';
@@ -253,13 +255,21 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
    */
   const {
     annotations,
-    commit: setAnnotations,
+    commit,
     reset: resetAnnotations,
-    undo,
-    redo,
+    undo: undoHistory,
+    redo: redoHistory,
     canUndo,
     canRedo
   } = useAnnotationHistory();
+  /**
+   * True while a page insert/delete runs. Marks drawn then would carry pre-renumbering page
+   * numbers and be dropped, so every mark change (tools, undo, redo) is ignored meanwhile.
+   */
+  const pageOpBusyRef = useRef(false);
+  const setAnnotations = useMemo(() => gateWhileBusy(() => pageOpBusyRef.current, commit), [commit]);
+  const undo = useMemo(() => gateWhileBusy(() => pageOpBusyRef.current, undoHistory), [undoHistory]);
+  const redo = useMemo(() => gateWhileBusy(() => pageOpBusyRef.current, redoHistory), [redoHistory]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -361,7 +371,6 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   useEffect(() => {
     let cancelled = false;
     setIsLoaded(false);
-    isLoadedRef.current = false;
     resetAnnotations([]);
     fetchAnnotations(docId).then((stored) => {
       if (cancelled) return;
@@ -375,7 +384,6 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         return;
       }
       resetAnnotations((stored.annotations as unknown as Annotation[]) || []);
-      isLoadedRef.current = true;
       setIsLoaded(true);
     });
     return () => {
@@ -384,51 +392,57 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   }, [docId, resetAnnotations]);
 
   // ── Persistence ──
-  const annotationsRef = useRef<Annotation[]>([]);
-  /** Mirrors `isLoaded` for the unmount flush, which cannot read state from its closure. */
-  const isLoadedRef = useRef(false);
-  /** True while the server is renumbering pages; see the save effect. */
-  const repaginatingRef = useRef(false);
   /** Set the first time the reader changes zoom or view mode themselves. */
   const zoomTouchedRef = useRef(false);
-  useEffect(() => {
-    annotationsRef.current = annotations;
-  }, [annotations]);
+
+  /**
+   * The autosave. Paused while a page insert/delete renumbers marks on the server (checked when
+   * the timer fires, not only when it is scheduled), flushed before such an operation, and
+   * registered for the window-close/reload/quit flush — see `hooks/debouncedSaver`.
+   */
+  const saver = useMemo(
+    () =>
+      createDebouncedSaver<Annotation[]>({
+        save: (marks) => saveAnnotations(docId, marks as never),
+        delayMs: SAVE_DEBOUNCE_MS,
+        onResult: (ok) => {
+          setSaveState(ok ? 'saved' : 'idle');
+          // Never stack: the save retries on every subsequent edit by itself, and one dialog per
+          // keystroke would bury the document it is warning about.
+          if (!ok) {
+            setFailure(
+              (current) =>
+                current ??
+                'Your most recent marks could not be saved to disk, so they exist only in this window. Do not close it until the Saved tick returns — every further change tries again.'
+            );
+          }
+        }
+      }),
+    [docId]
+  );
+
+  useEffect(
+    () =>
+      registerUnloadFlush(saver, (marks) => ({
+        url: `/api/documents/${docId}/annotations`,
+        body: JSON.stringify({ annotations: marks })
+      })),
+    [saver, docId]
+  );
 
   useEffect(() => {
     // Nothing is written until the stored set has been read, or an empty initial state would
     // overwrite the reader's existing marks the moment the document opened.
     if (!isLoaded) return;
-    // A page insert or delete renumbers every mark on the server. An autosave landing in the
-    // middle of that would PUT the pre-shift numbers back and undo the renumbering.
-    if (repaginatingRef.current) return;
-    setSaveState('saving');
-    const timer = window.setTimeout(async () => {
-      const ok = await saveAnnotations(docId, annotations as never);
-      setSaveState(ok ? 'saved' : 'idle');
-      // Never stack: the save retries on every subsequent edit by itself, and one dialog per
-      // keystroke would bury the document it is warning about.
-      if (!ok) {
-        setFailure(
-          (current) =>
-            current ??
-            'Your most recent marks could not be saved to disk, so they exist only in this window. Do not close it until the Saved tick returns — every further change tries again.'
-        );
-      }
-    }, SAVE_DEBOUNCE_MS);
-    return () => window.clearTimeout(timer);
-  }, [annotations, docId, isLoaded]);
+    if (!saver.paused()) setSaveState('saving');
+    saver.schedule(annotations);
+  }, [annotations, isLoaded, saver]);
 
   // Flush anything still pending when the workspace closes, so marks made in the last moment
-  // before navigating away are not lost with the timer.
-  useEffect(
-    () => () => {
-      // Gated on having LOADED, not on having marks. The old length check meant erasing your last
-      // mark wrote nothing on the way out, and the mark reappeared on reopen.
-      if (isLoadedRef.current) void saveAnnotations(docId, annotationsRef.current as never);
-    },
-    [docId]
-  );
+  // before navigating away are not lost with the timer. Every load schedules a save and so does
+  // every edit (erasing the last mark included), so "pending" covers what the old unconditional
+  // write did; a paused saver (marks left pre-renumbering) writes nothing.
+  useEffect(() => () => void saver.flush(), [saver]);
 
   useEffect(() => {
     if (saveState !== 'saved') return;
@@ -1383,29 +1397,42 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     requestAnimationFrame(() => goToPage(target));
   }, [pendingPageJump, pageCount, goToPage]);
 
+  /** Re-reads the marks the server just renumbered. */
+  const reloadMarks = useCallback(async () => {
+    const stored = await fetchAnnotations(docId);
+    return stored ? ((stored.annotations as unknown as Annotation[]) || []) : null;
+  }, [docId]);
+
   const handleInsertPage = useCallback(async () => {
+    if (pageOpBusyRef.current) return;
+    pageOpBusyRef.current = true;
     setIsInsertingPage(true);
-    repaginatingRef.current = true;
     try {
-      const result = await insertPage(docId, insertPlacement, insertHeight, currentPage);
-      if (!result) {
+      // Saves pending marks first, pauses the autosave while the server renumbers, then `reset`s
+      // (not commits) the re-read marks: Undo must not put old page numbers onto the changed PDF.
+      const outcome = await runPageOperation({
+        saver,
+        operate: () => insertPage(docId, insertPlacement, insertHeight, currentPage),
+        reload: reloadMarks,
+        reset: resetAnnotations
+      });
+      if (outcome.status === 'unsaved') {
+        setFailure('Your latest marks could not be saved, so the page was not added. Try again once the Saved tick returns.');
+        return;
+      }
+      if (outcome.status === 'failed') {
         setFailure('Could not add the page. The document was left unchanged.');
         return;
       }
       setFileVersion((v) => v + 1);
-      const stored = await fetchAnnotations(docId);
-      // `commit`, not `reset`: resetting clears the undo stack, so adding a page threw away the
-      // history of every unrelated edit made earlier in the session. The renumbering itself is
-      // not undoable — the page is really in the file — but everything before it still should be.
-      if (stored) setAnnotations((stored.annotations as unknown as Annotation[]) || []);
-      else setFailure('The page was added, but this document\'s marks could not be re-read. Reopen it before marking anything else.');
+      if (!outcome.reloaded) setFailure('The page was added, but this document\'s marks could not be re-read. Reopen it before marking anything else — nothing more is saved until you do.');
       setInsertPageMenuOpen(false);
-      if (result.insertedPages.length) setPendingPageJump(result.insertedPages[0]);
+      if (outcome.result.insertedPages.length) setPendingPageJump(outcome.result.insertedPages[0]);
     } finally {
-      repaginatingRef.current = false;
+      pageOpBusyRef.current = false;
       setIsInsertingPage(false);
     }
-  }, [docId, insertPlacement, insertHeight, currentPage, resetAnnotations]);
+  }, [docId, insertPlacement, insertHeight, currentPage, resetAnnotations, saver, reloadMarks]);
 
   /** Guards against a double-fire while a delete is in flight — the corner button's own inline
    *  confirm (see PdfPage.tsx) is the only confirmation now; there is no modal step above it. */
@@ -1413,28 +1440,35 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
 
   const handleDeletePage = useCallback(
     async (pageNumber: number) => {
-      if (isDeletingPage) return;
+      if (isDeletingPage || pageOpBusyRef.current) return;
+      pageOpBusyRef.current = true;
       setIsDeletingPage(true);
-      repaginatingRef.current = true;
       try {
-        const result = await deletePage(docId, pageNumber);
-        if (!result) {
+        // See `handleInsertPage`.
+        const outcome = await runPageOperation({
+          saver,
+          operate: () => deletePage(docId, pageNumber),
+          reload: reloadMarks,
+          reset: resetAnnotations
+        });
+        if (outcome.status === 'unsaved') {
+          setFailure(`Your latest marks could not be saved, so page ${pageNumber} was not deleted. Try again once the Saved tick returns.`);
+          return;
+        }
+        if (outcome.status === 'failed') {
           setFailure(`Could not delete page ${pageNumber}. The document was left unchanged.`);
           return;
         }
         setFileVersion((v) => v + 1);
-        const stored = await fetchAnnotations(docId);
-        // See `handleInsertPage`: committing keeps the session's undo history alive.
-        if (stored) setAnnotations((stored.annotations as unknown as Annotation[]) || []);
-        else setFailure('The page was deleted, but this document\'s marks could not be re-read. Reopen it before marking anything else.');
+        if (!outcome.reloaded) setFailure('The page was deleted, but this document\'s marks could not be re-read. Reopen it before marking anything else — nothing more is saved until you do.');
         // The page that took the deleted one's place, or the new last page if it was the last one.
-        setPendingPageJump(Math.min(pageNumber, result.pageCount));
+        setPendingPageJump(Math.min(pageNumber, outcome.result.pageCount));
       } finally {
-        repaginatingRef.current = false;
+        pageOpBusyRef.current = false;
         setIsDeletingPage(false);
       }
     },
-    [docId, isDeletingPage, resetAnnotations]
+    [docId, isDeletingPage, resetAnnotations, saver, reloadMarks]
   );
 
   const byPage = useMemo(() => {
@@ -1604,8 +1638,8 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         onTextItalicChange={handleTextItalicChange}
         onUndo={undo}
         onRedo={redo}
-        canUndo={canUndo}
-        canRedo={canRedo}
+        canUndo={canUndo && !isInsertingPage && !isDeletingPage}
+        canRedo={canRedo && !isInsertingPage && !isDeletingPage}
         openSubmenuFor={openSubmenuFor}
         onSubmenuOpened={() => setOpenSubmenuFor(null)}
         onSubmenuOpenChange={(id, open) => {

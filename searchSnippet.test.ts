@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { wordWindow } from './searchSnippet';
+import { wordWindow, markSearchText } from './searchSnippet';
 
 const text = 'Notes on the Synthesis of Form describe fitness between two parts of a design problem.';
 
@@ -48,4 +48,26 @@ test('unicode text: accents and non-Latin scripts cut on spaces', () => {
 test('whitespace runs are collapsed and the result is never empty', () => {
   assert.equal(wordWindow('a\n\n  b   c', 0, 10), 'a b c');
   assert.notEqual(wordWindow('abc def', 1, 5), '');
+});
+
+// ── Marks: what a mark is found by, and what its snippet shows ──────────────
+
+test('a plain-text note is found by its content and its snippet shows that content', () => {
+  const note = { id: 'n1', kind: 'note', title: 'On endings', content: 'Every story is about mortality.', quote: '' };
+  const hit = markSearchText(note, 'mortality');
+  assert.ok(hit);
+  assert.match(wordWindow(hit.text, 0, 220, hit.keep), /about mortality\./);
+});
+
+test('a plain-text note is found by its title', () => {
+  const note = { id: 'n1', kind: 'note', title: 'Mortality', content: 'see chapter two' };
+  assert.ok(markSearchText(note, 'mortality'));
+});
+
+test('a PDF mark is still found by its quote, note text, theme name and "terminology"', () => {
+  assert.ok(markSearchText({ id: 'a', quote: 'the long dark' }, 'dark'));
+  assert.ok(markSearchText({ id: 'a', text: 'my note' }, 'note'));
+  assert.ok(markSearchText({ id: 'a' }, 'grief', 'Grief'));
+  assert.ok(markSearchText({ id: 'a', isTerminology: true }, 'terminology'));
+  assert.equal(markSearchText({ id: 'a', quote: 'nothing here' }, 'absent'), null);
 });

@@ -1,7 +1,6 @@
 import "dotenv/config";
 import express from "express";
 import path from "path";
-import { PDFDocument } from "pdf-lib";
 import {
   saveDocument,
   attachOriginal,
@@ -14,11 +13,15 @@ import {
   setStoreDirectory,
   getBackend,
   getSettings,
-  saveSettings,
+  saveClientSettings,
+  editPdfPages,
   RETENTION_DAYS
 } from "./src/services/documentStore";
+import { insertBlankPages, removePdfPage, PageEditError } from "./src/services/pdfPages";
+import { sanitizeImportHtml } from "./src/services/htmlSanitize";
+import { publicSettings } from "./src/services/storage/types";
 import analyzerRouter from "./src/services/analyzer";
-import { wordWindow } from "./searchSnippet";
+import { wordWindow, markSearchText } from "./searchSnippet";
 
 /**
  * Re-exported for the desktop shell, which owns the folder picker and calls this to re-point the
@@ -217,7 +220,8 @@ app.post("/api/documents/from-html", express.json({ limit: "200mb" }), async (re
     }
 
     const pdfBuffer = await htmlToPdfRenderer({
-      html,
+      // The body is untrusted: nothing that could run code or reach the network survives.
+      html: sanitizeImportHtml(html),
       displayHeaderFooter: false,
       headerTemplate: "",
       footerTemplate: "",
@@ -319,20 +323,16 @@ app.get("/api/documents/search", async (req, res) => {
        * "terminology" — so a theme's whole contents can be listed by naming it.
        */
       for (const a of doc.annotations) {
-        const quote = typeof a.quote === "string" ? a.quote : "";
-        const noteText = typeof a.text === "string" ? a.text : "";
         const theme = typeof a.themeId === "string" ? themeById.get(a.themeId) : undefined;
         const isTerm = a.isTerminology === true;
-        const fields = [quote, noteText, theme?.name ?? "", isTerm ? "terminology" : ""];
-        if (!fields.some((f) => f.toLowerCase().includes(needle))) continue;
-        const markText = (quote || noteText || theme?.name || "Terminology").replace(/\s+/g, " ").trim();
-        const markIdx = markText.toLowerCase().indexOf(needle);
+        const hit = markSearchText(a, needle, theme?.name);
+        if (!hit) continue;
         results.push({
           kind: "mark",
           id: meta.id,
           title: meta.title,
           format: meta.format,
-          snippet: wordWindow(markText, 0, 220, markIdx === -1 ? undefined : [markIdx, markIdx + needle.length]),
+          snippet: wordWindow(hit.text, 0, 220, hit.keep),
           matches: 1,
           annotationId: String(a.id),
           page: typeof a.page === "number" ? a.page : undefined,
@@ -566,57 +566,23 @@ app.post("/api/documents/:id/pages", express.json(), async (req, res) => {
     return;
   }
 
-  const [original, doc] = await Promise.all([getOriginal(req.params.id), getDocument(req.params.id)]);
-  if (!original || !doc) {
-    res.status(404).json({ error: "Document not found." });
-    return;
-  }
-  if (path.extname(original.filename).toLowerCase() !== ".pdf") {
-    res.status(400).json({ error: "Only PDF documents support inserted pages." });
-    return;
-  }
-
   try {
-    const pdfDoc = await PDFDocument.load(original.buffer, { ignoreEncryption: true });
-    const pageCountBefore = pdfDoc.getPageCount();
-    if (pageCountBefore === 0) {
-      res.status(400).json({ error: "This PDF has no pages." });
+    // One locked step in the store: the marks are read inside the lock and written together with
+    // the edited PDF, so a mark saved while the PDF was being rewritten cannot be lost and a crash
+    // cannot leave new page numbers on the old PDF (see LocalDocumentBackend.editPdfPages).
+    const result = await editPdfPages(req.params.id, (input) =>
+      insertBlankPages(input, { placement, anchorPage, height })
+    );
+    if (!result) {
+      res.status(404).json({ error: "Document not found." });
       return;
     }
-
-    const referenceIndex = Math.min(Math.max((anchorPage || 1) - 1, 0), pageCountBefore - 1);
-    const { width, height: fullHeight } = pdfDoc.getPage(referenceIndex).getSize();
-    const insertHeight = height === "full" ? fullHeight : height === "header" ? 108 : 252; // 1.5in / 3.5in
-
-    let insertedPages: number[];
-    if (placement === "both-ends") {
-      pdfDoc.insertPage(0, [width, insertHeight]);
-      pdfDoc.addPage([width, insertHeight]);
-      insertedPages = [1, pdfDoc.getPageCount()];
-    } else {
-      const index0 = placement === "before" ? referenceIndex : referenceIndex + 1;
-      pdfDoc.insertPage(index0, [width, insertHeight]);
-      insertedPages = [index0 + 1];
-    }
-
-    const newBytes = await pdfDoc.save();
-    await attachOriginal(req.params.id, Buffer.from(newBytes), original.filename);
-
-    // Only the page inserted at the very start ever shifts an EXISTING annotation — one appended
-    // at the end is by definition after everything already there. For 'before'/'after', that's
-    // wherever the single new page landed, in both cases.
-    const shiftFrom = placement === "both-ends" ? 1 : insertedPages[0];
-    // Re-read rather than reuse the `doc` from the top of this handler. Saving a large PDF takes
-    // seconds, and a mark made while it ran has already been written by the client's own save —
-    // shifting the snapshot taken before that would put the older list back and lose it.
-    const current = await getDocument(req.params.id);
-    const annotations = (current?.annotations ?? doc.annotations).map((a) =>
-      typeof a.page === "number" && a.page >= shiftFrom ? { ...a, page: a.page + 1 } : a
-    );
-    await updateDocument(req.params.id, { annotations });
-
-    res.json({ insertedPages, pageCount: pdfDoc.getPageCount() });
+    res.json(result);
   } catch (error) {
+    if (error instanceof PageEditError) {
+      res.status(error.status).json({ error: error.message });
+      return;
+    }
     console.error("Page insertion failed:", error);
     res.status(500).json({ error: "Could not insert a page into this PDF." });
   }
@@ -637,42 +603,18 @@ app.delete("/api/documents/:id/pages/:pageNumber", async (req, res) => {
     return;
   }
 
-  const [original, doc] = await Promise.all([getOriginal(req.params.id), getDocument(req.params.id)]);
-  if (!original || !doc) {
-    res.status(404).json({ error: "Document not found." });
-    return;
-  }
-  if (path.extname(original.filename).toLowerCase() !== ".pdf") {
-    res.status(400).json({ error: "Only PDF documents support removing pages." });
-    return;
-  }
-
   try {
-    const pdfDoc = await PDFDocument.load(original.buffer, { ignoreEncryption: true });
-    const pageCountBefore = pdfDoc.getPageCount();
-    if (pageNumber > pageCountBefore) {
-      res.status(400).json({ error: "That page doesn't exist." });
+    const result = await editPdfPages(req.params.id, (input) => removePdfPage(input, pageNumber));
+    if (!result) {
+      res.status(404).json({ error: "Document not found." });
       return;
     }
-    if (pageCountBefore <= 1) {
-      res.status(400).json({ error: "Can't remove the only page left. Delete the document instead." });
-      return;
-    }
-
-    pdfDoc.removePage(pageNumber - 1);
-    const newBytes = await pdfDoc.save();
-    await attachOriginal(req.params.id, Buffer.from(newBytes), original.filename);
-
-    // Re-read for the same reason as page insertion: a mark made during the PDF save is already
-    // on disk, and renumbering a stale snapshot would erase it.
-    const current = await getDocument(req.params.id);
-    const annotations = (current?.annotations ?? doc.annotations)
-      .filter((a) => typeof a.page !== "number" || a.page !== pageNumber)
-      .map((a) => (typeof a.page === "number" && a.page > pageNumber ? { ...a, page: a.page - 1 } : a));
-    await updateDocument(req.params.id, { annotations });
-
-    res.json({ pageCount: pdfDoc.getPageCount() });
+    res.json(result);
   } catch (error) {
+    if (error instanceof PageEditError) {
+      res.status(error.status).json({ error: error.message });
+      return;
+    }
     console.error("Page removal failed:", error);
     res.status(500).json({ error: "Could not remove that page." });
   }
@@ -706,8 +648,8 @@ app.get("/api/storage", (_req, res) => {
  * which — like the library itself — survives both.
  */
 app.get("/api/settings", async (_req, res) => {
-  const settings = await getSettings();
-  res.json({ settings });
+  // No gemini* fields: the key stays server-side (see /api/gemini-config).
+  res.json({ settings: publicSettings(await getSettings()) });
 });
 
 app.put("/api/settings", async (req, res) => {
@@ -716,8 +658,14 @@ app.put("/api/settings", async (req, res) => {
     res.status(400).json({ error: "settings object required" });
     return;
   }
-  await saveSettings(settings);
-  res.json({ saved: true });
+  try {
+    // Merged into what is stored; `gemini*` fields only ever change through /api/gemini-config.
+    await saveClientSettings(settings);
+    res.json({ saved: true });
+  } catch (error) {
+    console.error("Settings save failed:", error);
+    res.status(500).json({ error: "Failed to save settings." });
+  }
 });
 
 /**

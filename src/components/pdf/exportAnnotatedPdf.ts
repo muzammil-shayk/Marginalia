@@ -21,8 +21,8 @@
  *
  * The coordinate conversion is the crux. Marks are stored as page fractions with the origin at
  * the TOP-left (how the browser lays out); PDF space is points with the origin at the BOTTOM-left
- * and its own page box. Every value therefore goes through `toPdf`, which flips y and scales by
- * the real MediaBox rather than assuming a page size.
+ * and its own page box. Every value therefore goes through `toPdf` (see `pageBox.ts`), which flips
+ * y and scales by the page's visible CropBox, offset included, rather than assuming a page size.
  */
 
 import {
@@ -49,6 +49,7 @@ import {
   isReaction,
   reactionChar
 } from './annotationModel';
+import { pageTransform } from './pageBox';
 
 /**
  * The reader's own three webfaces, as static TTFs pdf-lib can embed directly.
@@ -350,41 +351,9 @@ export async function exportAnnotatedPdf(
     const page = pages[pageNumber - 1];
     if (!page) continue;
 
-    /**
-     * `page.getSize()` returns the raw, UNROTATED MediaBox — but a mark's x/y/w/h fractions are
-     * relative to the page as the reader actually SAW it, which is what pdf.js's `getViewport`
-     * (and so `PdfPage`'s `pageWidth`/`pageHeight`) reports, rotation already applied. For a page
-     * with no `/Rotate` the two agree; for one rotated 90 or 270 degrees they are transposed, and
-     * using the raw MediaBox size for width/weight fractions or as the coordinate transform's
-     * width/height would size marks by the wrong axis and place them somewhere the reader never
-     * put them. `pw` below is the VISUAL width every width/weight fraction in the model is
-     * relative to; `mw`/`mh` stay the raw MediaBox, needed only by `toPdf` itself.
-     */
-    const rotation = ((page.getRotation().angle % 360) + 360) % 360;
-    const { width: mw, height: mh } = page.getSize();
-    const pw = rotation === 90 || rotation === 270 ? mh : mw;
-
-    /**
-     * Page fraction (top-left origin, rotation already applied — i.e. VISUAL space) to PDF points
-     * in the page's own UNROTATED content space (bottom-left origin) — content is always drawn in
-     * that native space, with `/Rotate` applied by the viewer afterward purely for display.
-     *
-     * Derived empirically against pdf.js's own `viewport.convertToPdfPoint`, per rotation angle,
-     * rather than reasoned out freehand — a rotation transform is exactly the kind of thing that
-     * LOOKS right from first principles while being off by a flip or a swapped axis.
-     */
-    const toPdf = (x: number, y: number): [number, number] => {
-      switch (rotation) {
-        case 90:
-          return [y * mw, x * mh];
-        case 180:
-          return [(1 - x) * mw, y * mh];
-        case 270:
-          return [(1 - y) * mw, (1 - x) * mh];
-        default:
-          return [x * mw, (1 - y) * mh];
-      }
-    };
+    // Visible box (CropBox within MediaBox) with its offset, rotation applied — see pageBox.ts.
+    // `pw` is the VISUAL width every width/weight fraction in the model is relative to.
+    const { rotation, pw, toPdf } = pageTransform(page);
     const rectToPdf = (r: FractionRect): [number, number, number, number] => {
       const [ax, ay] = toPdf(r.x, r.y + r.h);
       const [bx, by] = toPdf(r.x + r.w, r.y);

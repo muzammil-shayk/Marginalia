@@ -1355,3 +1355,36 @@
 :root:not([data-input='pointer']) .shelf-stage :where(button):focus-visible {
   outline-color: var(--shelf-ink);
 }
+
+/* Read: the desk's page pushed in to fill the window (zoomIntoReader in Bookshelf.tsx). A fixed layer
+   above everything; only its transform, clip and opacity change. */
+.shelf-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: auto;
+}
+.shelf-zoom-ground {
+  position: absolute;
+  inset: 0;
+}
+.shelf-zoom-page {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 50% 50%;
+  will-change: transform, clip-path;
+}
+.shelf-zoom-page .shelf-page::after {
+  opacity: var(--gutter, 1);
+}
+.shelf-zoom-veil {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+.shelf-zoom-shadow {
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
+}

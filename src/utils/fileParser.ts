@@ -4,6 +4,7 @@
  */
 
 import { prepareHtmlDocument } from './htmlDocument';
+import { collectEpubText } from './epubText';
 
 export interface ParseResult {
   title: string;
@@ -171,34 +172,14 @@ async function parseEpub(file: File, title: string): Promise<ParseResult> {
 
   await book.ready;
 
+  // Block-by-block, so paragraphs and headings stay separate paragraphs (see epubText.ts).
   const spine = book.spine as any;
-  const textParts: string[] = [];
-
-  // Iterate through spine items (chapters)
-  for (const item of spine.items) {
-    if (!item.href) continue;
-    try {
-      const doc = await book.load(item.href);
-      // doc is an XML/HTML document; extract text content
-      if (doc && typeof doc === 'object' && 'body' in (doc as any)) {
-        const body = (doc as Document).body;
-        if (body) {
-          const chapterText = body.textContent?.trim();
-          if (chapterText) {
-            textParts.push(chapterText);
-          }
-        }
-      }
-    } catch {
-      // Skip chapters that fail to load
-      continue;
-    }
-  }
+  const hrefs: string[] = spine.items.map((item: any) => item.href).filter(Boolean);
+  const fullText = await collectEpubText(hrefs, (href) => book.load(href));
 
   // Clean up
   book.destroy();
 
-  const fullText = textParts.join('\n\n');
   if (!fullText.trim()) {
     throw new Error('Could not extract text from this EPUB. The file may be DRM-protected or corrupted.');
   }

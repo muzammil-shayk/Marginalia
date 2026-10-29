@@ -392,11 +392,11 @@ router.get('/gemini-config', async (_req, res) => {
 router.put('/gemini-config', async (req, res) => {
   const apiKey = typeof req.body?.apiKey === 'string' ? req.body.apiKey.trim() : undefined;
   const model = typeof req.body?.model === 'string' ? req.body.model.trim() : undefined;
-  const stored = (await getSettings()) ?? {};
-  const next = { ...stored };
-  if (apiKey !== undefined) next.geminiApiKey = apiKey;
-  if (model !== undefined) next.geminiModel = model;
-  await saveSettings(next);
+  // Only the gemini fields, merged under the settings lock (a corrupt file is backed up first).
+  const patch: Record<string, unknown> = {};
+  if (apiKey !== undefined) patch.geminiApiKey = apiKey;
+  if (model !== undefined) patch.geminiModel = model;
+  await saveSettings(patch);
   const after = await geminiCredentials();
   console.log(`[Marginalia] Gemini key ${apiKey ? 'set' : 'cleared'} from Settings.`);
   res.json({ configured: Boolean(after.apiKey), model: after.model });

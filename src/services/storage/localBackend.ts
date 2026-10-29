@@ -18,6 +18,8 @@ import crypto from 'crypto';
 import {
   DocumentBackend,
   DocumentMeta,
+  PdfPageEditInput,
+  PdfPageEditOutput,
   SaveDocumentParams,
   StoredDocument,
   UpdateDocumentParams,
@@ -26,10 +28,49 @@ import {
   computeThemeIds,
   countTerminology,
   countWords,
+  isGeminiKey,
   isValidId,
   safeExtension,
   summarizeAnalysis
 } from './types';
+
+/** Writes a file and fsyncs it before returning, so a later rename never exposes unflushed bytes. */
+async function writeDurable(target: string, data: string | Uint8Array): Promise<void> {
+  const handle = await fs.open(target, 'w');
+  try {
+    await handle.writeFile(data);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+
+/** tmp + fsync + rename: the target is always either the old file or the new one, never a fragment. */
+async function writeFileAtomic(target: string, data: string | Uint8Array): Promise<void> {
+  const temporary = `${target}.tmp`;
+  try {
+    await writeDurable(temporary, data);
+    await fs.rename(temporary, target);
+  } catch (err) {
+    await fs.rm(temporary, { force: true }).catch(() => undefined);
+    throw err;
+  }
+}
+
+const errorCode = (err: unknown) => (err as NodeJS.ErrnoException | null)?.code;
+
+/** Parses a record, treating anything but a JSON object as corrupt. */
+function parseRecord(raw: string): Partial<StoredDocument> {
+  const parsed = JSON.parse(raw);
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new SyntaxError('record is not an object');
+  return parsed;
+}
+
+/** Page-edit leftovers and temp files that sit beside an original but are never the original. */
+const AUXILIARY_ORIGINAL = /\.(prev|next|tmp)$/;
+
+/** Lock key for settings.json; ids are 32 hex chars, so this can never collide with one. */
+const SETTINGS_LOCK = 'settings';
 
 export class LocalDocumentBackend implements DocumentBackend {
   readonly name: string;
@@ -60,7 +101,9 @@ export class LocalDocumentBackend implements DocumentBackend {
   private async findOriginalPath(id: string): Promise<string | null> {
     try {
       const entries = await fs.readdir(this.originalsDir);
-      const match = entries.find((name) => name.startsWith(`${id}.`) || name === id);
+      const match = entries.find(
+        (name) => (name.startsWith(`${id}.`) || name === id) && !AUXILIARY_ORIGINAL.test(name)
+      );
       return match ? path.join(this.originalsDir, match) : null;
     } catch {
       return null;
@@ -103,12 +146,18 @@ export class LocalDocumentBackend implements DocumentBackend {
    * catches everything and returns null. The library then reports the document as gone. Writing
    * beside it and renaming into place makes the swap atomic: the record is either the old one or
    * the new one, never a fragment of both.
+   *
+   * The record being replaced is kept as `{id}.json.bak` first, so damage from outside the app
+   * (a bad sync, a disk error) costs at most the last change rather than the whole document.
    */
   private async write(doc: StoredDocument): Promise<void> {
     const target = this.docPath(doc.id);
-    const temporary = `${target}.tmp`;
-    await fs.writeFile(temporary, JSON.stringify(doc), 'utf-8');
-    await fs.rename(temporary, target);
+    try {
+      await fs.copyFile(target, `${target}.bak`);
+    } catch (err) {
+      if (errorCode(err) !== 'ENOENT') throw err;
+    }
+    await writeFileAtomic(target, JSON.stringify(doc));
   }
 
   async saveDocument(params: SaveDocumentParams): Promise<DocumentMeta> {
@@ -139,10 +188,89 @@ export class LocalDocumentBackend implements DocumentBackend {
     if (!doc) return false;
 
     await this.ensureDirs();
+    // A page edit interrupted earlier must not later swap its PDF over this new file.
+    await this.recoverPageEdit(id);
     const source = filename || doc.filename;
-    await fs.writeFile(path.join(this.originalsDir, `${id}${safeExtension(source)}`), original);
+    await writeFileAtomic(path.join(this.originalsDir, `${id}${safeExtension(source)}`), original);
     await this.write({ ...doc, filename: source, originalBytes: original.length });
     return true;
+  }
+
+  editPdfPages<T>(
+    id: string,
+    edit: (input: PdfPageEditInput) => Promise<PdfPageEditOutput<T>>
+  ): Promise<T | null> {
+    if (!isValidId(id)) return Promise.resolve(null);
+    return this.withLock(id, () => this.editPdfPagesLocked(id, edit));
+  }
+
+  /**
+   * The order is what keeps the PDF and its marks a matching pair through a crash:
+   *
+   *   1. the old PDF is kept as `{id}.prev` (one step of undo),
+   *   2. the edited PDF is written and fsynced as `{id}.next`,
+   *   3. the record is committed with the renumbered marks and `pendingOriginal` — the commit point,
+   *   4. `{id}.next` is renamed over the original, last,
+   *   5. the flag is cleared.
+   *
+   * A crash before 3 leaves the old pair (the stray `.next` is discarded); a crash after it leaves
+   * the new marks with a flag that tells `recoverPageEdit` to finish step 4.
+   */
+  private async editPdfPagesLocked<T>(
+    id: string,
+    edit: (input: PdfPageEditInput) => Promise<PdfPageEditOutput<T>>
+  ): Promise<T | null> {
+    await this.recoverPageEdit(id);
+    const doc = await this.getDocument(id);
+    const originalPath = await this.findOriginalPath(id);
+    if (!doc || !originalPath) return null;
+
+    const current = await fs.readFile(originalPath);
+    const { pdf, annotations, result } = await edit({
+      pdf: current,
+      filename: doc.filename,
+      annotations: doc.annotations
+    });
+
+    const next = path.join(this.originalsDir, `${id}.next`);
+    await writeFileAtomic(path.join(this.originalsDir, `${id}.prev`), current);
+    await writeDurable(next, pdf);
+    const committed: StoredDocument = {
+      ...this.applyUpdate(doc, { annotations }),
+      originalBytes: pdf.length,
+      pendingOriginal: true
+    };
+    await this.write(committed);
+    await fs.rename(next, originalPath);
+    const { pendingOriginal: _pending, ...settled } = committed;
+    await this.write(settled);
+    return result;
+  }
+
+  /**
+   * Finishes or undoes a page edit a crash interrupted. Must run inside the document's lock.
+   * Flag set: the marks are already renumbered, so the waiting PDF goes into place. No flag: the
+   * record was never committed, so the waiting PDF is thrown away.
+   */
+  private async recoverPageEdit(id: string): Promise<void> {
+    const next = path.join(this.originalsDir, `${id}.next`);
+    const hasNext = existsSync(next);
+    const doc = await this.getDocument(id);
+    if (!doc?.pendingOriginal) {
+      if (hasNext) {
+        await fs.rm(next, { force: true });
+        console.warn(`[Marginalia] discarded an unfinished page edit on ${id}; its marks were never changed`);
+      }
+      return;
+    }
+    if (hasNext) {
+      const target =
+        (await this.findOriginalPath(id)) ?? path.join(this.originalsDir, `${id}${safeExtension(doc.filename)}`);
+      await fs.rename(next, target);
+      console.warn(`[Marginalia] finished an interrupted page edit on ${id}`);
+    }
+    const { pendingOriginal: _pending, ...settled } = doc;
+    await this.write(settled);
   }
 
   /**
@@ -152,8 +280,9 @@ export class LocalDocumentBackend implements DocumentBackend {
    */
   async getDocument(id: string): Promise<StoredDocument | null> {
     if (!isValidId(id)) return null;
-    try {
-      const raw = JSON.parse(await fs.readFile(this.docPath(id), 'utf-8')) as Partial<StoredDocument>;
+    const raw = await this.readRecord(id);
+    if (!raw) return null;
+    {
       const annotations = Array.isArray(raw.annotations) ? raw.annotations : [];
       return {
         id,
@@ -177,15 +306,52 @@ export class LocalDocumentBackend implements DocumentBackend {
         readingState: raw.readingState ?? null,
         // Absent on every record written before analyses were saved, which is most of them.
         analysis: raw.analysis ?? null,
-        annotationsBackup: raw.annotationsBackup ?? null
+        annotationsBackup: raw.annotationsBackup ?? null,
+        ...(raw.pendingOriginal === true && { pendingOriginal: true as const })
       };
-    } catch {
+    }
+  }
+
+  /**
+   * Reads `{id}.json`, falling back to `{id}.json.bak`.
+   *
+   * A record that does not parse used to make the document silently vanish. Now it is logged and
+   * moved aside to `{id}.json.corrupt-<time>` (never deleted or overwritten), and the backup answers instead. A read
+   * error that is not corruption (permissions, I/O) is logged and left alone.
+   */
+  private async readRecord(id: string): Promise<Partial<StoredDocument> | null> {
+    const target = this.docPath(id);
+    try {
+      return parseRecord(await fs.readFile(target, 'utf-8'));
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        const quarantine = `${target}.corrupt-${Date.now()}`;
+        console.error(`[Marginalia] record ${id} is corrupt; moving it to ${path.basename(quarantine)}`, err);
+        await fs.rename(target, quarantine).catch(() => undefined);
+      } else if (errorCode(err) !== 'ENOENT') {
+        console.error(`[Marginalia] record ${id} could not be read`, err);
+        return null;
+      }
+    }
+    try {
+      const backup = parseRecord(await fs.readFile(`${target}.bak`, 'utf-8'));
+      console.warn(`[Marginalia] record ${id} served from its backup ${id}.json.bak`);
+      return backup;
+    } catch (err) {
+      if (errorCode(err) !== 'ENOENT') console.error(`[Marginalia] backup of record ${id} is unusable`, err);
       return null;
     }
   }
 
-  async getOriginal(id: string): Promise<{ buffer: Buffer; filename: string } | null> {
-    if (!isValidId(id)) return null;
+  getOriginal(id: string): Promise<{ buffer: Buffer; filename: string } | null> {
+    if (!isValidId(id)) return Promise.resolve(null);
+    return this.withLock(id, async () => {
+      await this.recoverPageEdit(id);
+      return this.readOriginal(id);
+    });
+  }
+
+  private async readOriginal(id: string): Promise<{ buffer: Buffer; filename: string } | null> {
     const filePath = await this.findOriginalPath(id);
     if (!filePath) return null;
     try {
@@ -198,13 +364,17 @@ export class LocalDocumentBackend implements DocumentBackend {
 
   async listDocuments(): Promise<DocumentMeta[]> {
     await this.ensureDirs();
-    const entries = await fs.readdir(this.docsDir);
+    // A record whose .json is gone or quarantined but whose .bak survives is still listed.
+    const ids = new Set<string>();
+    for (const entry of await fs.readdir(this.docsDir)) {
+      const match = /^(.+)\.json(\.bak)?$/.exec(entry);
+      if (match) ids.add(match[1]);
+    }
     const metas: DocumentMeta[] = [];
-    for (const entry of entries) {
-      if (!entry.endsWith('.json')) continue;
-      const doc = await this.getDocument(entry.replace(/\.json$/, ''));
+    for (const id of ids) {
+      const doc = await this.getDocument(id);
       if (!doc) continue;
-      const { text, annotations, analysis, annotationsBackup, ...rest } = doc;
+      const { text, annotations, analysis, annotationsBackup, pendingOriginal, ...rest } = doc;
       metas.push({ ...rest, analysis: summarizeAnalysis(analysis) });
     }
     return metas.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -220,7 +390,15 @@ export class LocalDocumentBackend implements DocumentBackend {
   ): Promise<DocumentMeta | null> {
     const doc = await this.getDocument(id);
     if (!doc) return null;
+    const updated = this.applyUpdate(doc, params);
+    await this.write(updated);
 
+    const { text, annotations: _a, analysis, annotationsBackup: _b, pendingOriginal: _p, ...rest } = updated;
+    return { ...rest, analysis: summarizeAnalysis(analysis) };
+  }
+
+  /** The record after `params` is applied, including the shrink backup. Pure; writes nothing. */
+  private applyUpdate(doc: StoredDocument, params: UpdateDocumentParams): StoredDocument {
     const annotations = params.restoreAnnotationsBackup
       ? doc.annotationsBackup?.annotations ?? doc.annotations
       : params.annotations ?? doc.annotations;
@@ -253,7 +431,7 @@ export class LocalDocumentBackend implements DocumentBackend {
       params.title !== undefined ||
       params.annotations !== undefined ||
       params.restoreAnnotationsBackup === true;
-    const updated: StoredDocument = {
+    return {
       ...doc,
       title: params.title?.trim() ? params.title.trim() : doc.title,
       annotations,
@@ -266,10 +444,6 @@ export class LocalDocumentBackend implements DocumentBackend {
       annotationsBackup,
       updatedAt: changesActivity ? new Date().toISOString() : doc.updatedAt
     };
-    await this.write(updated);
-
-    const { text, annotations: _a, analysis, annotationsBackup: _b, ...rest } = updated;
-    return { ...rest, analysis: summarizeAnalysis(analysis) };
   }
 
   /**
@@ -280,21 +454,22 @@ export class LocalDocumentBackend implements DocumentBackend {
   async deleteDocument(id: string): Promise<boolean> {
     if (!isValidId(id)) return false;
     let deleted = false;
-    try {
-      await fs.unlink(this.docPath(id));
-      deleted = true;
-    } catch {
-      /* already gone */
-    }
-    const original = await this.findOriginalPath(id);
-    if (original) {
+    const unlink = async (file: string) => {
       try {
-        await fs.unlink(original);
+        await fs.unlink(file);
         deleted = true;
       } catch {
         /* already gone */
       }
-    }
+    };
+    const record = this.docPath(id);
+    for (const file of [record, `${record}.bak`]) await unlink(file);
+    // Every quarantined copy (`.corrupt`, `.corrupt-<time>`).
+    const corrupt = (await fs.readdir(this.docsDir).catch(() => [] as string[])).filter((n) => n.startsWith(`${id}.json.corrupt`));
+    for (const name of corrupt) await unlink(path.join(this.docsDir, name));
+    const original = await this.findOriginalPath(id);
+    if (original) await unlink(original);
+    for (const suffix of ['prev', 'next']) await unlink(path.join(this.originalsDir, `${id}.${suffix}`));
     return deleted;
   }
 
@@ -304,20 +479,20 @@ export class LocalDocumentBackend implements DocumentBackend {
     let removed = 0;
 
     const docs = await this.listDocuments();
-    const liveIds = new Set<string>();
     for (const meta of docs) {
       // A null `expiresAt` means retention is off for this document and it is kept until the
       // user deletes it themselves.
       if (meta.expiresAt && new Date(meta.expiresAt).getTime() <= now) {
         await this.deleteDocument(meta.id);
         removed++;
-      } else {
-        liveIds.add(meta.id);
       }
     }
 
-    // Remove originals whose metadata file is already gone, so a delete interrupted halfway
-    // through can't leave the originals directory growing invisibly.
+    // Remove originals whose record is entirely gone, so a delete interrupted halfway through
+    // can't leave the originals directory growing invisibly. ANY file for the id in documents/
+    // (.json, .json.bak, .json.corrupt) keeps its original: a record that failed to parse is not
+    // a deleted document, and its original may be the only copy left.
+    const liveIds = new Set((await fs.readdir(this.docsDir)).map((name) => name.split('.')[0]));
     try {
       for (const name of await fs.readdir(this.originalsDir)) {
         if (!liveIds.has(name.split('.')[0])) {
@@ -340,8 +515,53 @@ export class LocalDocumentBackend implements DocumentBackend {
     }
   }
 
-  async saveSettings(settings: Record<string, unknown>): Promise<void> {
+  /** Merges `patch` into the stored settings under the settings lock (the `/gemini-config` writer). */
+  saveSettings(patch: Record<string, unknown>): Promise<void> {
+    return this.withLock(SETTINGS_LOCK, async () => {
+      await this.writeSettings({ ...(await this.readSettingsForMerge()), ...patch });
+    });
+  }
+
+  /**
+   * The client's settings PUT. It used to replace the whole file, and the client's copy is a
+   * snapshot from launch — so a Gemini key saved since then through `/gemini-config` was wiped
+   * by the next theme change. Merging into what is stored, and never taking `gemini*` from here,
+   * leaves the key to the one route that is meant to change it.
+   */
+  saveClientSettings(incoming: Record<string, unknown>): Promise<void> {
+    return this.withLock(SETTINGS_LOCK, async () => {
+      const next = await this.readSettingsForMerge();
+      for (const [key, value] of Object.entries(incoming)) {
+        if (!isGeminiKey(key)) next[key] = value;
+      }
+      await this.writeSettings(next);
+    });
+  }
+
+  /** `{}` when there is no file; a corrupt file is copied to `settings.json.bad-<time>` first. */
+  private async readSettingsForMerge(): Promise<Record<string, unknown>> {
+    let raw: string;
+    try {
+      raw = await fs.readFile(this.settingsPath, 'utf-8');
+    } catch (err) {
+      if (errorCode(err) === 'ENOENT') return {};
+      throw err; // unreadable is not empty: writing from {} would drop the stored key
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+    } catch {
+      /* handled below */
+    }
+    // Timestamped, so a second corruption never overwrites the first copy.
+    const backup = `${this.settingsPath}.bad-${Date.now()}`;
+    await fs.copyFile(this.settingsPath, backup);
+    console.error(`[Marginalia] settings.json was corrupt; kept a copy as ${path.basename(backup)}`);
+    return {};
+  }
+
+  private async writeSettings(settings: Record<string, unknown>): Promise<void> {
     await fs.mkdir(this.location, { recursive: true });
-    await fs.writeFile(this.settingsPath, JSON.stringify(settings), 'utf-8');
+    await writeFileAtomic(this.settingsPath, JSON.stringify(settings));
   }
 }

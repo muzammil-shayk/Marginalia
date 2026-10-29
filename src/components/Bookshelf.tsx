@@ -443,6 +443,203 @@ const FlyingBook: React.FC<{
   );
 };
 
+/* ── Read: the camera pushes in on the desk's open book until page one is the reader's page ── */
+
+/** Seconds: the room fades back, the page pushes in, the reader shows through. Total ~1.35 s. */
+const ZOOM_FADE_BACK = 0.5;
+const ZOOM_PUSH = 1.0;
+const ZOOM_HANDOFF = 0.35;
+/** Give up waiting for the reader's first page after this long and show whatever is there. */
+const ZOOM_PATIENCE = 3;
+let zooming = false;
+
+type Box = { x: number; y: number; w: number };
+
+/**
+ * Where the reader's first page will be, and whether it has painted. The PDF viewer's page 1 counts
+ * once pdf.js has finished it (its text layer closes with `.endOfContent`); the text reader marks its
+ * reading column `data-zoom-target`. Either is null until the reader has mounted.
+ */
+function readerPage(): { box: Box; painted: boolean } | null {
+  const pdfPage = document.querySelector<HTMLElement>('[data-page-number="1"][data-page-sized="true"]');
+  if (pdfPage) {
+    const r = pdfPage.getBoundingClientRect();
+    return { box: { x: r.left + r.width / 2, y: r.top, w: r.width }, painted: Boolean(pdfPage.querySelector('.endOfContent')) };
+  }
+  const column = document.querySelector<HTMLElement>('[data-zoom-target]');
+  if (!column) return null;
+  const r = column.getBoundingClientRect();
+  return { box: { x: r.left + r.width / 2, y: r.top, w: r.width }, painted: true };
+}
+
+/**
+ * Lifts the desk's page into a fixed overlay and pushes in on it while the room fades to the reader's
+ * ground; `open` swaps the screen behind once nothing of Home shows. The page then settles exactly on
+ * the reader's own first page and the overlay fades, so the two cross-dissolve. Imperative, on
+ * document.body, because Home (and this shelf) unmounts halfway through. Transform, clip and opacity
+ * only.
+ */
+function zoomIntoReader(deskBook: HTMLElement, reduced: boolean, open: () => unknown) {
+  if (zooming) return;
+  const page = deskBook.querySelector<HTMLElement>('.shelf-page');
+  if (!page) return void open();
+  zooming = true;
+  // Nothing on Home should take keys (a repeated Enter, Escape to shelve) while it fades away.
+  (document.activeElement as HTMLElement | null)?.blur();
+
+  const stage = deskBook.closest('.shelf-stage');
+  const stageStyle = stage ? getComputedStyle(stage) : null;
+  const ground = getComputedStyle(document.getElementById('app-container') ?? document.body).backgroundColor;
+
+  const root = document.createElement('div');
+  root.className = 'shelf-zoom';
+  root.setAttribute('aria-hidden', 'true');
+  for (const v of ['--shelf-tooth', '--shelf-cast', '--shelf-cast-edge']) root.style.setProperty(v, stageStyle?.getPropertyValue(v) ?? '');
+  const backdrop = document.createElement('div');
+  backdrop.className = 'shelf-zoom-ground';
+  backdrop.style.background = ground;
+  backdrop.style.opacity = '0';
+  root.append(backdrop);
+
+  // Desk geometry: the page's laid-out size and centre (its rect is the bounding box of a tilted page).
+  const w0 = deskBook.offsetWidth;
+  const h0 = deskBook.offsetHeight;
+  const dr = deskBook.getBoundingClientRect();
+  const desk = { x: dr.left + dr.width / 2, y: dr.top + dr.height / 2 };
+
+  // The whole page as it is printed. A PDF's first page is shown on the desk cropped to 3:4 (cover, top);
+  // here it is set uncropped at its own proportions and clipped back to the desk's crop, which opens out.
+  const img = page.querySelector('img');
+  const ratio = img?.naturalWidth ? img.naturalHeight / img.naturalWidth : h0 / w0;
+  const cover = img?.naturalWidth ? Math.max(w0, h0 / ratio) : w0;
+  const full = { w: cover, h: cover * ratio };
+  const crop = { x: (full.w - w0) / 2, bottom: full.h - h0 };
+
+  // Where the reader will put page one, until it can be measured. The PDF viewer opens a page at
+  // 125% (A4 is 595pt wide) unless that is under half or over 2.5x its column, then fits it; the text
+  // reader's column is at most 672px. Both sit centred in the content area, under their bars.
+  const aside = document.querySelector('#app-container > aside');
+  const left = aside && aside.getClientRects().length ? aside.getBoundingClientRect().right : 0;
+  const area = window.innerWidth - left;
+  const column = area - 32;
+  const atZoom = 1.25 * 595;
+  const guessW = img ? (atZoom < column * 0.5 || atZoom > column * 2.5 ? column - 48 : atZoom) : Math.min(672, area);
+  const guess: Box = { x: left + Math.max(area / 2, 16 + guessW / 2), y: img ? 168 : 158, w: guessW };
+
+  // Built at its likely final size so text and image are drawn sharp, then scaled down to the desk.
+  const bw = Math.max(w0, guessW);
+  const bh = bw * ratio;
+  const s0 = full.w / bw;
+
+  const sheet = document.createElement('div');
+  sheet.className = 'shelf-zoom-page';
+  sheet.style.width = `${bw}px`;
+  sheet.style.height = `${bh}px`;
+  const shadow = document.createElement('div');
+  shadow.className = 'shelf-zoom-shadow';
+  // The desk's own cast, in the sheet's units, so the first frame matches; it fades as the page lifts.
+  shadow.style.boxShadow = `${14 / s0}px ${22 / s0}px ${36 / s0}px var(--shelf-cast), ${2 / s0}px ${3 / s0}px 0 var(--shelf-cast-edge)`;
+  const leaf = page.cloneNode(true) as HTMLElement;
+  sheet.append(shadow, leaf);
+  // A text page is set larger than the reader sets its lines, so the two would double-expose: it fades
+  // into the reader's ground (the veil) while the reader's own page shows through.
+  const textPage = !img;
+  const veil = document.createElement('div');
+  veil.className = 'shelf-zoom-veil';
+  veil.style.background = ground;
+  if (textPage) sheet.append(veil);
+  if (!reduced) root.append(sheet);
+  document.body.append(root);
+
+  // The page's centre at the desk pose: the crop's centre sits (full.h - h0)/2 above the full page's.
+  const tilt = (DESK_TILT * Math.PI) / 180;
+  const off = (full.h - h0) / 2;
+  const from = { x: desk.x - off * Math.sin(tilt), y: desk.y + off * Math.cos(tilt) };
+
+  deskBook.style.visibility = 'hidden';
+  const started = performance.now();
+  let opened = false;
+  /** When the overlay starts to fade (s): a text page hands over as its veil closes, a PDF page once it has landed. */
+  const handAt = textPage ? ZOOM_PUSH - 0.2 : ZOOM_PUSH;
+  /** When the reader's page was first measured (s). */
+  let metAt = -1;
+  let readyAt = 0;
+  let stable = 0;
+  let prev: Box | null = null;
+  let raf = 0;
+
+  // The full page's box moves on straight lines (centre and width mixed linearly), so every edge,
+  // the scale and the tilt each travel one way only.
+  const draw = (e: number, a: Box) => {
+    const w = mix(full.w, a.w, e);
+    const s = w / bw;
+    const x = mix(from.x, a.x, e);
+    const y = mix(from.y, a.y + (a.w * ratio) / 2, e);
+    const k = (1 - e) / s0;
+    sheet.style.transform = `translate3d(${x - bw / 2}px, ${y - bh / 2}px, 0) rotate(${mix(DESK_TILT, 0, e)}deg) scale(${s})`;
+    sheet.style.clipPath = `inset(0 ${crop.x * k}px ${crop.bottom * k}px round ${3 / s}px)`;
+    shadow.style.opacity = String(1 - clamp01(e / 0.5));
+    // The binding's curve belongs to the book on the desk, not to the reader's page.
+    sheet.style.setProperty('--gutter', String(1 - e));
+  };
+
+  const finish = () => {
+    cancelAnimationFrame(raf);
+    root.remove();
+    deskBook.style.visibility = '';
+    zooming = false;
+    const t = document.querySelector<HTMLElement>('[data-zoom-target]');
+    if (t) t.focus({ preventScroll: true });
+  };
+
+  const tick = (now: number) => {
+    try {
+      const t = (now - started) / 1000;
+      const fadeBack = reduced ? 0.2 : ZOOM_FADE_BACK;
+      backdrop.style.opacity = String(inOut(clamp01(t / fadeBack)));
+      if (!opened && t >= fadeBack) {
+        opened = true;
+        void open();
+      }
+
+      // Once the reader's page is measured, the aim eases from the guess onto it, done as the push ends
+      // (or in 0.3 s if it came late), and tracks it from then on.
+      const seen = opened ? readerPage() : null;
+      let aim = guess;
+      let q = 0;
+      if (seen) {
+        if (metAt < 0) metAt = t;
+        q = inOut(clamp01((t - metAt) / Math.max(0.3, handAt - metAt)));
+        aim = { x: mix(guess.x, seen.box.x, q), y: mix(guess.y, seen.box.y, q), w: mix(guess.w, seen.box.w, q) };
+        const still = prev && Math.abs(prev.x - seen.box.x) + Math.abs(prev.y - seen.box.y) + Math.abs(prev.w - seen.box.w) < 0.5;
+        stable = still ? stable + 1 : 0;
+        prev = seen.box;
+      }
+      const e = reduced ? 1 : inOut(clamp01(t / ZOOM_PUSH));
+      if (!reduced) draw(e, aim);
+      // ...and are already half gone as the push slows, before the reader shows.
+      if (textPage && !readyAt) veil.style.opacity = String(0.5 * inOut(clamp01((e - 0.7) / 0.3)));
+
+      // Hand over once the push is (all but) done and on the reader's page, which has painted and holds still.
+      const due = reduced ? opened : t >= handAt;
+      if (!readyAt && due && ((seen?.painted && (q === 1 || reduced) && stable >= 2) || t > ZOOM_PATIENCE)) readyAt = now;
+      if (readyAt) {
+        const f = clamp01((now - readyAt) / 1000 / (reduced ? 0.25 : ZOOM_HANDOFF));
+        root.style.opacity = String(1 - inOut(f));
+        // A text page's lines go to the ground at 1.6x the fade, so they sink under the reader's rising
+        // lines instead of stacking on them, and some text is on screen in every frame.
+        if (textPage) veil.style.opacity = String(Math.max(+veil.style.opacity, inOut(clamp01(f * 1.6))));
+        if (f >= 1) return finish();
+      }
+      raf = requestAnimationFrame(tick);
+    } catch {
+      finish();
+    }
+  };
+  if (!reduced) draw(0, guess);
+  raf = requestAnimationFrame(tick);
+}
+
 interface BookshelfProps {
   docs: StoredDocumentMeta[];
   groupByMonth: boolean;
@@ -970,7 +1167,11 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
                       draft={draft}
                       confirmingDelete={confirmingDelete}
                       readRef={readRef}
-                      onOpen={() => onOpen(selected)}
+                      onOpen={() => {
+                        const book = deskBookRef.current;
+                        if (book && landedId === selected.id) zoomIntoReader(book, Boolean(reduced), () => onOpen(selected));
+                        else onOpen(selected);
+                      }}
                       onStartRename={() => {
                         setDraft(selected.title);
                         setRenaming(true);

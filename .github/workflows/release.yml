@@ -56,22 +56,20 @@ jobs:
             target: --win
             artifacts: |
               release/*.exe
-              release/*.exe.blockmap
               release/latest.yml
           - os: macos-latest
             target: --mac
             artifacts: |
               release/*.dmg
               release/*.zip
-              release/*.zip.blockmap
               release/latest-mac.yml
 
     runs-on: ${{ matrix.os }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -101,7 +99,7 @@ jobs:
       # Also kept as a workflow artifact, so a manual run without a tag still produces something
       # downloadable even before the release goes up.
       - name: Keep the installer as a build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: marginalia-${{ matrix.os }}
           path: ${{ matrix.artifacts }}
@@ -120,10 +118,10 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Collect every platform's installers
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           path: incoming
 
@@ -186,17 +184,7 @@ jobs:
                 echo "$MANIFEST points at '$WANTED', which is not on the release."
                 exit 1
               }
-              # electron-updater fetches "<url>.blockmap" to download only the changed blocks.
-              # Without it the update silently falls back to the full installer.
-              case "$WANTED" in
-                *.exe|*.zip)
-                  echo "$NAMES" | grep -qxF "$WANTED.blockmap" || {
-                    echo "$MANIFEST points at '$WANTED', but '$WANTED.blockmap' is not on the release."
-                    exit 1
-                  }
-                  ;;
-              esac
             done
           done
           echo "Release carries installers and update manifests for both platforms,"
-          echo "and every file the manifests reference (with its blockmap) is present."
+          echo "and every file the manifests reference is present."

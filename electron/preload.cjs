@@ -55,5 +55,21 @@ contextBridge.exposeInMainWorld('marginaliaDesktop', {
   /** The update version the reader said "Later" to, kept on disk across restarts. */
   getDismissedUpdate: () => ipcRenderer.invoke('marginalia:updater-get-dismissed'),
   /** Records the update version the reader said "Later" to. */
-  setDismissedUpdate: (version) => ipcRenderer.invoke('marginalia:updater-set-dismissed', version)
+  setDismissedUpdate: (version) => ipcRenderer.invoke('marginalia:updater-set-dismissed', version),
+
+  /**
+   * Registers the renderer's "save everything pending now" handler. Main calls it before a window
+   * closes or the app quits (see electron/flushOnExit.cjs) and waits up to 3 s for the answer.
+   * Returns an unsubscribe function.
+   */
+  onFlushPendingSaves: (handler) => {
+    const listener = (_event, requestId) => {
+      Promise.resolve()
+        .then(handler)
+        .then((ok) => ok === true, () => false)
+        .then((ok) => ipcRenderer.send('marginalia:flush-pending-saves-done', requestId, ok));
+    };
+    ipcRenderer.on('marginalia:flush-pending-saves', listener);
+    return () => ipcRenderer.removeListener('marginalia:flush-pending-saves', listener);
+  }
 });

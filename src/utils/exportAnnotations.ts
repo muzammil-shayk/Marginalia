@@ -57,7 +57,8 @@ export function generatePlainText(notes: StickyNote[], options: ExportOptions): 
     output += `${idx + 1}. ${note.title}\n`;
     output += `   Theme:     ${themeName(note.themeId, options.themes)}\n`;
     output += `   Author:    ${note.author || 'Reader'}\n`;
-    output += `   Date:      ${note.timestamp}\n`;
+    const date = noteDateLabel(note);
+    if (date) output += `   Date:      ${date}\n`;
 
     if (note.quote && options.includeQuotes) {
       output += `\n   Passage Excerpt:\n`;
@@ -93,7 +94,8 @@ export function generateMarkdown(notes: StickyNote[], options: ExportOptions): s
   notes.forEach((note, idx) => {
     md += `### ${idx + 1}. ${note.title}\n\n`;
     md += `- **Theme:** ${themeName(note.themeId, options.themes)}\n`;
-    md += `- **Author:** ${note.author || 'Reader'} (${note.timestamp})\n`;
+    const date = noteDateLabel(note);
+    md += `- **Author:** ${note.author || 'Reader'}${date ? ` (${date})` : ''}\n`;
     md += `\n`;
 
     if (note.quote && options.includeQuotes) {
@@ -223,7 +225,7 @@ export function exportToPDF(notes: StickyNote[], options: ExportOptions): void {
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(8.5);
     doc.setTextColor(100, 100, 100);
-    const themeLabel = `Theme: ${themeName(note.themeId, options.themes)}  •  Author: ${note.author || 'Reader'}  •  ${note.timestamp}`;
+    const themeLabel = `Theme: ${themeName(note.themeId, options.themes)}  •  Author: ${note.author || 'Reader'}${noteDateLabel(note) ? `  •  ${noteDateLabel(note)}` : ''}`;
     doc.text(themeLabel, margin + 3, y);
     y += 5;
 
@@ -279,4 +281,18 @@ export function downloadTextFile(content: string, filename: string, mimeType: st
 
 function sanitizeFilename(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]/gi, '-').replace(/-+/g, '-').slice(0, 30);
+}
+
+/**
+ * The date printed for a note: `createdAt` as a readable local date when present. Older notes
+ * only have `timestamp`, which for some is the placeholder "Just now" — printing that in an
+ * export claims a time it does not know, so it prints nothing instead.
+ */
+export function noteDateLabel(note: StickyNote): string {
+  const created = note.createdAt ? new Date(note.createdAt) : null;
+  if (created && !Number.isNaN(created.getTime())) {
+    return created.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+  }
+  const legacy = (note.timestamp || '').trim();
+  return /^just now$/i.test(legacy) ? '' : legacy;
 }
