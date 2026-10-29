@@ -56,8 +56,8 @@ export const Header: React.FC<HeaderProps> = ({
         type="button"
         onClick={onOpenMenu}
         aria-label="Open Navigation Menu"
-        className={`p-2 -ml-2 rounded-lg transition-colors ${
-          isDark ? 'hover:bg-white/10 text-stone-300' : 'hover:bg-stone-200/60 text-stone-700'
+        className={`p-2 -ml-2 rounded-lg transition-colors duration-150 ease-out ${
+          `${isDark ? 'text-stone-300' : 'text-stone-700'} hover:bg-nav-hover hover:text-nav-active-fg`
         }`}
       >
         <Menu className="w-5 h-5" />
@@ -69,7 +69,7 @@ export const Header: React.FC<HeaderProps> = ({
         onClick={handleLogoClick}
         className="cursor-pointer select-none hover:opacity-85 transition-opacity"
       >
-        <img src={logo} alt="Marginalia" className="h-16 w-auto dark:box-content dark:bg-paper dark:rounded-2xl dark:p-2 dark:shadow-sm" />
+        <img src={logo} alt="Marginalia" className="block h-auto w-auto max-h-16 max-w-full shrink-0 dark:box-content dark:max-w-[calc(100%-1rem)] dark:bg-paper dark:rounded-2xl dark:p-2" />
       </h1>
 
       {/* Search Button (also fulfills //a[contains(., 'Search')] | //button[contains(., 'search')]) */}
@@ -78,8 +78,8 @@ export const Header: React.FC<HeaderProps> = ({
         type="button"
         onClick={handleSearchClick}
         aria-label="search Search"
-        className={`p-2 -mr-2 rounded-lg transition-colors flex items-center gap-1 ${
-          isDark ? 'hover:bg-white/10 text-stone-300' : 'hover:bg-stone-200/60 text-stone-700'
+        className={`p-2 -mr-2 rounded-lg transition-colors duration-150 ease-out flex items-center gap-1 ${
+          `${isDark ? 'text-stone-300' : 'text-stone-700'} hover:bg-nav-hover hover:text-nav-active-fg`
         }`}
       >
         <span className="sr-only">search Search</span>

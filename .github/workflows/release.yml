@@ -56,12 +56,14 @@ jobs:
             target: --win
             artifacts: |
               release/*.exe
+              release/*.exe.blockmap
               release/latest.yml
           - os: macos-latest
             target: --mac
             artifacts: |
               release/*.dmg
               release/*.zip
+              release/*.zip.blockmap
               release/latest-mac.yml
 
     runs-on: ${{ matrix.os }}
@@ -184,7 +186,17 @@ jobs:
                 echo "$MANIFEST points at '$WANTED', which is not on the release."
                 exit 1
               }
+              # electron-updater fetches "<url>.blockmap" to download only the changed blocks.
+              # Without it the update silently falls back to the full installer.
+              case "$WANTED" in
+                *.exe|*.zip)
+                  echo "$NAMES" | grep -qxF "$WANTED.blockmap" || {
+                    echo "$MANIFEST points at '$WANTED', but '$WANTED.blockmap' is not on the release."
+                    exit 1
+                  }
+                  ;;
+              esac
             done
           done
           echo "Release carries installers and update manifests for both platforms,"
-          echo "and every file the manifests reference is present."
+          echo "and every file the manifests reference (with its blockmap) is present."

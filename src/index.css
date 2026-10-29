@@ -52,6 +52,9 @@
   --color-on-accent: var(--on-accent);
   --color-gold: var(--gold);
   --color-muted: var(--muted);
+  --color-nav-active: var(--nav-active-bg);
+  --color-nav-active-fg: var(--nav-active-fg);
+  --color-nav-hover: var(--nav-hover-bg);
 }
 
 @layer base {
@@ -66,6 +69,12 @@
     --gold: #7d5a0f;
     /* muted text: >= 4.5:1 on every surface it sits on (4.88 on stone-200 light, 4.77 on stone-800 dark) */
     --muted: #625b4d;
+    /* nav selected tab: the logo's sage as a soft pill. Composites on paper to #cfd5c9 (active)
+       and #e4e4db (hover); fg 6.47:1 on active, 7.58:1 on hover. */
+    --nav-active-bg: rgb(61 107 82 / 0.2);
+    --nav-hover-bg: rgb(61 107 82 / 0.08);
+    --nav-active-fg: #2f4a3c;
+    --nav-active-ring: transparent;
   }
 
   .dark {
@@ -74,6 +83,12 @@
     --on-accent: #0b0b0a;
     --gold: #e9b949;
     --muted: #968e7d;
+    /* paper at low opacity on night: active composites to #323230 (cream fg 11.2:1) with a cream
+       inner edge, hover #1b1b19 (15.0:1), rest #0b0b0a (stone-400 label 7.1:1) */
+    --nav-active-bg: rgb(243 239 231 / 0.17);
+    --nav-hover-bg: rgb(243 239 231 / 0.07);
+    --nav-active-fg: #f3efe7;
+    --nav-active-ring: rgb(243 239 231 / 0.2);
   }
 
   html, body {
@@ -82,6 +97,11 @@
     -webkit-text-size-adjust: 100%;
     -webkit-tap-highlight-color: transparent;
   }
+}
+
+/* Selected nav item: in dark mode a cream inner edge sets it apart from hover (transparent in light). */
+.bg-nav-active {
+  box-shadow: inset 0 0 0 1px var(--nav-active-ring);
 }
 
 /* Enable native text selection handles and callouts for mobile devices */
@@ -183,6 +203,23 @@
   background: rgba(112, 105, 89, 0.5);
 }
 
+/* Horizontal chip strips (reader + PDF theme pickers). Setting `scrollbar-width` makes Chromium
+   ignore the ::-webkit-scrollbar rules above and draw its default light bar, so the colour is
+   set here too. scroll-padding keeps a chip scrolled into view off the window edge. */
+.chip-strip {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(112 105 89 / 0.35) transparent;
+  scroll-padding-inline: 12px;
+}
+.dark .chip-strip {
+  scrollbar-color: rgb(255 255 255 / 0.16) transparent;
+}
+@media (min-width: 640px) {
+  .chip-strip {
+    scroll-padding-inline: 24px;
+  }
+}
+
 /* ── Dashboard motion ──────────────────────────────────────────────────────
    One strong ease-out, shared by every entrance and press on the library
    dashboard. Rows stagger in on first paint; `motion-safe:` gates the whole
@@ -230,11 +267,18 @@
    Buttons across the app set hover and active styles but almost none set a
    focus ring, which left keyboard focus invisible nearly everywhere. One rule
    covers every control that does not style its own, and `:focus-visible` keeps
-   it off mouse clicks. */
-:where(button, [role='button'], a, summary):focus-visible {
+   it off mouse clicks. Chromium also turns an already focused button
+   :focus-visible on any later key, even a lone Cmd (screenshot, app switch),
+   so App.tsx marks the last input on <html> and the ring hides while it is
+   `pointer`. With no mark yet, rings show. */
+:root:not([data-input='pointer']) :where(button, [role='button'], a, summary):focus-visible {
   outline: 2px solid var(--gold);
   outline-offset: 2px;
   border-radius: 0.5rem;
+}
+/* ...and Chromium's own `outline: auto` must not stand in for it while the mouse is in charge. */
+:root[data-input='pointer'] :where(button, [role='button'], a, summary):focus-visible {
+  outline: none;
 }
 
 /* ── Panel and tab transitions ─────────────────────────────────────────────
@@ -346,7 +390,9 @@
 }
 .upd[data-os='win'],
 .upd-note[data-os='win'] {
-  --upd-font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  /* system-ui before 'Segoe UI': on Windows it is Segoe UI anyway, and a host whose only
+     'Segoe UI' face is Black (Office on a Mac) never matches it for body text. */
+  --upd-font: 'Segoe UI Variable Text', system-ui, 'Segoe UI', sans-serif;
   --upd-accent: #005fb8;
   --upd-accent-hover: #196ebf;
   --upd-on-accent: #fff;
@@ -468,8 +514,8 @@
 .upd[data-os='mac'][data-theme='dark'] .upd-btn:active:not(:disabled) {
   filter: brightness(1.25);
 }
-.upd[data-os='mac'] .upd-btn:focus-visible,
-.upd-note[data-os='mac'] .upd-note-close:focus-visible {
+:root:not([data-input='pointer']) .upd[data-os='mac'] .upd-btn:focus-visible,
+:root:not([data-input='pointer']) .upd-note[data-os='mac'] .upd-note-close:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px rgb(0 113 235 / 0.55);
 }
@@ -493,6 +539,7 @@
 }
 .upd[data-os='win'] .upd-body {
   margin-top: 12px;
+  font-weight: 400;
   font-size: 14px;
   line-height: 20px;
 }
@@ -532,8 +579,8 @@
 .upd[data-os='win'] .upd-btn:active:not(:disabled) {
   opacity: 0.8;
 }
-.upd[data-os='win'] .upd-btn:focus-visible,
-.upd-note[data-os='win'] .upd-note-close:focus-visible {
+:root:not([data-input='pointer']) .upd[data-os='win'] .upd-btn:focus-visible,
+:root:not([data-input='pointer']) .upd-note[data-os='win'] .upd-note-close:focus-visible {
   outline: 2px solid var(--upd-focus);
   outline-offset: 1px;
 }
@@ -641,22 +688,53 @@
 }
 
 /* ── The bookshelf (Home library) ──────────────────────────────────────────
-   A night shelf: black stage, cream ink, gold bookends. It keeps these colours
-   in both themes, the way a lit bookcase looks the same whatever the room.
+   The shelf stands in the room: paper and ink in light, night and cream in dark,
+   on the app's own background. Only the books (fixed cloth palette) and the gold
+   ribbon and bookends keep their colours in both themes.
    Hover and keyboard focus share one state (`data-lifted`): the spine rises on
    a long ease-out with no overshoot, and the caption above names it. With
    reduced motion the spine does not move; a cream ring marks it instead. */
 .shelf-stage {
-  --shelf-bg: #000;
-  --shelf-ink: #f3efe7;
-  --shelf-card: #101010;
+  /* Light: the app's paper. Text contrast here: ink 72% labels >= 6.3:1, ink >= 14:1 (dark >= 8.7:1). */
+  --shelf-bg: var(--color-paper);
+  --shelf-ink: var(--color-ink);
+  --shelf-desk: var(--color-stone-100);
+  --shelf-card: var(--color-paper-2);
+  --shelf-plank: linear-gradient(var(--color-stone-200), var(--color-stone-300));
+  --shelf-plank-edge: color-mix(in oklab, var(--shelf-ink) 85%, transparent);
+  /* 6.0:1 on the note card (the update dialog's alert red); dark #f2a08a 9.3:1. */
+  --shelf-danger: #b3261e;
+  /* Cast shadows of books and pages: soft on paper, deep on night. */
+  --shelf-cast: rgb(60 45 20 / 0.28);
+  --shelf-cast-edge: rgb(60 45 20 / 0.22);
   --shelf-gold: #e9b949;
   --shelf-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  /* Cloth weave, over every spine and cover. */
+  --shelf-weave:
+    repeating-linear-gradient(0deg, rgb(255 255 255 / 0.045) 0 1px, transparent 1px 3px),
+    repeating-linear-gradient(90deg, rgb(0 0 0 / 0.07) 0 1px, transparent 1px 3px);
+  /* Paper tooth: a faint static noise tile for pages and endpapers. */
+  --shelf-tooth: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .3 0 0 0 0 .24 0 0 0 0 .15 0 0 0 .14 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   position: relative;
   background: var(--shelf-bg);
   color: var(--shelf-ink);
   border-radius: 1.5rem;
   overflow: hidden;
+  /* The shelf drives the page scroll itself while a book travels; Chromium's scroll anchoring
+     would shift it by the desk's change in a single frame (a 261px jump at 1440x700). */
+  overflow-anchor: none;
+}
+.dark .shelf-stage {
+  --shelf-bg: var(--color-night);
+  --shelf-ink: var(--color-paper);
+  --shelf-desk: var(--color-night-2);
+  --shelf-card: var(--color-night-1);
+  /* Warm wood under a gold-cream lip, so the shelf reads against night (night-5 vanished). */
+  --shelf-plank: linear-gradient(#4a3f2f, #2a241b 60%, #1a1611);
+  --shelf-plank-edge: color-mix(in oklab, var(--shelf-gold) 55%, var(--color-paper));
+  --shelf-danger: #f2a08a;
+  --shelf-cast: rgb(0 0 0 / 0.65);
+  --shelf-cast-edge: rgb(0 0 0 / 0.5);
 }
 
 .shelf-label {
@@ -674,7 +752,8 @@
 
 /* The caption has its own band at the top of the stage, clear of every book. Pixel budget, from the
    stage top: caption 20 → ~80 (Caveat 26px title ~33 + 4 + meta ~20), then the 112px shelf padding
-   (`pt-28`) + the row's 36px top padding = 148 for the tallest spine (306px) at rest; lifted 20px and
+   (`pt-28`) + the row's 36px top padding = 148 for the tallest spine (306px × --shelf-k; the row is
+   bottom-aligned and reserves that height, so its top stays at 148 at every scale) at rest; lifted 20px and
    with its 9px ribbon its highest pixel is 119, so the text keeps ~39px of air. Only the arrow
    (`.shelf-pointer`) reaches down into that air. */
 .shelf-caption {
@@ -704,6 +783,24 @@
   opacity: 1;
 }
 
+/* Row and plank hug the books (max-content), up to the stage width, where the row starts to scroll. */
+.shelf-unit {
+  width: fit-content;
+  max-width: 100%;
+  margin-inline: auto;
+}
+
+@property --fade-l {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --fade-r {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
 .shelf-row {
   /* Positioned: the offset parent for spines, which the caption math relies on. */
   position: relative;
@@ -712,14 +809,40 @@
   /* Centred while the books fit; `safe` falls back to the start once the shelf scrolls. */
   justify-content: safe center;
   gap: 2px;
-  /* 36px top padding + the tallest spine (306px): the row's top edge never moves, so the caption
-     band above it stays clear whatever books are on the shelf. */
-  min-height: calc(2.25rem + 306px);
+  /* 36px top padding + the tallest spine (306px × scale): the row's top edge never moves, so the
+     caption band above it stays clear whatever books are on the shelf. */
+  min-height: calc(2.25rem + 306px * var(--shelf-k, 1));
   /* Top room for the 20px lift plus the 9px ribbon: a scroller clips both axes. */
-  padding: 2.25rem 7% 0;
+  padding: 2.25rem clamp(20px, 4vw, 56px) 0;
   overflow-x: auto;
   overflow-y: visible;
   scrollbar-width: none;
+  /* Snap to spines; the padding keeps a snapped spine clear of the 48px edge fade. */
+  scroll-snap-type: x proximity;
+  scroll-padding-inline: 48px;
+  /* An end with more books beyond it fades out (`data-more-l/r`, set on scroll). */
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--fade-l),
+    #000 calc(100% - var(--fade-r)),
+    transparent
+  );
+  transition:
+    --fade-l 0.3s ease-out,
+    --fade-r 0.3s ease-out;
+}
+.shelf-row[data-more-l] {
+  --fade-l: 48px;
+}
+.shelf-row[data-more-r] {
+  --fade-r: 48px;
+}
+
+.shelf-item {
+  display: flex;
+  flex-shrink: 0;
+  scroll-snap-align: start;
 }
 .shelf-row::-webkit-scrollbar {
   display: none;
@@ -735,6 +858,7 @@
   padding: 12px 0 10px;
   border-radius: 3px 3px 1px 1px;
   background:
+    var(--shelf-weave),
     radial-gradient(140% 22% at 20% var(--band-at), var(--band) 0 55%, transparent 56%),
     radial-gradient(120% 18% at 85% calc(var(--band-at) + 9%), var(--band) 0 50%, transparent 51%),
     var(--cloth);
@@ -745,13 +869,25 @@
   cursor: pointer;
   transition:
     transform 0.32s var(--shelf-ease),
-    opacity 0.32s var(--shelf-ease),
-    filter 0.2s ease-out;
+    opacity 0.32s var(--shelf-ease);
 }
 
+/* The lifted spine catches the light: a white sheet over it, faded in (opacity, no filter repaint). */
+.shelf-spine::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease-out;
+}
 .shelf-spine[data-lifted] {
   transform: translateY(-20px);
-  filter: brightness(1.06);
+}
+.shelf-spine[data-lifted]::after {
+  opacity: 0.06;
 }
 
 /* Off the shelf: the book is in the air or on the desk, and its slot stays as a gap. No transition,
@@ -762,9 +898,13 @@
   transition: none;
 }
 
-.shelf-spine:focus-visible {
+/* :root lifts this to the gated global ring's specificity (0,3,0); later source wins. */
+:root .shelf-spine:focus-visible {
   outline: none;
   border-radius: 3px;
+}
+/* ring only while the keyboard is in charge (data-input: see the Keyboard focus block) */
+:root:not([data-input='pointer']) .shelf-spine:focus-visible {
   box-shadow:
     0 0 0 2px var(--shelf-bg),
     0 0 0 4.5px var(--shelf-ink);
@@ -772,8 +912,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .shelf-spine,
+  .shelf-spine::after,
   .shelf-caption,
-  .shelf-pointer {
+  .shelf-pointer,
+  .shelf-row {
     transition: none;
   }
   .shelf-spine[data-lifted],
@@ -867,10 +1009,9 @@
 .shelf-plank {
   position: relative;
   height: 16px;
-  margin: 0 1.5%;
-  border-top: 2px solid color-mix(in oklab, var(--shelf-ink) 85%, transparent);
+  border-top: 2px solid var(--shelf-plank-edge);
   border-radius: 2px;
-  background: linear-gradient(#262626, #0b0b0b);
+  background: var(--shelf-plank);
   margin-bottom: 40px;
 }
 
@@ -884,30 +1025,13 @@
   border-bottom-left-radius: 3px;
 }
 
-.shelf-edge {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 7%;
-  pointer-events: none;
-  z-index: 2;
-}
-.shelf-edge-l {
-  left: 0;
-  background: linear-gradient(to right, var(--shelf-bg), transparent);
-}
-.shelf-edge-r {
-  right: 0;
-  background: linear-gradient(to left, var(--shelf-bg), transparent);
-}
-
 .shelf-desk {
   position: relative;
   padding: clamp(18px, 4vw, 40px);
   border: 1.5px solid var(--shelf-ink);
   border-radius: 22px;
-  background: #121212;
-  box-shadow: 0 6px 0 -4px #121212, 0 6px 0 -2.5px var(--shelf-ink);
+  background: var(--shelf-desk);
+  box-shadow: 0 6px 0 -4px var(--shelf-desk), 0 6px 0 -2.5px var(--shelf-ink);
 }
 
 .shelf-desk-leg {
@@ -939,17 +1063,70 @@
 .shelf-fly-page,
 .shelf-cover {
   border-radius: 3px;
-  box-shadow: 14px 22px 36px rgb(0 0 0 / 0.65), 2px 3px 0 rgb(0 0 0 / 0.5);
+  box-shadow: 14px 22px 36px var(--shelf-cast), 2px 3px 0 var(--shelf-cast-edge);
 }
 
 .shelf-endpaper {
   display: block;
   border-radius: 3px 0 0 3px;
   /* Cast left, away from the page it lies beside. */
-  box-shadow: -12px 22px 30px -4px rgb(0 0 0 / 0.6), -2px 3px 0 rgb(0 0 0 / 0.5);
+  box-shadow: -12px 22px 30px -4px var(--shelf-cast), -2px 3px 0 var(--shelf-cast-edge);
   background:
     linear-gradient(to left, rgb(0 0 0 / 0.22), transparent 12%),
+    var(--shelf-tooth),
     color-mix(in oklab, var(--cloth) 24%, #efe6d4);
+}
+
+/* Page one. Sized in container units, so the desk page and the page inside a flying book (both 3:4)
+   set the same lines. Budget in % of the page width: 11 top + 15 lines × 6.9 (4.6 × 1.5) = 114.5,
+   the folio at 123-127.5, of a 133.3 page height. */
+.shelf-page {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  container-type: inline-size;
+  background: var(--shelf-tooth), #f6f0e2;
+  color: #2b2620;
+}
+/* The gutter: the page curves down into the binding on its left edge. */
+.shelf-page::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(to right, rgb(50 32 8 / 0.26), rgb(50 32 8 / 0.08) 5%, transparent 13%),
+    linear-gradient(to left, rgb(0 0 0 / 0.06), transparent 3%);
+}
+.shelf-page-text {
+  position: absolute;
+  top: 11cqi;
+  left: 12cqi;
+  right: 9cqi;
+  font-family: var(--font-serif);
+  font-size: 4.6cqi;
+  line-height: 1.5;
+  text-align: justify;
+  hyphens: auto;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 15;
+  overflow: hidden;
+}
+.shelf-page-text p + p {
+  text-indent: 1.5em;
+}
+.shelf-page-folio {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 6cqi;
+  text-align: center;
+  font-family: var(--font-serif);
+  font-size: 3.6cqi;
+  opacity: 0.55;
 }
 .shelf-desk-endpaper {
   position: absolute;
@@ -968,7 +1145,6 @@
   z-index: 5;
   pointer-events: none;
   transform-style: preserve-3d;
-  will-change: transform;
 }
 .shelf-flyer .shelf-fly-spine,
 .shelf-fly-side,
@@ -1009,10 +1185,18 @@
   gap: 14px;
   padding: 26px 22px 22px 26px;
   border-radius: 2px 4px 4px 2px;
+  /* The spine's cloth carried round the board: weave, both painted bands, the same edge light. */
   background:
     linear-gradient(to right, rgb(0 0 0 / 0.28), transparent 7%),
+    var(--shelf-weave),
     radial-gradient(140% 22% at 20% var(--band-at), var(--band) 0 55%, transparent 56%),
+    radial-gradient(120% 18% at 85% calc(var(--band-at) + 9%), var(--band) 0 50%, transparent 51%),
     var(--cloth);
+  box-shadow:
+    inset 0 3px 4px rgb(255 255 255 / 0.12),
+    inset -4px 0 6px rgb(0 0 0 / 0.3),
+    14px 22px 36px var(--shelf-cast),
+    2px 3px 0 var(--shelf-cast-edge);
 }
 .shelf-cover .shelf-label {
   color: inherit;
@@ -1109,15 +1293,15 @@
 }
 .shelf-pill:hover:not(:disabled) {
   border-color: var(--shelf-ink);
-  background: rgb(243 239 231 / 0.06);
+  background: color-mix(in oklab, var(--shelf-ink) 6%, transparent);
 }
 .shelf-pill:disabled {
   opacity: 0.4;
   cursor: default;
 }
 .shelf-pill-danger {
-  border-color: #f2a08a;
-  color: #f2a08a;
+  border-color: var(--shelf-danger);
+  color: var(--shelf-danger);
 }
 
 .shelf-primary {
@@ -1126,8 +1310,8 @@
   gap: 0.6rem;
   padding: 0.75rem 1.6rem;
   border-radius: 999px;
-  background: var(--shelf-ink);
-  color: #000;
+  background: var(--accent);
+  color: var(--on-accent);
   font-family: 'Patrick Hand', 'Caveat Variable', cursive;
   font-size: 17px;
   letter-spacing: 0.14em;
@@ -1138,7 +1322,7 @@
     background-color 0.15s ease-out;
 }
 .shelf-primary:hover {
-  background: #fff;
+  background: var(--accent-hover);
 }
 .shelf-primary:active {
   transform: scale(0.97);
@@ -1168,6 +1352,6 @@
   text-decoration-color: var(--shelf-ink);
 }
 
-.shelf-stage :where(button):focus-visible {
+:root:not([data-input='pointer']) .shelf-stage :where(button):focus-visible {
   outline-color: var(--shelf-ink);
 }

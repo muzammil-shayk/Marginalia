@@ -22,9 +22,54 @@ export interface ReleaseNote {
   highlights: ChangelogItem[];
 }
 
-export const CURRENT_APP_VERSION = '2.3.0';
+export const CURRENT_APP_VERSION = '2.3.1';
 
 export const CHANGELOG_RELEASES: ReleaseNote[] = [
+  {
+    version: '2.3.1',
+    title: 'A Shelf That Fits',
+    date: 'October 2026',
+    summary:
+      'The bookshelf now matches your theme and fills your window, books open and shelve more gently, and Windows updates get smaller.',
+    highlights: [
+      {
+        category: 'improvement',
+        title: 'A shelf that matches your theme',
+        description:
+          'Cream in light mode; in dark mode, dark, with a warm wooden plank and a gold edge. On wide windows the books grow to fill the shelf. On phones the shelf fades at the edge to show there are more books, and snaps from book to book.'
+      },
+      {
+        category: 'improvement',
+        title: 'Opening and shelving, unhurried',
+        description:
+          'Each takes about a second and a half. The page scrolls along with the book, so you see it land on the desk and go back into its slot. Scroll or press a key and the auto-scroll stops.'
+      },
+      {
+        category: 'improvement',
+        title: 'A real first page for every book',
+        description:
+          'Text, web and EPUB books now open on the desk to their opening lines on paper, not a blank page.'
+      },
+      {
+        category: 'improvement',
+        title: 'Home and navigation',
+        description:
+          'Home puts your shelf first, with Knowledge Studio below it. The selected tab is a soft sage-green pill in light mode and a clear cream pill in dark mode. In dark mode the logo sits fully on its cream plate.'
+      },
+      {
+        category: 'fix',
+        title: 'Smaller fixes',
+        description:
+          'The gold focus ring appears only when you navigate with the keyboard, not after a mouse click. Search results start and end on whole words. The reader\'s tag strip has more room and a quieter scrollbar. The sidebar shows the full credit. The Windows update window uses the right font weight.'
+      },
+      {
+        category: 'improvement',
+        title: 'Smaller updates on Windows',
+        description:
+          'Future updates on Windows download only what changed, so they are smaller and faster.'
+      }
+    ]
+  },
   {
     version: '2.3.0',
     title: 'The Bookshelf, and a Quieter Look',

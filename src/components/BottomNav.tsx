@@ -89,23 +89,24 @@ export const BottomNav: React.FC<BottomNavProps> = ({
               key={tab.id}
               type="button"
               disabled={isDisabled}
+              aria-current={tab.isActive ? 'page' : undefined}
               onClick={() => {
                 if (!isDisabled && currentScreen !== tab.screen) {
                   onNavigate(tab.screen, tab.transition);
                 }
               }}
-              className={`flex items-center justify-center transition-all duration-200 ${
+              className={`flex items-center justify-center transition-[color,background-color,transform] duration-150 ease-out ${
                 isDisabled
                   ? 'p-2.5 rounded-full text-stone-300 dark:text-stone-700 cursor-not-allowed'
                   : `cursor-pointer ${
                       tab.isActive
-                        ? 'bg-accent text-on-accent p-2.5 rounded-full shadow-md active:scale-95'
-                        : 'p-2.5 rounded-full text-muted hover:text-stone-900 dark:hover:text-stone-100 hover:bg-black/5 dark:hover:bg-white/5 active:scale-95'
+                        ? 'bg-nav-active text-nav-active-fg p-2.5 rounded-full active:scale-95'
+                        : 'p-2.5 rounded-full text-muted hover:text-nav-active-fg hover:bg-nav-hover active:scale-95'
                     }`
               }`}
               title={isDisabled ? 'Upload a document to start reading' : tab.label}
             >
-              <Icon className={`w-5 h-5 shrink-0 ${tab.isActive && !isDisabled ? 'text-on-accent' : ''}`} />
+              <Icon className="w-5 h-5 shrink-0" />
             </button>
           );
         })}

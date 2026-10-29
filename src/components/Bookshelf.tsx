@@ -14,9 +14,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, animate, motion, useReducedMotion } from 'motion/react';
 import { documentThumbnail } from '../utils/documentThumbnail';
-import type { StoredDocumentMeta } from '../utils/documentStorage';
-
-const SPINE_COLOR = '#435c52';
+import { fetchDocumentText, type StoredDocumentMeta } from '../utils/documentStorage';
 
 export function monogram(title: string): string {
   const words = title.replace(/[^\p{L}\p{N}\s]/gu, ' ').trim().split(/\s+/).filter(Boolean);
@@ -27,15 +25,42 @@ export function monogram(title: string): string {
 export const formatBytes = (bytes: number) =>
   !bytes ? '—' : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
-/** First-page cover, or a monogram while it renders (and for formats without one). */
+/* The opening paragraphs of a document without a rendered page, set as its page one. One local read
+   per book and edit (no network, no AI), kept for the session; a failed read is not kept. */
+const openings = new Map<string, Promise<string[] | null>>();
+
+function openingParagraphs(doc: StoredDocumentMeta): Promise<string[] | null> {
+  const key = `${doc.id}:${doc.updatedAt}`;
+  let work = openings.get(key);
+  if (!work) {
+    work = fetchDocumentText(doc.id).then((text) => {
+      // A page shows ~15 lines of ~45 characters; 1200 is plenty.
+      const paras = text
+        ?.slice(0, 1200)
+        .split(/\r?\n/)
+        .map((p) => p.replace(/\s+/g, ' ').trim())
+        .filter(Boolean);
+      if (!paras?.length) openings.delete(key);
+      return paras?.length ? paras : null;
+    });
+    openings.set(key, work);
+  }
+  return work;
+}
+
+/** Page one: the rendered first page (PDF, printed HTML), else the document's opening lines set in serif. */
 export const DocumentCover: React.FC<{ doc: StoredDocumentMeta; className?: string }> = ({ doc, className = '' }) => {
   const [src, setSrc] = useState<string | null>(null);
+  const [paras, setParas] = useState<string[] | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     setSrc(null);
+    setParas(null);
     void documentThumbnail(doc).then((dataUrl) => {
-      if (!cancelled) setSrc(dataUrl);
+      if (cancelled) return;
+      setSrc(dataUrl);
+      if (!dataUrl) void openingParagraphs(doc).then((p) => !cancelled && setParas(p));
     });
     return () => {
       cancelled = true;
@@ -43,23 +68,19 @@ export const DocumentCover: React.FC<{ doc: StoredDocumentMeta; className?: stri
   }, [doc.id, doc.updatedAt, doc.format, doc.originalBytes]);
 
   return (
-    <div className={`relative h-full w-full overflow-hidden bg-stone-100 dark:bg-stone-900 ${className}`}>
+    <div className={`shelf-page ${className}`}>
       {src ? (
-        <img
-          src={src}
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover object-top bg-white select-none pointer-events-none"
-        />
+        <img src={src} alt="" className="absolute inset-0 h-full w-full object-cover object-top bg-white select-none pointer-events-none" />
       ) : (
-        <span
-          className="absolute inset-0 flex items-center justify-center select-none"
-          style={{ background: `linear-gradient(145deg, ${SPINE_COLOR} 0%, #2f423a 100%)` }}
-        >
-          <span className="font-serif text-[28px] md:text-[34px] font-bold text-white/95 tracking-tight">
-            {monogram(doc.title)}
-          </span>
-        </span>
+        paras && (
+          <div className="shelf-page-text">
+            {paras.map((p, i) => (
+              <p key={i}>{p}</p>
+            ))}
+          </div>
+        )
       )}
+      {!src && paras && <span className="shelf-page-folio">1</span>}
     </div>
   );
 };
@@ -84,13 +105,25 @@ function hash(text: string): number {
 
 type Look = ReturnType<typeof spineLook>;
 
-function spineLook(doc: StoredDocumentMeta) {
+/** `k` scales the whole book with the stage (1 to MAX_SCALE), so a wide window gets bigger books. */
+function spineLook(doc: StoredDocumentMeta, k = 1) {
   const h = hash(doc.id);
   const cloth = CLOTHS[h % CLOTHS.length];
   // Thicker for longer books: about 34px for an essay, capped at 66px for a long novel.
-  const width = Math.round(Math.min(66, 30 + Math.sqrt(Math.max(0, doc.wordCount)) / 6));
-  const height = 262 + ((h >> 4) % 5) * 11;
+  const width = Math.round(k * Math.min(66, 30 + Math.sqrt(Math.max(0, doc.wordCount)) / 6));
+  // Floored, so no spine is taller than 306 * k (the row's reserved height).
+  const height = Math.floor(k * (262 + ((h >> 4) % 5) * 11));
   return { ...cloth, width, height, bandAt: 70 + ((h >> 8) % 14) };
+}
+
+/* Books grow with the stage from 860px wide, up to 1.5x (then the shelf is about as wide as the desk
+   below it), but never so far that a shelf which fits at 1x would start to scroll: `span` is the
+   books' width at 1x, and they may take 90% of the row. 0.05 steps, so a window drag refits titles
+   a handful of times, not on every pixel. */
+const MAX_SCALE = 1.5;
+function stageScale(stageWidth: number, rowPadding: number, span: number) {
+  const fits = span > 0 ? (0.9 * (stageWidth - rowPadding)) / span : MAX_SCALE;
+  return Math.min(MAX_SCALE, Math.max(1, Math.floor(Math.min(stageWidth / 860, fits) * 20) / 20));
 }
 
 const clothVars = (look: Look) =>
@@ -173,7 +206,7 @@ export function fitSpineTitle(title: string, breadth: number, length: number, fa
   return { size: 7, lines: lines.map(clip) };
 }
 
-const SpineTitle: React.FC<{ title: string; breadth: number }> = ({ title, breadth }) => {
+const SpineTitle: React.FC<{ title: string; breadth: number; height: number }> = ({ title, breadth, height }) => {
   const boxRef = useRef<HTMLSpanElement>(null);
   const textRef = useRef<HTMLSpanElement>(null);
   const [fit, setFit] = useState<{ size: number; lines: string[] } | null>(null);
@@ -183,14 +216,14 @@ const SpineTitle: React.FC<{ title: string; breadth: number }> = ({ title, bread
     const text = textRef.current;
     if (!box || !text) return;
     let alive = true;
-    // The spine's height is fixed, so its title box only changes size when the webfont arrives.
+    // The title box changes size with the spine (`height`, the stage scale) and when the webfont arrives.
     const run = () => alive && setFit(fitSpineTitle(title, breadth, box.clientHeight - 2, getComputedStyle(text).fontFamily));
     run();
     void document.fonts?.ready.then(run);
     return () => {
       alive = false;
     };
-  }, [title, breadth]);
+  }, [title, breadth, height]);
 
   return (
     <span ref={boxRef} className="shelf-spine-title">
@@ -212,7 +245,7 @@ const SpineTitle: React.FC<{ title: string; breadth: number }> = ({ title, bread
 const SpineFace: React.FC<{ doc: StoredDocumentMeta; look: Look }> = ({ doc, look }) => (
   <>
     {doc.annotationCount > 0 && <span className="shelf-ribbon" aria-hidden="true" />}
-    <SpineTitle title={doc.title} breadth={look.width - 6} />
+    <SpineTitle title={doc.title} breadth={look.width - 6} height={look.height} />
     <span className="shelf-spine-foot">
       <span className="shelf-spine-format">{doc.format}</span>
       <span className="shelf-spine-badge">{monogram(doc.title)}</span>
@@ -236,18 +269,20 @@ const Doodle: React.FC<{ className?: string; d: string; viewBox: string; style?:
 /* ── The flight between shelf and desk ─────────────────────────────────────
    A book is a CSS box: its spine faces out on the shelf, its front cover (hinged
    at the spine) and first page sit on the right-hand side. One eased clock drives
-   a pose per frame, transform only. Timings are the reference's (ShelfCanvas):
-   to the desk, pull 500ms + arc 700ms (ease-in-out cubic) + land 200ms (ease-out
-   cubic), then here the cover opens, 550ms; back to the shelf 1100ms, 78% arc
-   and 22% push into the slot. Previous/Next runs both at 600/1400 speed, the
-   incoming book waiting until the outgoing one has closed and lifted. Every
-   curve is monotonic: no spring, no overshoot. */
+   a pose per frame, transform only. Each way takes about 1.4s from click to settle:
+   to the desk, pull 300ms + arc 550ms (ease-in-out cubic) + land 150ms (ease-out
+   cubic), then the cover opens, 400ms; back to the shelf, the cover closes 300ms,
+   then 1100ms: 78% arc and 22% push into the slot. Previous/Next sends the old
+   book back at 800ms and the new one after 400ms at 600/1000 speed (1.4s in all).
+   Every curve is monotonic: no spring, no overshoot. */
 
 type Pose = { x: number; y: number; s: number; ry: number; rz: number; leaf: number };
 type Flight = { key: number; id: string; to: 'desk' | 'shelf'; from: Pose; fromSlot: boolean; fast: boolean; delay: number };
 
 const DESK_TILT = -3;
-const SWAP_DELAY = 450;
+const SWAP_DELAY = 400;
+/** Keys that scroll the page; pressing one hands the scroll back to the reader. */
+const SCROLL_KEYS = new Set(['PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Home', 'End']);
 const inOut = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const out = (t: number) => 1 - Math.pow(1 - t, 3);
 const mix = (a: number, b: number, e: number) => a + (b - a) * e;
@@ -262,17 +297,30 @@ const mixPose = (a: Pose, b: Pose, e: number): Pose => ({
 const bezier = (a: number, c: number, b: number, e: number) => (1 - e) * (1 - e) * a + 2 * e * (1 - e) * c + e * e * b;
 const clamp01 = (t: number) => Math.min(1, Math.max(0, t));
 
+/** Keyboard focus only: Chromium flags a clicked button `:focus-visible` after any later key (even
+    Cmd alone), so the app's last input mode on <html> (set in App.tsx) has the final say. */
+const keyboardFocus = (el: Element) => el.matches(':focus-visible') && document.documentElement.dataset.input !== 'pointer';
+
+/** The element that scrolls the page around `el`: its nearest scrolling ancestor, else the document. */
+function pageScroller(el: Element): HTMLElement {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const o = getComputedStyle(p).overflowY;
+    if ((o === 'auto' || o === 'scroll') && p.scrollHeight > p.clientHeight) return p;
+  }
+  return (document.scrollingElement as HTMLElement) ?? document.documentElement;
+}
+
 function phases(f: Flight) {
   if (f.to === 'desk') {
-    const k = f.fast ? 600 / 1400 : 1;
-    const pull = f.fromSlot ? 500 * k : 0;
-    const arc = 700 * k;
-    const land = 200 * k;
-    const open = f.fast ? 400 : 550;
+    const k = f.fast ? 600 / 1000 : 1;
+    const pull = f.fromSlot ? 300 * k : 0;
+    const arc = 550 * k;
+    const land = 150 * k;
+    const open = 400;
     return { pull, arc, land, open, total: pull + arc + land + open };
   }
   const trip = f.fast ? 600 : 1100;
-  const close = (f.fast ? 200 : 350) * (-f.from.leaf / 180);
+  const close = (f.fast ? 200 : 300) * (-f.from.leaf / 180);
   return { close, arc: trip * 0.78, push: trip * 0.22, total: close + trip };
 }
 
@@ -313,8 +361,10 @@ const FlyingBook: React.FC<{
   look: Look;
   target: (f: Flight) => Pose | null;
   poses: Map<string, Pose>;
+  /** Bumped when the shelf scrolls or the stage resizes: the only times the cached target moves. */
+  layout: React.RefObject<number>;
   onDone: (f: Flight) => void;
-}> = ({ flight, doc, look, target, poses, onDone }) => {
+}> = ({ flight, doc, look, target, poses, layout, onDone }) => {
   const bookRef = useRef<HTMLDivElement>(null);
   const leafRef = useRef<HTMLDivElement>(null);
   const t = look.width;
@@ -330,6 +380,16 @@ const FlyingBook: React.FC<{
     const leaf = leafRef.current;
     if (!book || !leaf) return;
     let last = flight.from;
+    // The target is measured once and again only after a shelf scroll or a stage resize, not every frame.
+    let goal: Pose | null = null;
+    let seen = -1;
+    const aim = () => {
+      if (!goal || seen !== layout.current) {
+        goal = live.current.target(flight);
+        seen = layout.current;
+      }
+      return goal ?? last;
+    };
     const draw = (p: Pose) => {
       last = p;
       poses.set(flight.id, p);
@@ -341,19 +401,25 @@ const FlyingBook: React.FC<{
       leaf.style.transform = `rotateY(${p.leaf}deg)`;
     };
     draw(flight.from);
+    // A compositor layer for the flight only; the flyer unmounts when it lands.
+    book.style.willChange = 'transform';
     const { total } = phases(flight);
     const controls = animate(0, total, {
       duration: total / 1000,
       delay: flight.delay / 1000,
       ease: 'linear',
-      onUpdate: (ms) => draw(poseAt(flight, ms, live.current.target(flight) ?? last)),
-      onComplete: () => live.current.onDone(flight)
+      onUpdate: (ms) => draw(poseAt(flight, ms, aim())),
+      onComplete: () => {
+        book.style.willChange = '';
+        live.current.onDone(flight);
+      }
     });
     return () => {
       controls.stop();
+      book.style.willChange = '';
       if (poses.get(flight.id) === last) poses.delete(flight.id);
     };
-  }, [flight, poses, t, h, c]);
+  }, [flight, poses, layout, t, h, c]);
 
   return (
     <div ref={bookRef} className="shelf-flyer" aria-hidden="true" style={{ width: t, height: h, ...clothVars(look) }}>
@@ -389,6 +455,10 @@ interface BookshelfProps {
 }
 
 const EXPO = [0.16, 1, 0.3, 1] as const;
+/** Ease-in-out cubic, the flight's own curve: no overshoot. */
+const IN_OUT = [0.65, 0, 0.35, 1] as const;
+/** Seconds the desk takes to open: it is fully open as the book lands (pull + arc + land). */
+const DESK_OPEN = 1.0;
 
 export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes, busyId, onOpen, onRename, onDelete }) => {
   const reduced = useReducedMotion();
@@ -401,9 +471,13 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
   /** Where each book in the air was last drawn, so a new flight can start from there. */
   const poses = useRef(new Map<string, Pose>());
   const flightKey = useRef(0);
+  /** Counts shelf scrolls and stage resizes, so a book in the air knows when to re-measure its target. */
+  const layoutEpoch = useRef(0);
   const restTimer = useRef(0);
   /** Which desk button Previous/Next was pressed with, to focus again once the card remounts. */
   const refocus = useRef<'prev' | 'next' | null>(null);
+  /** Stops the page scroll that follows a book, if one is running. */
+  const stopPageScroll = useRef<(() => void) | null>(null);
 
   const [pointed, setPointed] = useState<string | null>(null);
   const [captionX, setCaptionX] = useState(0);
@@ -420,6 +494,8 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
   const [renaming, setRenaming] = useState(false);
   const [draft, setDraft] = useState('');
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [k, setK] = useState(1);
+  const look = useCallback((doc: StoredDocumentMeta) => spineLook(doc, k), [k]);
 
   const items = useMemo<ShelfItem[]>(() => {
     const out: ShelfItem[] = [];
@@ -436,6 +512,37 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
     }
     return out;
   }, [docs, groupByMonth]);
+
+  // The shelf's width at scale 1: spines, 2px gaps, bookends (30px + 3px margins).
+  const span = useMemo(
+    () => items.reduce((sum, it) => sum + (it.kind === 'book' ? spineLook(it.doc).width : 36) + 2, -2),
+    [items]
+  );
+
+  /** Fade whichever end of the shelf has more books beyond it (set directly: it changes on every scroll). */
+  const markEdges = useCallback(() => {
+    const row = scrollerRef.current;
+    if (!row) return;
+    row.toggleAttribute('data-more-l', row.scrollLeft > 1);
+    row.toggleAttribute('data-more-r', row.scrollLeft + row.clientWidth < row.scrollWidth - 1);
+  }, []);
+
+  useLayoutEffect(() => {
+    const stage = stageRef.current;
+    const row = scrollerRef.current;
+    if (!stage || !row) return;
+    const fit = () => {
+      layoutEpoch.current++;
+      const pad = parseFloat(getComputedStyle(row).paddingLeft) * 2;
+      setK(stageScale(stage.clientWidth, pad, span));
+      markEdges();
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(stage);
+    ro.observe(row);
+    return () => ro.disconnect();
+  }, [markEdges, span]);
 
   const byId = useMemo(() => new Map(docs.map((d) => [d.id, d])), [docs]);
   const selected = selectedId ? byId.get(selectedId) ?? null : null;
@@ -483,7 +590,7 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
     window.clearTimeout(restTimer.current);
     const el = document.activeElement;
     const id = [...spineRefs.current].find(([, s]) => s === el)?.[0];
-    if (id && el?.matches(':focus-visible')) point(id);
+    if (id && el && keyboardFocus(el)) point(id);
     else setPointed(null);
   };
   // The 2px gaps between spines would flicker the caption; a short grace lets the next spine take over.
@@ -507,7 +614,7 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
     const el = deskBookRef.current;
     const doc = byId.get(id);
     if (!el || !doc || !stageRef.current) return null;
-    return { ...centreOf(el), s: el.offsetHeight / spineLook(doc).height, ry: -90, rz: DESK_TILT, leaf: 0 };
+    return { ...centreOf(el), s: el.offsetHeight / look(doc).height, ry: -90, rz: DESK_TILT, leaf: 0 };
   };
   const target = (f: Flight) => (f.to === 'desk' ? deskPose(f.id) : slotPose(f.id));
 
@@ -557,23 +664,79 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
       fly(id, 'shelf', false);
       if (deskBookRef.current) deskBookRef.current.style.visibility = 'hidden';
     }
+    // Back up to the shelf while the book travels, so it is seen going into its slot.
+    const slot = spineRefs.current.get(id);
+    bringIntoView(slot?.closest('.shelf-unit') ?? slot, 1.1);
     resetDesk();
     setSelectedId(null);
     setLandedId(null);
     spineRefs.current.get(id)?.focus({ preventScroll: true });
   };
 
-  // Opening the desk: focus its Read button (the spine it came from is now a gap), then, once the
-  // book is on its way, bring the desk into view, as the reference does at 640ms.
+  /**
+   * Ease the page so `el` sits in view with a 24px margin, below the phone's sticky header; an element
+   * taller than the view aligns its top. Nothing happens if it is already in view. It runs on motion's
+   * clock with the desk's own curve, so the scroll and the desk's height move as one; the reader's
+   * wheel, touch, a scrolling key or a pointer press (scrollbar included) stops it.
+   */
+  const bringIntoView = (el: Element | null | undefined, seconds: number) => {
+    stopPageScroll.current?.();
+    if (!el) return;
+    const scroller = pageScroller(el);
+    const view = scroller === document.scrollingElement ? { top: 0, bottom: window.innerHeight } : scroller.getBoundingClientRect();
+    const bar = document.querySelector('header');
+    const barH = bar && bar.getClientRects().length && getComputedStyle(bar).position === 'sticky' ? bar.offsetHeight : 0;
+    const top = view.top + barH + 24;
+    const bottom = view.bottom - 24;
+    const r = el.getBoundingClientRect();
+    const by = r.height > bottom - top || r.top < top ? r.top - top : Math.max(0, r.bottom - bottom);
+    if (Math.abs(by) < 1) return;
+    const from = scroller.scrollTop;
+    if (reduced) {
+      scroller.scrollTop = from + by;
+      return;
+    }
+    // Only input that arrives after the tween starts may stop it: the keydown or click that started it
+    // is still bubbling to window when these listeners go on.
+    const started = performance.now();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.timeStamp >= started && SCROLL_KEYS.has(e.key)) stop();
+    };
+    const onPointer = (e: PointerEvent) => {
+      if (e.timeStamp >= started) stop();
+    };
+    const stop = () => {
+      controls.stop();
+      window.removeEventListener('wheel', stop);
+      window.removeEventListener('touchstart', stop);
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('pointerdown', onPointer, true);
+      stopPageScroll.current = null;
+    };
+    const controls = animate(from, from + by, {
+      duration: seconds,
+      ease: IN_OUT,
+      onUpdate: (v) => {
+        scroller.scrollTop = v;
+      },
+      onComplete: stop
+    });
+    window.addEventListener('wheel', stop, { passive: true });
+    window.addEventListener('touchstart', stop, { passive: true });
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('pointerdown', onPointer, true);
+    stopPageScroll.current = stop;
+  };
+  useEffect(() => () => stopPageScroll.current?.(), []);
+
+  // Opening the desk: focus its Read button (the spine it came from is now a gap) and scroll with the
+  // opening desk, so the book lands on screen. Previous/Next keeps the desk in view the same way.
   useEffect(() => {
-    if (!selectedId || entry !== 'enter') return;
-    readRef.current?.focus({ preventScroll: true });
-    const t = window.setTimeout(
-      () => deskRef.current?.scrollIntoView({ block: 'nearest', behavior: reduced ? 'auto' : 'smooth' }),
-      reduced ? 0 : 640
-    );
-    return () => window.clearTimeout(t);
-  }, [selectedId, entry, reduced]);
+    if (!selectedId) return;
+    if (entry === 'enter') readRef.current?.focus({ preventScroll: true });
+    bringIntoView(deskRef.current?.querySelector('.shelf-desk'), entry === 'enter' ? DESK_OPEN : 0.6);
+    // Runs once per book and entry, not on every render (bringIntoView is recreated each render).
+  }, [selectedId, entry]);
 
   const focusSpine = (id: string) => {
     setStopId(id);
@@ -596,6 +759,8 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
     }
     if (next >= 0) {
       e.preventDefault();
+      // A click or Escape-to-shelve leaves pointer mode on; arrow keys are keyboard use, so show the ring and caption.
+      document.documentElement.dataset.input = 'keyboard';
       focusSpine(docs[next].id);
     }
   };
@@ -620,14 +785,14 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
     if (which) deskRef.current?.querySelector<HTMLButtonElement>(`[data-step="${which}"]`)?.focus({ preventScroll: true });
   }, [selectedId]);
 
-  const scrollerWidth = scrollerRef.current?.clientWidth ?? 0;
+  const stageWidth = stageRef.current?.clientWidth ?? 0;
   // Half the caption's width (`min(30rem, 100% - 2rem)`), so the whole line stays inside the stage.
-  const half = Math.min(240, scrollerWidth / 2 - 16);
-  const clampedX = Math.max(half, Math.min(captionX, scrollerWidth - half));
-  const selectedLook = selected ? spineLook(selected) : null;
+  const half = Math.min(240, stageWidth / 2 - 16);
+  const clampedX = Math.max(half, Math.min(captionX, stageWidth - half));
+  const selectedLook = selected ? look(selected) : null;
 
   return (
-    <div ref={stageRef} className="shelf-stage">
+    <div ref={stageRef} className="shelf-stage" style={{ '--shelf-k': k } as React.CSSProperties}>
       {/* ── The shelf ── */}
       <div className="relative pt-28">
         {/* Hover / focus caption, in its own band above the tallest book; the arrow points down to it. */}
@@ -655,13 +820,18 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
           style={{ left: captionX - 7.5, top: pointerTop }}
         />
 
+        {/* The shelf hugs its books (up to the stage width) and hangs centred, plank and all. */}
+        <div className="shelf-unit">
         <div
           ref={scrollerRef}
-          role="group"
-          aria-roledescription="bookshelf"
+          role="list"
           aria-label={`${docs.length} ${docs.length === 1 ? 'book' : 'books'} on the shelf. Arrow keys move along it.`}
           className="shelf-row no-scrollbar"
-          onScroll={() => pointed && placeCaption(pointed)}
+          onScroll={() => {
+            layoutEpoch.current++;
+            markEdges();
+            if (pointed) placeCaption(pointed);
+          }}
           onPointerLeave={rest}
         >
           {items.map((item) => {
@@ -673,11 +843,11 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
               );
             }
             const { doc } = item;
-            const look = spineLook(doc);
+            const bookLook = look(doc);
             const onDesk = doc.id === selectedId;
             return (
+              <div key={doc.id} role="listitem" className="shelf-item">
               <button
-                key={doc.id}
                 ref={(el) => {
                   if (el) spineRefs.current.set(doc.id, el);
                   else spineRefs.current.delete(doc.id);
@@ -687,7 +857,7 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
                 data-out={isOut(doc.id) || undefined}
                 data-lifted={pointed === doc.id || undefined}
                 tabIndex={doc.id === tabStop ? 0 : -1}
-                aria-label={`${doc.title}, ${doc.format}, ${doc.annotationCount} ${doc.annotationCount === 1 ? 'mark' : 'marks'}`}
+                aria-label={`${doc.title}, ${doc.format}, ${doc.annotationCount} ${doc.annotationCount === 1 ? 'mark' : 'marks'}, ${doc.wordCount.toLocaleString()} words`}
                 aria-expanded={onDesk}
                 aria-controls={selectedId ? 'shelf-desk' : undefined}
                 onPointerEnter={() => point(doc.id)}
@@ -695,15 +865,16 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
                 onFocus={(e) => {
                   setStopId(doc.id);
                   // A mouse click focuses the button too; only keyboard focus keeps a caption up.
-                  if (e.currentTarget.matches(':focus-visible')) point(doc.id);
+                  if (keyboardFocus(e.currentTarget)) point(doc.id);
                 }}
                 onBlur={() => setPointed((p) => (p === doc.id ? null : p))}
                 onKeyDown={(e) => onShelfKey(e, doc.id)}
                 onClick={() => (onDesk ? shelve() : take(doc.id))}
-                style={{ width: look.width, height: look.height, ...clothVars(look) }}
+                style={{ width: bookLook.width, height: bookLook.height, ...clothVars(bookLook) }}
               >
-                <SpineFace doc={doc} look={look} />
+                <SpineFace doc={doc} look={bookLook} />
               </button>
+              </div>
             );
           })}
         </div>
@@ -713,15 +884,23 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
           <span className="shelf-bracket left-[6%]" />
           <span className="shelf-bracket right-[6%] -scale-x-100" />
         </div>
-        <span aria-hidden="true" className="shelf-edge shelf-edge-l" />
-        <span aria-hidden="true" className="shelf-edge shelf-edge-r" />
+        </div>
       </div>
 
       {/* ── Books in the air ── */}
       {flights.map((f) => {
         const doc = byId.get(f.id);
         return doc ? (
-          <FlyingBook key={f.key} flight={f} doc={doc} look={spineLook(doc)} target={target} poses={poses.current} onDone={landed} />
+          <FlyingBook
+            key={f.key}
+            flight={f}
+            doc={doc}
+            look={look(doc)}
+            target={target}
+            poses={poses.current}
+            layout={layoutEpoch}
+            onDone={landed}
+          />
         ) : null;
       })}
 
@@ -731,11 +910,24 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
           <motion.div
             key="desk"
             id="shelf-desk"
+            // The desk's space opens with an eased height, so the page below slides rather than jumps
+            // (a clip reveal left the page to snap). It finishes opening as the book lands
+            // (pull 300 + arc 550 + land 150 = 1.0s); the desk's content is top-aligned and never
+            // moves, so the flight's target holds still while the space grows.
             initial={reduced ? { opacity: 0 } : { height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
-            // Shelving: the desk folds once the book has closed and lifted clear of it.
-            exit={{ height: reduced ? 'auto' : 0, opacity: 0, transition: { duration: reduced ? 0.25 : 0.6, ease: EXPO, delay: reduced ? 0 : 0.8 } }}
-            transition={reduced ? { height: { duration: 0 }, opacity: { duration: 0.25 } } : { duration: 0.6, ease: EXPO }}
+            // Shelving: the desk folds from the moment the cover has shut (0.3s), done at 1.4s with
+            // the book; the slow start of the curve lets the book lift clear before the edge rises.
+            exit={
+              reduced
+                ? { opacity: 0, transition: { duration: 0.25, ease: 'easeOut' } }
+                : { height: 0, opacity: 0, transition: { duration: 1.1, ease: IN_OUT, delay: 0.3 } }
+            }
+            transition={
+              reduced
+                ? { height: { duration: 0 }, opacity: { duration: 0.25, ease: 'easeOut' } }
+                : { height: { duration: DESK_OPEN, ease: IN_OUT }, opacity: { duration: 0.5, ease: 'easeOut' } }
+            }
             className="overflow-hidden"
           >
             <div ref={deskRef} className="px-3 sm:px-8 pt-12 pb-16">
@@ -977,7 +1169,7 @@ const DeskCard: React.FC<{
           never resizes the card. The inactive row is invisible (and so unfocusable). */}
       <div className="grid mt-6">
         <div className={`shelf-actions ${p.confirmingDelete ? '' : 'invisible'}`}>
-          <span className="shelf-label self-center text-[#f2a08a]">Delete permanently?</span>
+          <span className="shelf-label self-center text-[var(--shelf-danger)]">Delete permanently?</span>
           <button type="button" className="shelf-pill shelf-pill-danger" disabled={p.busy} onClick={() => void p.onDelete()}>
             {p.busy ? 'Deleting…' : 'Delete'}
           </button>

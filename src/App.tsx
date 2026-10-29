@@ -189,6 +189,21 @@ export default function App() {
   const [changelogVersion, setChangelogVersion] = useState<string>(CURRENT_APP_VERSION);
   const changelogChecked = useRef(false);
 
+  // Last input mode on <html>, for the focus ring in index.css: a mouse click followed by a lone
+  // modifier (Cmd for a screenshot) must not light the ring; only Tab brings it back. Arrows, Space
+  // and Enter keep the current mode, so paging the reader after a click shows no stray ring.
+  useEffect(() => {
+    const root = document.documentElement;
+    const onPointer = () => { root.dataset.input = 'pointer'; };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Tab') root.dataset.input = 'keyboard'; };
+    window.addEventListener('pointerdown', onPointer, true);
+    window.addEventListener('keydown', onKey, true);
+    return () => {
+      window.removeEventListener('pointerdown', onPointer, true);
+      window.removeEventListener('keydown', onKey, true);
+    };
+  }, []);
+
   useEffect(() => {
     if (!settingsHydrated || changelogChecked.current) return;
     changelogChecked.current = true;
@@ -572,6 +587,7 @@ export default function App() {
           onClose={() => setIsSidebarOpen(false)}
           onNavigate={navigate}
           isDark={isDark}
+          currentScreen={currentScreen}
           onOpenAnalysis={() => setIsAnalysisOpen(true)}
         />
 

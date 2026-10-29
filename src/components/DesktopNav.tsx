@@ -97,7 +97,7 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
             onClick={() => onNavigate('home', 'push_back')}
             className="cursor-pointer hover:opacity-80 transition-opacity select-none flex-1 min-w-0 overflow-hidden"
           >
-            <img src={logo} alt="Marginalia" className="h-20 w-auto shrink-0 dark:box-content dark:bg-paper dark:rounded-2xl dark:p-2 dark:shadow-sm" />
+            <img src={logo} alt="Marginalia" className="block h-auto w-auto max-h-20 max-w-full shrink-0 dark:box-content dark:max-w-[calc(100%-1rem)] dark:bg-paper dark:rounded-2xl dark:p-2" />
           </h1>
         )}
         {collapsed && (
@@ -138,22 +138,21 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
               key={tab.id}
               type="button"
               disabled={isDisabled}
+              aria-current={active ? 'page' : undefined}
               onClick={() => {
                 if (!isDisabled && currentScreen !== tab.screen) {
                   onNavigate(tab.screen, tab.transition);
                 }
               }}
-              className={`w-full flex items-center rounded-xl text-[13px] font-medium transition-all active:scale-[0.97] whitespace-nowrap overflow-hidden ${
+              className={`w-full flex items-center rounded-xl text-[13px] font-medium transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.97] whitespace-nowrap overflow-hidden ${
                 collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3.5 py-2.5'
               } ${
                 isDisabled
                   ? 'cursor-not-allowed text-stone-300 dark:text-stone-700'
                   : `cursor-pointer ${
                       active
-                        ? 'bg-accent text-on-accent shadow-sm'
-                        : isDark
-                          ? 'text-stone-400 hover:text-stone-200 hover:bg-white/5'
-                          : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100/80'
+                        ? 'bg-nav-active text-nav-active-fg'
+                        : `${isDark ? 'text-stone-400' : 'text-stone-600'} hover:text-nav-active-fg hover:bg-nav-hover`
                     }`
               }`}
               title={isDisabled ? 'Upload a document to start reading' : collapsed ? tab.label : undefined}
@@ -171,13 +170,11 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
             type="button"
             onClick={onOpenSearch}
             title={collapsed ? 'Search' : undefined}
-            className={`w-full flex items-center rounded-xl text-[13px] font-medium transition-all active:scale-[0.97] cursor-pointer ${
+            className={`w-full flex items-center rounded-xl text-[13px] font-medium transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.97] cursor-pointer ${
               collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3.5 py-2.5'
             } ${
-              isDark
-                ? 'text-stone-400 hover:text-stone-200 hover:bg-white/5'
-                : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100/80'
-            }`}
+              isDark ? 'text-stone-400' : 'text-stone-600'
+            } hover:text-nav-active-fg hover:bg-nav-hover`}
           >
             <Search className={`shrink-0 ${collapsed ? 'w-5.5 h-5.5' : 'w-4 h-4'}`} />
             {!collapsed && <span className="caps">Search</span>}
@@ -191,13 +188,11 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
             type="button"
             onClick={onOpenAnalysis}
             title={collapsed ? 'AI Analysis' : undefined}
-            className={`w-full flex items-center rounded-xl text-[13px] font-medium transition-all active:scale-[0.97] whitespace-nowrap overflow-hidden cursor-pointer ${
+            className={`w-full flex items-center rounded-xl text-[13px] font-medium transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.97] whitespace-nowrap overflow-hidden cursor-pointer ${
               collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3.5 py-2.5'
             } ${
-              isDark
-                ? 'text-stone-400 hover:text-stone-200 hover:bg-white/5'
-                : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100/80'
-            }`}
+              isDark ? 'text-stone-400' : 'text-stone-600'
+            } hover:text-nav-active-fg hover:bg-nav-hover`}
           >
             <Sparkles className={`shrink-0 ${collapsed ? 'w-5.5 h-5.5' : 'w-4 h-4'}`} />
             {!collapsed && <span className="caps truncate whitespace-nowrap">AI Analysis</span>}
@@ -217,7 +212,9 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
             For close readers,
           </p>
           <p className="italic text-[12px] text-muted leading-snug truncate whitespace-nowrap">
-            Built with care by Shama Iqbal Hussain.
+            Built with care by
+            <br />
+            Shama Iqbal Hussain.
           </p>
         </div>
       )}

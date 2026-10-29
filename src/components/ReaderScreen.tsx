@@ -372,7 +372,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
           snap points rather than wrapping once there are more themes than fit in one line. */}
       <div
         ref={themeStripRef}
-        className={`px-3 sm:px-6 py-1.5 border-b flex items-center gap-1.5 text-[11px] w-full max-w-full overflow-x-auto snap-x snap-mandatory scroll-smooth [scrollbar-width:thin] ${
+        className={`chip-strip px-3 sm:px-6 py-2 border-b flex items-center gap-1.5 text-[11px] w-full max-w-full overflow-x-auto snap-x snap-mandatory scroll-smooth ${
           isDark ? 'bg-night-2 border-stone-800/80' : 'bg-stone-100 border-stone-200'
         }`}
       >

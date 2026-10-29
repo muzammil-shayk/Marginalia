@@ -18,6 +18,7 @@ import {
   RETENTION_DAYS
 } from "./src/services/documentStore";
 import analyzerRouter from "./src/services/analyzer";
+import { wordWindow } from "./searchSnippet";
 
 /**
  * Re-exported for the desktop shell, which owns the folder picker and calls this to re-point the
@@ -324,12 +325,14 @@ app.get("/api/documents/search", async (req, res) => {
         const isTerm = a.isTerminology === true;
         const fields = [quote, noteText, theme?.name ?? "", isTerm ? "terminology" : ""];
         if (!fields.some((f) => f.toLowerCase().includes(needle))) continue;
+        const markText = (quote || noteText || theme?.name || "Terminology").replace(/\s+/g, " ").trim();
+        const markIdx = markText.toLowerCase().indexOf(needle);
         results.push({
           kind: "mark",
           id: meta.id,
           title: meta.title,
           format: meta.format,
-          snippet: (quote || noteText || theme?.name || "Terminology").replace(/\s+/g, " ").trim().slice(0, 220),
+          snippet: wordWindow(markText, 0, 220, markIdx === -1 ? undefined : [markIdx, markIdx + needle.length]),
           matches: 1,
           annotationId: String(a.id),
           page: typeof a.page === "number" ? a.page : undefined,
@@ -355,7 +358,8 @@ app.get("/api/documents/search", async (req, res) => {
       // A window of surrounding text so the reader can see the term in context, not just
       // that some match exists somewhere in the document.
       const snippetStart = firstIdx === -1 ? 0 : Math.max(0, firstIdx - 60);
-      const snippet = doc.text.slice(snippetStart, snippetStart + 200).replace(/\s+/g, " ").trim();
+      const snippet = wordWindow(doc.text, snippetStart, snippetStart + 200,
+        firstIdx === -1 ? undefined : [firstIdx, firstIdx + needle.length]);
 
       results.push({ kind: "document", id: meta.id, title: meta.title, format: meta.format, snippet, matches });
     }

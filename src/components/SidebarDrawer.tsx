@@ -9,6 +9,8 @@ interface SidebarDrawerProps {
   onClose: () => void;
   onNavigate: (screen: Screen, transition?: TransitionType) => void;
   isDark?: boolean;
+  /** Marks the matching link as the selected tab; omit and no link is marked. */
+  currentScreen?: Screen;
   /** Opens the thematic analysis dialog. See DesktopNav for why it is not a screen. */
   onOpenAnalysis?: () => void;
 }
@@ -18,8 +20,15 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   onClose,
   onNavigate,
   isDark = false,
-  onOpenAnalysis
+  onOpenAnalysis,
+  currentScreen
 }) => {
+  const link = (active: boolean) =>
+    `w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[14px] font-medium transition-colors duration-150 ease-out text-left ${
+      active ? 'bg-nav-active text-nav-active-fg' : 'hover:bg-nav-hover hover:text-nav-active-fg'
+    }`;
+  // The selected tab's icon takes the pill's ink; the rest keep their gold.
+  const icon = (active: boolean) => `w-4 h-4 ${active ? '' : 'text-gold'}`;
   return (
     <AnimatePresence>
       {isOpen && (
@@ -48,7 +57,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
           {/* Header */}
           <div className="flex items-center justify-between pb-4 border-b border-stone-200 dark:border-stone-800">
             <h2>
-              <img src={logo} alt="Marginalia" className="h-16 w-auto dark:box-content dark:bg-paper dark:rounded-2xl dark:p-2 dark:shadow-sm" />
+              <img src={logo} alt="Marginalia" className="block h-auto w-auto max-h-16 max-w-full shrink-0 dark:box-content dark:max-w-[calc(100%-1rem)] dark:bg-paper dark:rounded-2xl dark:p-2" />
             </h2>
             <button
               type="button"
@@ -67,9 +76,9 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                 onClose();
                 onNavigate('home', 'push_back');
               }}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-stone-200/60 dark:hover:bg-stone-800 text-[14px] font-medium transition-colors text-left"
+              className={link(currentScreen === 'home' || currentScreen === 'reader')}
             >
-              <BookOpen className="w-4 h-4 text-gold" />
+              <BookOpen className={icon(currentScreen === 'home' || currentScreen === 'reader')} />
               <span className="caps">Library</span>
             </button>
 
@@ -80,9 +89,9 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                   onClose();
                   onOpenAnalysis();
                 }}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-stone-200/60 dark:hover:bg-stone-800 text-[14px] font-medium transition-colors text-left"
+                className={link(false)}
               >
-                <Sparkles className="w-4 h-4 text-gold" />
+                <Sparkles className={icon(false)} />
                 <span className="caps">AI Analysis</span>
               </button>
             )}
@@ -93,9 +102,9 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                 onClose();
                 onNavigate('upload', 'push');
               }}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-stone-200/60 dark:hover:bg-stone-800 text-[14px] font-medium transition-colors text-left"
+              className={link(currentScreen === 'upload')}
             >
-              <PlusCircle className="w-4 h-4 text-gold" />
+              <PlusCircle className={icon(currentScreen === 'upload')} />
               <span className="caps">Scan / Upload</span>
             </button>
 
@@ -105,9 +114,9 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                 onClose();
                 onNavigate('settings', 'push');
               }}
-              className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-stone-200/60 dark:hover:bg-stone-800 text-[14px] font-medium transition-colors text-left"
+              className={link(currentScreen === 'settings')}
             >
-              <Settings className="w-4 h-4 text-gold" />
+              <Settings className={icon(currentScreen === 'settings')} />
               <span className="caps">Settings</span>
             </button>
           </nav>

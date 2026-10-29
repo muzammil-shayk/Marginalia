@@ -739,7 +739,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
           claiming a second line of the toolbar to fit them all at once. */}
       <div
         ref={themeStripRef}
-        className={`flex items-center gap-1.5 px-3 py-1.5 border-t text-[11.5px] overflow-x-auto snap-x snap-mandatory scroll-smooth [scrollbar-width:thin] ${
+        className={`chip-strip flex items-center gap-1.5 px-3 py-2 border-t text-[11.5px] overflow-x-auto snap-x snap-mandatory scroll-smooth ${
           isDark ? 'border-stone-800' : 'border-stone-100'
         }`}
       >
