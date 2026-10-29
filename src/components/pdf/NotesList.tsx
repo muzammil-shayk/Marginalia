@@ -100,8 +100,8 @@ export const NotesList: React.FC<NotesListProps> = ({
         <div className="w-12 h-12 rounded-2xl bg-amber-500/10 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto">
           <StickyNote className="w-6 h-6" />
         </div>
-        <h3 className="font-serif text-[17px] font-bold text-stone-900 dark:text-white">Nothing marked yet</h3>
-        <p className="text-[12px] text-stone-500 dark:text-stone-400 max-w-[15rem] mx-auto leading-relaxed">
+        <h3 className="title-hand text-[26px] text-stone-900 dark:text-paper">Nothing marked yet</h3>
+        <p className="text-[12px] text-muted max-w-[15rem] mx-auto leading-relaxed">
           Pick a theme in the toolbar, then highlight a passage or drop a note. Everything you mark
           collects here, grouped by theme.
         </p>
@@ -115,8 +115,8 @@ export const NotesList: React.FC<NotesListProps> = ({
         <section key={group.id ?? 'untagged'} className="space-y-2">
           <div className="flex items-center gap-1.5 px-1">
             <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: group.color }} />
-            <h3 className="text-[10.5px] font-semibold tracking-wider uppercase text-stone-500">{group.name}</h3>
-            <span className="text-[10px] tabular-nums text-stone-400">{group.items.length}</span>
+            <h3 className="caps text-muted">{group.name}</h3>
+            <span className="text-[10px] tabular-nums text-muted">{group.items.length}</span>
           </div>
 
           {group.items.map((a) => {
@@ -130,10 +130,10 @@ export const NotesList: React.FC<NotesListProps> = ({
                 className={`rounded-xl border transition-all ${
                   isHovered
                     ? isDark
-                      ? 'bg-[#1b201d] border-stone-600 shadow-md'
+                      ? 'bg-night-3 border-stone-600 shadow-md'
                       : 'bg-white border-stone-300 shadow-md'
                     : isDark
-                      ? 'bg-[#181c19] border-stone-800'
+                      ? 'bg-night-2 border-stone-800'
                       : 'bg-white/70 border-stone-200'
                 }`}
                 style={{ borderLeft: `3px solid ${a.color}` }}
@@ -163,17 +163,17 @@ export const NotesList: React.FC<NotesListProps> = ({
                           &ldquo;{a.quote}&rdquo;
                         </p>
                       ) : (
-                        <p className="text-[12px] italic text-stone-400 capitalize">{a.kind}</p>
+                        <p className="text-[12px] italic text-muted capitalize">{a.kind}</p>
                       )}
                       {a.text && a.quote && (
                         <p
-                          className="mt-1.5 pl-2 border-l text-[11.5px] italic text-stone-500 dark:text-stone-400 leading-snug line-clamp-2"
+                          className="mt-1.5 pl-2 border-l text-[11.5px] italic text-muted leading-snug line-clamp-2"
                           style={{ borderLeftColor: a.color }}
                         >
                           &ldquo;{a.quote}&rdquo;
                         </p>
                       )}
-                      <p className="text-[10.5px] text-stone-500 mt-1">Page {a.page}</p>
+                      <p className="text-[10.5px] text-muted mt-1">Page {a.page}</p>
                     </div>
                   </div>
                 </button>
@@ -201,7 +201,7 @@ export const NotesList: React.FC<NotesListProps> = ({
                     type="button"
                     onClick={() => onEdit(a.id)}
                     title="Edit the note"
-                    className="p-1 rounded text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer"
+                    className="p-1 rounded text-muted hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer"
                   >
                     <Pencil className="w-3 h-3" />
                   </button>
@@ -209,7 +209,7 @@ export const NotesList: React.FC<NotesListProps> = ({
                     type="button"
                     onClick={() => onDelete(a.id)}
                     title="Delete this mark"
-                    className="p-1 rounded text-stone-400 hover:text-red-600 cursor-pointer"
+                    className="p-1 rounded text-muted hover:text-red-600 cursor-pointer"
                   >
                     <Trash2 className="w-3 h-3" />
                   </button>

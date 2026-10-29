@@ -172,10 +172,10 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
     <main className="flex-1 px-5 py-4 pb-24 md:pb-8 max-w-md md:max-w-2xl mx-auto w-full space-y-6">
       {/* Upload Header */}
       <div className="space-y-1">
-        <h2 className="font-serif text-[24px] font-bold text-stone-900 dark:text-white">
+        <h2 className="title-hand title-hand-rule text-[40px] text-stone-900 dark:text-paper">
           Add a Document
         </h2>
-        <p className="text-[13px] text-stone-500 dark:text-stone-400">
+        <p className="text-[13px] text-muted">
           Files open in the annotating workspace. AI analysis runs only when you ask for it.
         </p>
       </div>
@@ -199,9 +199,9 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
         }}
         className={`p-6 rounded-3xl border-2 border-dashed transition-all cursor-pointer text-center space-y-3 ${
           isDragging
-            ? 'border-emerald-500 bg-emerald-500/10'
+            ? 'border-gold bg-gold/10'
             : isDark
-              ? 'border-stone-700 bg-[#1b201d] hover:border-stone-600'
+              ? 'border-stone-700 bg-night-3 hover:border-stone-600'
               : 'border-stone-300 bg-stone-50/70 hover:border-stone-400'
         }`}
       >
@@ -214,25 +214,25 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
           className="hidden"
         />
 
-        <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 flex items-center justify-center mx-auto">
+        <div className="w-12 h-12 rounded-2xl bg-gold/10 text-gold dark:text-gold flex items-center justify-center mx-auto">
           {isParsing ? (
-            <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
+            <Loader2 className="w-6 h-6 animate-spin text-gold" />
           ) : selectedFile ? (
-            <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+            <CheckCircle2 className="w-6 h-6 text-gold" />
           ) : (
             <Upload className="w-6 h-6" />
           )}
         </div>
 
         <div>
-          <h3 className="font-serif text-[16px] font-semibold text-stone-900 dark:text-white">
+          <h3 className="title-hand text-[24px] text-stone-900 dark:text-paper">
             {isParsing
               ? 'Reading document…'
               : selectedFile
                 ? selectedFile.name
                 : 'Choose a file or drag one here'}
           </h3>
-          <p className="text-[12px] text-stone-500 dark:text-stone-400 mt-1">
+          <p className="text-[12px] text-muted mt-1">
             {selectedFile && typeof parsedText === 'string'
               ? textLayerMissing
                 ? 'No text layer — opens for reading and hand annotation'
@@ -291,9 +291,9 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
             setPastedText(e.target.value);
             if (parseError) setParseError(null);
           }}
-          className={`w-full p-3.5 rounded-2xl border text-[13px] font-serif leading-relaxed transition-all resize-none focus:outline-none focus:ring-1 focus:ring-[#435c52] ${
+          className={`w-full p-3.5 rounded-2xl border text-[13px] font-serif leading-relaxed transition-all resize-none focus:outline-none focus:ring-1 focus:ring-gold ${
             isDark
-              ? 'bg-[#181c19] border-stone-800 text-stone-100 placeholder-stone-600'
+              ? 'bg-night-2 border-stone-800 text-stone-100 placeholder-stone-600'
               : 'bg-white border-stone-300/80 text-stone-900 placeholder-stone-400'
           }`}
         />
@@ -302,7 +302,7 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
             type="button"
             onClick={() => { void handleStartAnalysis(); }}
             disabled={isParsing || isStoring || (!selectedFile && !parsedText && !pastedText.trim())}
-            className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-[#435c52] hover:bg-[#374c43] text-white font-semibold text-[13px] transition-all shadow-xs cursor-pointer disabled:opacity-50"
+            className="flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-accent caps hover:bg-accent-hover text-on-accent font-semibold text-[13px] transition-all shadow-xs cursor-pointer disabled:opacity-50"
           >
             {/* Not a sparkle: this button saves the document and opens it to read. Nothing is
                 sent to Gemini here — analysis is a separate, deliberate press inside the reader,
@@ -324,15 +324,15 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
       {/* Recent Documents Section */}
       <section id="recent-documents-section" className="space-y-3">
         <div className="flex items-center gap-2 text-stone-700 dark:text-stone-300">
-          <Clock className="w-4 h-4 text-stone-500" />
-          <h3 className="text-[13px] font-semibold tracking-wide text-stone-800 dark:text-stone-200">
+          <Clock className="w-4 h-4 text-muted" />
+          <h3 className="caps text-stone-800 dark:text-stone-200">
             Recent
           </h3>
           {onOpenLibrary && (
             <button
               type="button"
               onClick={onOpenLibrary}
-              className="ml-auto text-[11px] font-semibold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
+              className="ml-auto text-[11px] font-semibold text-gold dark:text-gold hover:underline cursor-pointer"
             >
               Open library
             </button>
@@ -359,7 +359,7 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
                 onClick={() => onOpenLibraryDocument?.(doc)}
                 className={`p-3.5 rounded-2xl border transition-all flex items-center justify-between cursor-pointer hover:shadow-xs ${
                   isDark
-                    ? 'bg-[#1b201d] border-stone-800 hover:bg-[#232a26]'
+                    ? 'bg-night-3 border-stone-800 hover:bg-night-4'
                     : 'bg-white border-stone-200/70 hover:bg-stone-50'
                 }`}
               >
@@ -371,7 +371,7 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
                     <h4 className="font-medium text-[13px] text-stone-900 dark:text-stone-100 truncate">
                       {doc.title}
                     </h4>
-                    <p className="text-[11px] text-stone-500 dark:text-stone-400">
+                    <p className="text-[11px] text-muted">
                       {doc.wordCount} words • Added {doc.date}
                     </p>
                   </div>
@@ -381,7 +381,7 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
           </div>
         ) : (
           <div className="p-4 rounded-2xl border border-dashed border-stone-300 dark:border-stone-800 text-center bg-stone-50/50 dark:bg-stone-900/30">
-            <p className="text-[12px] text-stone-500 dark:text-stone-400">
+            <p className="text-[12px] text-muted">
               Nothing here yet. Add a file or paste text above.
             </p>
           </div>

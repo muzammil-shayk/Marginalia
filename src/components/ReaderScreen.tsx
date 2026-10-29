@@ -302,7 +302,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     <div
       ref={readerContentRef}
       className={`min-h-screen flex flex-col transition-colors ${
-        isDark ? 'bg-[#121514] text-stone-100' : 'bg-[#f9f9f7] text-[#1c2321]'
+        isDark ? 'bg-night text-stone-100' : 'bg-paper text-ink'
       }`}
     >
       {/* Redesigned Floating Selection Glass Tooltip */}
@@ -373,10 +373,10 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
       <div
         ref={themeStripRef}
         className={`px-3 sm:px-6 py-1.5 border-b flex items-center gap-1.5 text-[11px] w-full max-w-full overflow-x-auto snap-x snap-mandatory scroll-smooth [scrollbar-width:thin] ${
-          isDark ? 'bg-[#181c1a] border-stone-800/80' : 'bg-[#f2efe9] border-stone-200'
+          isDark ? 'bg-night-2 border-stone-800/80' : 'bg-stone-100 border-stone-200'
         }`}
       >
-        <span className="font-semibold text-stone-500 dark:text-stone-400 shrink-0">Tagging as</span>
+        <span className="font-semibold text-muted shrink-0">Tagging as</span>
         {settings.activeThemes.map((theme) => (
           <button
             key={theme.id}
@@ -397,7 +397,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
 
       {/* Top Reader Navigation Bar */}
       <header className={`app-drag sticky top-0 z-40 px-3 sm:px-6 h-18 border-b flex items-center justify-between gap-2 backdrop-blur-md transition-colors w-full max-w-full overflow-hidden ${
-        isDark ? 'bg-[#121514]/90 border-stone-800' : 'bg-[#f9f9f7]/90 border-stone-200/80'
+        isDark ? 'bg-night/90 border-stone-800' : 'bg-paper/90 border-stone-200/80'
       }`}>
         {/* Left: Back button and Title tightly grouped */}
         <div className="flex items-center gap-2 min-w-0 max-w-[65%] sm:max-w-md">
@@ -412,10 +412,10 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
           </button>
 
           <div className="min-w-0 truncate">
-            <h1 className="font-serif text-[16px] sm:text-[18px] font-bold truncate text-stone-900 dark:text-white leading-tight">
+            <h1 className="font-serif text-[16px] sm:text-[18px] font-bold truncate text-stone-900 dark:text-paper leading-tight">
               {displayTitle}
             </h1>
-            <p className="text-[11px] sm:text-[12px] text-stone-500 truncate leading-tight">
+            <p className="text-[11px] sm:text-[12px] text-muted truncate leading-tight">
               {displayAuthor || 'Active Reading Session'}
             </p>
           </div>
@@ -440,7 +440,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
 
       {/* Reader Control Bar: Icons First, Active Tab Expands to Pill */}
       <div className={`px-3 sm:px-6 py-2 border-b flex items-center justify-between gap-2 text-[12px] w-full max-w-full overflow-x-auto hide-scrollbar ${
-        isDark ? 'bg-[#181c1a] border-stone-800/80' : 'bg-[#f2efe9] border-stone-200'
+        isDark ? 'bg-night-2 border-stone-800/80' : 'bg-stone-100 border-stone-200'
       }`}>
         <div className="flex items-center gap-1.5 shrink-0">
           {/* Notes Toggle Pill */}
@@ -455,7 +455,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
             }}
             className={`flex items-center gap-1.5 transition-all duration-200 cursor-pointer shrink-0 ${
               activeControlTab === 'notes'
-                ? 'bg-[#435c52] text-white px-3 py-1.5 rounded-xl font-semibold shadow-xs animate-in fade-in zoom-in-95'
+                ? 'bg-accent text-on-accent px-3 py-1.5 rounded-xl font-semibold shadow-xs animate-in fade-in zoom-in-95'
                 : 'p-2 rounded-xl bg-black/5 dark:bg-white/5 hover:bg-black/10 text-stone-700 dark:text-stone-300'
             }`}
             title={`Sticky Notes (${notes.length})`}
@@ -477,7 +477,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
             }}
             className={`flex items-center gap-1.5 transition-all duration-200 cursor-pointer shrink-0 ${
               activeControlTab === 'add'
-                ? 'bg-[#435c52] text-white px-3 py-1.5 rounded-xl font-semibold shadow-xs animate-in fade-in zoom-in-95'
+                ? 'bg-accent text-on-accent px-3 py-1.5 rounded-xl font-semibold shadow-xs animate-in fade-in zoom-in-95'
                 : 'p-2 rounded-xl bg-black/5 dark:bg-white/5 hover:bg-black/10 text-stone-700 dark:text-stone-300'
             }`}
             title="Add Manual Note"
@@ -499,7 +499,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
             }}
             className={`flex items-center gap-1.5 transition-all duration-200 cursor-pointer shrink-0 ${
               activeControlTab === 'export'
-                ? 'bg-[#435c52] text-white px-3 py-1.5 rounded-xl font-semibold shadow-xs animate-in fade-in zoom-in-95'
+                ? 'bg-accent text-on-accent px-3 py-1.5 rounded-xl font-semibold shadow-xs animate-in fade-in zoom-in-95'
                 : 'p-2 rounded-xl bg-black/5 dark:bg-white/5 hover:bg-black/10 text-stone-700 dark:text-stone-300'
             }`}
             title="Export Notes"
@@ -519,7 +519,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
               onClick={() => handleSwitchTab('analysis')}
               className={`flex items-center gap-1.5 transition-all duration-200 cursor-pointer shrink-0 ${
                 activeControlTab === 'analysis'
-                  ? 'bg-[#435c52] text-white px-3 py-1.5 rounded-xl font-semibold shadow-xs animate-in fade-in zoom-in-95'
+                  ? 'bg-accent text-on-accent px-3 py-1.5 rounded-xl font-semibold shadow-xs animate-in fade-in zoom-in-95'
                   : 'p-2 rounded-xl bg-black/5 dark:bg-white/5 hover:bg-black/10 text-stone-700 dark:text-stone-300'
               }`}
               title="AI Thematic Analysis"
@@ -561,19 +561,19 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                   }`}
                 >
                   <div className="flex items-center justify-center gap-2 flex-wrap text-[11px]">
-                    <span className="font-mono font-bold text-[#435c52] dark:text-[#8baaa0] tracking-widest uppercase">
+                    <span className="caps text-gold">
                       {'DOCUMENT'}
                     </span>
                     <span className="text-stone-300 dark:text-stone-700">•</span>
-                    <span className="text-stone-500 dark:text-stone-400 italic">
+                    <span className="text-muted italic">
                       Select text to annotate manually or with AI
                     </span>
                   </div>
-                  <h2 className="font-serif text-[26px] sm:text-[32px] font-bold leading-tight text-stone-900 dark:text-white">
+                  <h2 className="font-serif text-[26px] sm:text-[32px] font-bold leading-tight text-stone-900 dark:text-paper">
                     {displayTitle}
                   </h2>
                   {displayAuthor && (
-                    <p className="text-[13px] text-stone-500 dark:text-stone-400">
+                    <p className="text-[13px] text-muted">
                       {displayAuthor}
                     </p>
                   )}
@@ -624,9 +624,9 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                               handleSwitchTab('add');
                               handleOpenManualNote(idx);
                             }}
-                            className="text-[11px] font-medium text-stone-600 dark:text-stone-400 hover:text-[#435c52] dark:hover:text-[#98bbae] flex items-center gap-1 cursor-pointer"
+                            className="text-[11px] font-medium text-stone-600 dark:text-stone-400 hover:text-gold dark:hover:text-gold flex items-center gap-1 cursor-pointer"
                           >
-                            <Plus className="w-3.5 h-3.5 text-[#435c52]" />
+                            <Plus className="w-3.5 h-3.5 text-gold" />
                             <span>Manual Note</span>
                           </button>
                         </div>
@@ -640,7 +640,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
 
                       {/* Inline Sticky Notes pinned to this paragraph */}
                       {showNotesDrawer && notesForThisPara.length > 0 && (
-                        <div className="mt-3 space-y-2.5 pl-3 border-l-2 border-[#435c52]/40">
+                        <div className="mt-3 space-y-2.5 pl-3 border-l-2 border-gold/40">
                           {notesForThisPara.map((note) => (
                             <div
                               key={note.id}
@@ -681,7 +681,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                                       handleEditNote(note);
                                       handleSwitchTab('add');
                                     }}
-                                    className="p-0.5 text-stone-500 hover:text-stone-900 dark:hover:text-white transition-colors cursor-pointer"
+                                    className="p-0.5 text-muted hover:text-stone-900 dark:hover:text-white transition-colors cursor-pointer"
                                     title="Edit note"
                                   >
                                     <Edit3 className="w-3 h-3" />
@@ -689,7 +689,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                                   <button
                                     type="button"
                                     onClick={() => handleDeleteNote(note.id)}
-                                    className="p-0.5 text-stone-500 hover:text-red-600 transition-colors cursor-pointer"
+                                    className="p-0.5 text-muted hover:text-red-600 transition-colors cursor-pointer"
                                     title="Delete note"
                                   >
                                     <Trash2 className="w-3 h-3" />
@@ -737,15 +737,15 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
               >
                 <div className="flex items-center justify-between border-b pb-3 border-stone-200 dark:border-stone-800">
                   <div className="flex items-center gap-2">
-                    <StickyNoteIcon className="w-5 h-5 text-[#435c52]" />
-                    <h3 className="font-serif font-bold text-[17px] text-stone-900 dark:text-white">
+                    <StickyNoteIcon className="w-5 h-5 text-gold" />
+                    <h3 className="title-hand text-[26px] text-stone-900 dark:text-paper">
                       {editingNoteId ? 'Edit Sticky Note' : 'Add Manual Sticky Note'}
                     </h3>
                   </div>
                   <button
                     type="button"
                     onClick={() => handleSwitchTab('notes')}
-                    className="text-[12px] font-medium text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 flex items-center gap-1 cursor-pointer"
+                    className="text-[12px] font-medium text-muted hover:text-stone-800 dark:hover:text-stone-200 flex items-center gap-1 cursor-pointer"
                   >
                     <ArrowLeft className="w-3.5 h-3.5" />
                     <span>Back to Reading</span>
@@ -760,7 +760,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                   className="space-y-4"
                 >
                   <div>
-                    <label className="text-[12px] font-semibold text-stone-500 dark:text-stone-400 block mb-1">
+                    <label className="text-[12px] font-semibold text-muted block mb-1">
                       Note Title
                     </label>
                     <input
@@ -768,15 +768,15 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                       placeholder="e.g., Hierarchical Modularity or Key Reflection"
                       value={noteFormTitle}
                       onChange={(e) => setNoteFormTitle(e.target.value)}
-                      className={`w-full px-3.5 py-2.5 rounded-xl text-[13px] border focus:outline-none focus:ring-1 focus:ring-[#435c52] ${
-                        isDark ? 'bg-[#151917] border-stone-700 text-white' : 'bg-stone-50 border-stone-300 text-stone-900'
+                      className={`w-full px-3.5 py-2.5 rounded-xl text-[13px] border focus:outline-none focus:ring-1 focus:ring-gold ${
+                        isDark ? 'bg-night-1 border-stone-700 text-paper' : 'bg-stone-50 border-stone-300 text-stone-900'
                       }`}
                       autoFocus
                     />
                   </div>
 
                   <div>
-                    <label className="text-[12px] font-semibold text-stone-500 dark:text-stone-400 block mb-1">
+                    <label className="text-[12px] font-semibold text-muted block mb-1">
                       Theme — also sets this note's colour
                     </label>
                     <div className="flex flex-wrap gap-1.5">
@@ -787,7 +787,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                           onClick={() => setNoteFormThemeId(theme.id)}
                           className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all flex items-center gap-1.5 cursor-pointer ${
                             noteFormThemeId === theme.id
-                              ? 'bg-[#435c52] text-white shadow-xs'
+                              ? 'bg-accent text-on-accent shadow-xs'
                               : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-200'
                           }`}
                         >
@@ -802,7 +802,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                   </div>
 
                   <div>
-                    <label className="text-[12px] font-semibold text-stone-500 dark:text-stone-400 block mb-1">
+                    <label className="text-[12px] font-semibold text-muted block mb-1">
                       Quoted Excerpt (Optional)
                     </label>
                     <input
@@ -810,14 +810,14 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                       placeholder="Selected or reference quote..."
                       value={noteFormQuote}
                       onChange={(e) => setNoteFormQuote(e.target.value)}
-                      className={`w-full px-3 py-2 rounded-xl text-[12px] border italic focus:outline-none focus:ring-1 focus:ring-[#435c52] ${
-                        isDark ? 'bg-[#151917] border-stone-700 text-stone-300' : 'bg-stone-50 border-stone-300 text-stone-700'
+                      className={`w-full px-3 py-2 rounded-xl text-[12px] border italic focus:outline-none focus:ring-1 focus:ring-gold ${
+                        isDark ? 'bg-night-1 border-stone-700 text-stone-300' : 'bg-stone-50 border-stone-300 text-stone-700'
                       }`}
                     />
                   </div>
 
                   <div>
-                    <label className="text-[12px] font-semibold text-stone-500 dark:text-stone-400 block mb-1">
+                    <label className="text-[12px] font-semibold text-muted block mb-1">
                       Annotation / Reflection
                     </label>
                     <textarea
@@ -825,8 +825,8 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                       placeholder="Write your note, critique, or synthesis..."
                       value={noteFormText}
                       onChange={(e) => setNoteFormText(e.target.value)}
-                      className={`w-full p-3 rounded-xl text-[13px] leading-relaxed resize-none border focus:outline-none focus:ring-1 focus:ring-[#435c52] ${
-                        isDark ? 'bg-[#151917] border-stone-700 text-white' : 'bg-stone-50 border-stone-300 text-stone-900'
+                      className={`w-full p-3 rounded-xl text-[13px] leading-relaxed resize-none border focus:outline-none focus:ring-1 focus:ring-gold ${
+                        isDark ? 'bg-night-1 border-stone-700 text-paper' : 'bg-stone-50 border-stone-300 text-stone-900'
                       }`}
                       required
                     />
@@ -836,13 +836,13 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                     <button
                       type="button"
                       onClick={() => handleSwitchTab('notes')}
-                      className="px-4 py-2 rounded-xl text-[13px] font-medium text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 cursor-pointer"
+                      className="px-4 py-2 rounded-xl text-[13px] font-medium text-muted hover:text-stone-800 dark:hover:text-stone-200 cursor-pointer"
                     >
                       Cancel
                     </button>
                     <button
                       type="submit"
-                      className="px-5 py-2 rounded-xl bg-[#435c52] hover:bg-[#374c43] text-white font-medium text-[13px] transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                      className="px-5 py-2 rounded-full bg-accent caps hover:bg-accent-hover text-on-accent font-medium text-[13px] transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
                     >
                       <Check className="w-4 h-4" />
                       <span>{editingNoteId ? 'Update Note' : 'Pin Note to Margin'}</span>
@@ -866,15 +866,15 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
               >
                 <div className="flex items-center justify-between border-b pb-3 border-stone-200 dark:border-stone-800">
                   <div className="flex items-center gap-2">
-                    <Download className="w-5 h-5 text-[#435c52]" />
-                    <h3 className="font-serif font-bold text-[17px] text-stone-900 dark:text-white">
+                    <Download className="w-5 h-5 text-gold" />
+                    <h3 className="title-hand text-[26px] text-stone-900 dark:text-paper">
                       Export Annotations
                     </h3>
                   </div>
                   <button
                     type="button"
                     onClick={() => handleSwitchTab('notes')}
-                    className="text-[12px] font-medium text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 flex items-center gap-1 cursor-pointer"
+                    className="text-[12px] font-medium text-muted hover:text-stone-800 dark:hover:text-stone-200 flex items-center gap-1 cursor-pointer"
                   >
                     <ArrowLeft className="w-3.5 h-3.5" />
                     <span>Back to Reading</span>
@@ -884,14 +884,14 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                 <div className="space-y-4">
                   <div className="p-4 rounded-2xl bg-stone-100 dark:bg-stone-800/60 flex items-center justify-between">
                     <div>
-                      <h4 className="font-bold text-[14px] text-stone-900 dark:text-white">
+                      <h4 className="font-bold text-[14px] text-stone-900 dark:text-paper">
                         {displayTitle}
                       </h4>
-                      <p className="text-[12px] text-stone-500">
+                      <p className="text-[12px] text-muted">
                         {exportableNotes.length} of {notes.length} annotations match the filters below
                       </p>
                     </div>
-                    <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg bg-[#435c52] text-white">
+                    <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg bg-accent text-on-accent">
                       {exportableNotes.length} Notes
                     </span>
                   </div>
@@ -906,7 +906,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                           onClick={() => setSelectedThemeFilter(theme.id)}
                           className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all cursor-pointer ${
                             selectedThemeFilter === theme.id
-                              ? 'bg-emerald-600 text-white shadow-xs'
+                              ? 'bg-accent text-on-accent shadow-xs'
                               : 'bg-stone-100 dark:bg-stone-800 text-stone-700 dark:text-stone-300 hover:bg-stone-200'
                           }`}
                         >
@@ -931,12 +931,12 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                         };
                         exportToPDF(exportableNotes, opts);
                       }}
-                      className="p-4 rounded-2xl border border-stone-200 dark:border-stone-700 hover:border-[#435c52] dark:hover:border-emerald-500 text-left space-y-2 transition-all cursor-pointer group disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-stone-200 dark:disabled:hover:border-stone-700"
+                      className="p-4 rounded-2xl border border-stone-200 dark:border-stone-700 hover:border-gold dark:hover:border-gold text-left space-y-2 transition-all cursor-pointer group disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-stone-200 dark:disabled:hover:border-stone-700"
                     >
-                      <Download className="w-5 h-5 text-[#435c52] group-hover:scale-110 transition-transform" />
+                      <Download className="w-5 h-5 text-gold group-hover:scale-110 transition-transform" />
                       <div>
                         <div className="font-bold text-[13px]">Download PDF</div>
-                        <div className="text-[11px] text-stone-500">Printable document</div>
+                        <div className="text-[11px] text-muted">Printable document</div>
                       </div>
                     </button>
 
@@ -955,12 +955,12 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                         const content = generateMarkdown(exportableNotes, opts);
                         downloadTextFile(content, `${displayTitle}-annotations.md`, 'text/markdown');
                       }}
-                      className="p-4 rounded-2xl border border-stone-200 dark:border-stone-700 hover:border-[#435c52] dark:hover:border-emerald-500 text-left space-y-2 transition-all cursor-pointer group disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-stone-200 dark:disabled:hover:border-stone-700"
+                      className="p-4 rounded-2xl border border-stone-200 dark:border-stone-700 hover:border-gold dark:hover:border-gold text-left space-y-2 transition-all cursor-pointer group disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-stone-200 dark:disabled:hover:border-stone-700"
                     >
-                      <Download className="w-5 h-5 text-[#435c52] group-hover:scale-110 transition-transform" />
+                      <Download className="w-5 h-5 text-gold group-hover:scale-110 transition-transform" />
                       <div>
                         <div className="font-bold text-[13px]">Markdown (.md)</div>
-                        <div className="text-[11px] text-stone-500">For Obsidian / Notion</div>
+                        <div className="text-[11px] text-muted">For Obsidian / Notion</div>
                       </div>
                     </button>
 
@@ -979,12 +979,12 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                         const content = generatePlainText(exportableNotes, opts);
                         downloadTextFile(content, `${displayTitle}-annotations.txt`, 'text/plain');
                       }}
-                      className="p-4 rounded-2xl border border-stone-200 dark:border-stone-700 hover:border-[#435c52] dark:hover:border-emerald-500 text-left space-y-2 transition-all cursor-pointer group disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-stone-200 dark:disabled:hover:border-stone-700"
+                      className="p-4 rounded-2xl border border-stone-200 dark:border-stone-700 hover:border-gold dark:hover:border-gold text-left space-y-2 transition-all cursor-pointer group disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-stone-200 dark:disabled:hover:border-stone-700"
                     >
-                      <Download className="w-5 h-5 text-[#435c52] group-hover:scale-110 transition-transform" />
+                      <Download className="w-5 h-5 text-gold group-hover:scale-110 transition-transform" />
                       <div>
                         <div className="font-bold text-[13px]">Plain Text (.txt)</div>
-                        <div className="text-[11px] text-stone-500">Universal text file</div>
+                        <div className="text-[11px] text-muted">Universal text file</div>
                       </div>
                     </button>
                   </div>

@@ -1491,28 +1491,28 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   return (
     <div
       className={`flex flex-col h-screen max-h-screen min-h-0 overflow-hidden ${
-        isDark ? 'bg-[#121514]' : 'bg-[#f9f9f7]'
+        isDark ? 'bg-night' : 'bg-paper'
       }`}
     >
       <header
         // `app-drag`: the desktop build has no system title bar, so this header is what the
         // window is moved by. Its own buttons opt out — see `.app-drag` in index.css.
         className={`app-drag flex items-center gap-3 px-4 py-2.5 border-b shrink-0 ${
-          isDark ? 'bg-[#181c19] border-stone-800' : 'bg-white border-stone-200'
+          isDark ? 'bg-night-2 border-stone-800' : 'bg-white border-stone-200'
         }`}
       >
         <button
           type="button"
           onClick={() => onNavigate('home', 'push_back')}
           title="Back to the library"
-          className="p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
+          className="p-1.5 rounded-lg text-muted hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
-        <h1 className="font-serif text-[15px] font-semibold text-stone-900 dark:text-white truncate flex-1 min-w-0">
+        <h1 className="font-serif text-[15px] font-semibold text-stone-900 dark:text-paper truncate flex-1 min-w-0">
           {documentTitle}
         </h1>
-        <span className="text-[11px] text-stone-500 flex items-center gap-1 shrink-0 w-20 justify-end">
+        <span className="text-[11px] text-muted flex items-center gap-1 shrink-0 w-20 justify-end">
           {saveState === 'saving' && (
             <>
               <Loader2 className="w-3 h-3 animate-spin" />
@@ -1521,7 +1521,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
           )}
           {saveState === 'saved' && (
             <>
-              <Check className="w-3 h-3 text-emerald-600" />
+              <Check className="w-3 h-3 text-gold" />
               Saved
             </>
           )}
@@ -1544,8 +1544,8 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
               title="Thematic analysis"
               className={`p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer transition-[background-color,transform] duration-150 ease-out active:scale-[0.94] ${
                 isPanelOpen && panelTab === 'analysis'
-                  ? 'text-[#435c52] dark:text-emerald-400'
-                  : 'text-stone-500'
+                  ? 'text-gold dark:text-gold'
+                  : 'text-muted'
               }`}
             >
               <Sparkles
@@ -1565,8 +1565,8 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
               // colour, the same way every other tool in this row shows it.
               className={`p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer transition-[background-color,transform] duration-150 ease-out active:scale-[0.94] ${
                 isPanelOpen && panelTab === 'notes'
-                  ? 'text-[#435c52] dark:text-emerald-400'
-                  : 'text-stone-500'
+                  ? 'text-gold dark:text-gold'
+                  : 'text-muted'
               }`}
             >
               <StickyNote
@@ -1644,8 +1644,8 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
             </div>
           ) : !pdf ? (
             <div className="h-full flex flex-col items-center justify-center gap-3">
-              <Loader2 className="w-6 h-6 animate-spin text-emerald-600" />
-              <p className="text-[12px] text-stone-500">Opening document…</p>
+              <Loader2 className="w-6 h-6 animate-spin text-gold" />
+              <p className="text-[12px] text-muted">Opening document…</p>
             </div>
           ) : (() => {
             const pageNumbers = Array.from({ length: pageCount }, (_, i) => i + 1);
@@ -1719,7 +1719,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
           // header doing visibly nothing on a small window.
           className={`flex-col min-h-0 border-l z-30 max-md:fixed max-md:inset-y-0 max-md:right-0 max-md:w-full max-md:max-w-sm max-md:shadow-2xl md:w-80 md:shrink-0 ${
             isPanelOpen ? 'flex' : 'hidden'
-          } ${isDark ? 'bg-[#151917] border-stone-800' : 'bg-white border-stone-200'}`}
+          } ${isDark ? 'bg-night-1 border-stone-800' : 'bg-white border-stone-200'}`}
         >
           <div
             className={`min-h-0 flex-1 motion-safe:animate-[panel-in_200ms_var(--ease-out)] ${
@@ -1870,14 +1870,14 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       {editing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={saveEditing}>
           <div
-            className={`w-full max-w-sm rounded-2xl p-4 space-y-3 shadow-2xl ${
-              isDark ? 'bg-[#1b201d] border border-stone-800' : 'bg-white border border-stone-200'
+            className={`ink-card w-full max-w-sm rounded-2xl p-4 space-y-3 shadow-2xl ${
+              isDark ? 'bg-night-3 border border-stone-800' : 'bg-white border border-stone-200'
             }`}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center gap-2">
               <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: editing.color }} />
-              <h3 className="font-serif text-[15px] font-semibold text-stone-900 dark:text-white">
+              <h3 className="title-hand text-[23px] text-stone-900 dark:text-paper">
                 {editing.kind === 'note' ? 'Note' : editing.kind === 'text' ? 'Text box' : 'Comment'} · page {editing.page}
               </h3>
             </div>
@@ -1908,9 +1908,9 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
                 }
               }}
               placeholder="Write your note… (Enter to save, Shift+Enter for a new line)"
-              className={`w-full p-3 rounded-xl border text-[13px] leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-[#435c52] ${
+              className={`w-full p-3 rounded-xl border text-[13px] leading-relaxed resize-none focus:outline-none focus:ring-1 focus:ring-gold ${
                 isDark
-                  ? 'bg-[#181c19] border-stone-800 text-stone-100 placeholder-stone-600'
+                  ? 'bg-night-2 border-stone-800 text-stone-100 placeholder-stone-600'
                   : 'bg-white border-stone-300 text-stone-900 placeholder-stone-400'
               }`}
             />
@@ -1925,7 +1925,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
               <button
                 type="button"
                 onClick={saveEditing}
-                className="px-4 py-2 rounded-xl bg-[#435c52] hover:bg-[#374c43] text-white text-[12px] font-semibold cursor-pointer"
+                className="px-4 py-2 rounded-full bg-accent caps hover:bg-accent-hover text-on-accent text-[12px] font-semibold cursor-pointer"
               >
                 Save
               </button>
@@ -1946,26 +1946,26 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
           }}
         >
           <div
-            className={`w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl ${
-              isDark ? 'bg-[#1b201d] border border-stone-800' : 'bg-white border border-stone-200'
+            className={`ink-card w-full max-w-sm rounded-2xl p-5 space-y-4 shadow-2xl ${
+              isDark ? 'bg-night-3 border border-stone-800' : 'bg-white border border-stone-200'
             }`}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <h3 className="font-serif text-[16px] font-semibold text-stone-900 dark:text-white">
+              <h3 className="title-hand text-[23px] text-stone-900 dark:text-paper">
                 Page {currentPage}
               </h3>
               <button
                 type="button"
                 onClick={() => setInsertPageMenuOpen(false)}
-                className="p-1 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer"
+                className="p-1 rounded-lg text-muted hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
             </div>
 
             <div className="space-y-1.5">
-              <span className="text-[11px] font-semibold tracking-wider text-stone-500 uppercase">
+              <span className="caps text-muted">
                 Where
               </span>
               <div className="grid grid-cols-3 gap-1.5">
@@ -1982,7 +1982,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
                     onClick={() => setInsertPlacement(id)}
                     className={`flex flex-col items-center gap-1 p-2.5 rounded-xl border text-[11px] font-medium text-center leading-tight cursor-pointer transition-all ${
                       insertPlacement === id
-                        ? 'border-[#435c52] bg-[#435c52]/10 text-[#435c52] dark:text-emerald-300'
+                        ? 'border-gold bg-gold/10 text-gold dark:text-gold'
                         : isDark
                           ? 'border-stone-700 text-stone-400 hover:bg-stone-800'
                           : 'border-stone-200 text-stone-600 hover:bg-stone-50'
@@ -1996,7 +1996,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
             </div>
 
             <div className="space-y-1.5">
-              <span className="text-[11px] font-semibold tracking-wider text-stone-500 uppercase">
+              <span className="caps text-muted">
                 Size
               </span>
               <div className="grid grid-cols-3 gap-1.5">
@@ -2013,7 +2013,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
                     onClick={() => setInsertHeight(id)}
                     className={`p-2.5 rounded-xl border text-[11px] font-medium text-center leading-tight cursor-pointer transition-all ${
                       insertHeight === id
-                        ? 'border-[#435c52] bg-[#435c52]/10 text-[#435c52] dark:text-emerald-300'
+                        ? 'border-gold bg-gold/10 text-gold dark:text-gold'
                         : isDark
                           ? 'border-stone-700 text-stone-400 hover:bg-stone-800'
                           : 'border-stone-200 text-stone-600 hover:bg-stone-50'
@@ -2030,7 +2030,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
                 type="button"
                 onClick={() => setInsertPageMenuOpen(false)}
                 disabled={isInsertingPage}
-                className="px-3.5 py-2 text-[12.5px] font-medium text-stone-500 hover:text-stone-800 dark:hover:text-white transition-colors cursor-pointer disabled:opacity-50"
+                className="px-3.5 py-2 text-[12.5px] font-medium text-muted hover:text-stone-800 dark:hover:text-white transition-colors cursor-pointer disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -2038,14 +2038,14 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
                 type="button"
                 onClick={() => void handleInsertPage()}
                 disabled={isInsertingPage}
-                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#435c52] hover:bg-[#374c43] text-white text-[12.5px] font-semibold cursor-pointer disabled:opacity-60"
+                className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-accent caps hover:bg-accent-hover text-on-accent text-[12.5px] font-semibold cursor-pointer disabled:opacity-60"
               >
                 {isInsertingPage && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 Insert
               </button>
             </div>
 
-            <p className="text-[11.5px] text-stone-400 dark:text-stone-500 text-center pt-1">
+            <p className="text-[11.5px] text-muted text-center pt-1">
               To delete a page instead, hover its bottom-right corner.
             </p>
           </div>

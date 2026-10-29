@@ -24,6 +24,7 @@ import { SearchModal } from './components/SearchModal';
 import { SidebarDrawer } from './components/SidebarDrawer';
 import { AnalysisModal } from './components/AnalysisModal';
 import { ChangelogModal } from './components/ChangelogModal';
+import { UpdatePrompt } from './components/UpdatePrompt';
 import { CURRENT_APP_VERSION } from './data/changelog';
 import { ErrorDialog } from './components/ErrorDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -539,7 +540,7 @@ export default function App() {
     <div
       id="app-container"
       className={`min-h-screen flex flex-row font-sans transition-colors duration-200 overflow-x-clip w-full max-w-full ${
-        isDark ? 'bg-[#121514] text-white dark' : 'bg-[#f9f9f7] text-[#1c2321]'
+        isDark ? 'bg-night text-paper dark' : 'bg-paper text-ink'
       }`}
     >
       {/* Desktop Sidebar Navigation (hidden on mobile) */}
@@ -595,6 +596,8 @@ export default function App() {
           isDark={isDark}
           initialVersion={changelogVersion}
         />
+
+        <UpdatePrompt isDark={isDark} onOpenChangelog={handleOpenChangelog} changelogOpen={isChangelogOpen} />
 
         {/* Screen Rendering */}
         {currentScreen === 'workspace' && analysisDoc.docId ? (

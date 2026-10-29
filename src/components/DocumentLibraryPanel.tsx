@@ -132,7 +132,7 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
       // Docked beside the content on a wide window, but an overlay once the window is narrow
       // enough that a full-width panel in the flex row would squeeze the document to nothing.
       className={`flex flex-col min-h-0 border-l z-40 max-sm:fixed max-sm:inset-y-0 max-sm:right-0 max-sm:w-full max-sm:shadow-2xl sm:relative sm:h-full sm:w-80 sm:shrink-0 ${
-        isDark ? 'bg-[#151917] border-stone-800' : 'bg-white border-stone-200'
+        isDark ? 'bg-night-1 border-stone-800' : 'bg-white border-stone-200'
       }`}
       aria-label="Document library"
     >
@@ -142,16 +142,16 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
       <div className={`px-4 py-3 border-b shrink-0 ${isDark ? 'border-stone-800' : 'border-stone-200'}`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <HardDrive className="w-4 h-4 text-stone-500" />
-            <h2 className="font-serif text-[15px] font-bold text-stone-900 dark:text-white">Library</h2>
-            <span className="text-[11px] text-stone-500 tabular-nums">({documents.length})</span>
+            <HardDrive className="w-4 h-4 text-muted" />
+            <h2 className="title-hand text-[26px] text-stone-900 dark:text-paper">Library</h2>
+            <span className="text-[11px] text-muted tabular-nums">({documents.length})</span>
           </div>
           <div className="flex items-center gap-0.5">
             <button
               type="button"
               onClick={() => void refresh()}
               title="Refresh"
-              className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
+              className="p-1.5 rounded-lg text-muted hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} />
             </button>
@@ -159,13 +159,13 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
               type="button"
               onClick={onClose}
               title="Close library"
-              className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
+              className="p-1.5 rounded-lg text-muted hover:text-stone-700 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
           </div>
         </div>
-        <p className="text-[11px] text-stone-500 mt-1">Stored on this computer.</p>
+        <p className="text-[11px] text-muted mt-1">Stored on this computer.</p>
       </div>
 
       {/* List */}
@@ -177,7 +177,7 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
         ) : documents.length === 0 ? (
           <div className="py-10 px-4 text-center space-y-2">
             <FileText className="w-8 h-8 text-stone-300 dark:text-stone-700 mx-auto" />
-            <p className="text-[12px] text-stone-500">
+            <p className="text-[12px] text-muted">
               Nothing stored yet. Documents you add appear here and stay until you delete them.
             </p>
           </div>
@@ -192,9 +192,9 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
                 key={doc.id}
                 className={`rounded-xl border transition-all ${
                   isActive
-                    ? 'border-emerald-500/50 bg-emerald-500/5'
+                    ? 'border-gold/50 bg-gold/5'
                     : isDark
-                      ? 'border-stone-800 bg-[#181c19] hover:border-stone-700'
+                      ? 'border-stone-800 bg-night-2 hover:border-stone-700'
                       : 'border-stone-200 bg-white hover:bg-stone-50'
                 }`}
               >
@@ -209,9 +209,9 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
                           if (e.key === 'Enter') void commitRename(doc.id);
                           if (e.key === 'Escape') setRenamingId(null);
                         }}
-                        className={`flex-1 min-w-0 px-2 py-1 rounded-lg border text-[12px] focus:outline-none focus:ring-1 focus:ring-[#435c52] ${
+                        className={`flex-1 min-w-0 px-2 py-1 rounded-lg border text-[12px] focus:outline-none focus:ring-1 focus:ring-gold ${
                           isDark
-                            ? 'bg-[#121514] border-stone-700 text-stone-100'
+                            ? 'bg-night border-stone-700 text-stone-100'
                             : 'bg-white border-stone-300 text-stone-900'
                         }`}
                       />
@@ -219,7 +219,7 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
                         type="button"
                         onClick={() => void commitRename(doc.id)}
                         title="Save name"
-                        className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/40 cursor-pointer"
+                        className="p-1.5 rounded-lg text-gold hover:bg-gold/10 dark:hover:bg-gold/10 cursor-pointer"
                       >
                         <Check className="w-3.5 h-3.5" />
                       </button>
@@ -227,7 +227,7 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
                         type="button"
                         onClick={() => setRenamingId(null)}
                         title="Cancel"
-                        className="p-1.5 rounded-lg text-stone-400 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
+                        className="p-1.5 rounded-lg text-muted hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
                       >
                         <X className="w-3.5 h-3.5" />
                       </button>
@@ -243,13 +243,13 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
                           <FileText className="w-4 h-4" />
                         </div>
                         <div className="min-w-0 flex-1">
-                          <h4 className="font-medium text-[12.5px] text-stone-900 dark:text-stone-100 truncate group-hover:text-emerald-800 dark:group-hover:text-emerald-300">
+                          <h4 className="font-medium text-[12.5px] text-stone-900 dark:text-stone-100 truncate group-hover:text-gold dark:group-hover:text-gold">
                             {doc.title}
                           </h4>
-                          <p className="text-[10.5px] text-stone-500 mt-0.5">
+                          <p className="text-[10.5px] text-muted mt-0.5">
                             {doc.format} · {doc.wordCount.toLocaleString()} words · {formatBytes(doc.originalBytes)}
                           </p>
-                          <p className="text-[10.5px] text-stone-400 flex items-center gap-2 mt-0.5">
+                          <p className="text-[10.5px] text-muted flex items-center gap-2 mt-0.5">
                             <span>{new Date(doc.updatedAt).toLocaleDateString()}</span>
                             {doc.annotationCount > 0 && (
                               <span className="flex items-center gap-0.5">
@@ -287,7 +287,7 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
                         <button
                           type="button"
                           onClick={() => setConfirmingDeleteId(null)}
-                          className="px-2 py-1 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 text-[10.5px] font-semibold cursor-pointer"
+                          className="px-2 py-1 rounded-lg text-muted hover:bg-stone-100 dark:hover:bg-stone-800 text-[10.5px] font-semibold cursor-pointer"
                         >
                           Cancel
                         </button>
@@ -301,7 +301,7 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
                             setDraftTitle(doc.title);
                           }}
                           title="Rename"
-                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 text-[10.5px] font-semibold cursor-pointer"
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-muted hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 text-[10.5px] font-semibold cursor-pointer"
                         >
                           <Pencil className="w-3 h-3" />
                           Edit
@@ -310,7 +310,7 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
                           type="button"
                           onClick={() => setConfirmingDeleteId(doc.id)}
                           title="Delete from this computer"
-                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-stone-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 text-[10.5px] font-semibold cursor-pointer"
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-muted hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 text-[10.5px] font-semibold cursor-pointer"
                         >
                           <Trash2 className="w-3 h-3" />
                           Delete
@@ -329,7 +329,7 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
           something the user has to take on faith. */}
       {storage && (
         <div className={`px-3 py-2.5 border-t shrink-0 ${isDark ? 'border-stone-800' : 'border-stone-200'}`}>
-          <p className="text-[10px] text-stone-500 uppercase tracking-wider font-semibold mb-1">Stored at</p>
+          <p className="caps caps-sm text-muted mb-1">Stored at</p>
           <p className="text-[10.5px] text-stone-600 dark:text-stone-400 break-all leading-snug" title={storage.location}>
             {storage.location}
           </p>
@@ -337,7 +337,7 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
             <button
               type="button"
               onClick={() => void bridge.revealStorageDir()}
-              className="mt-1.5 flex items-center gap-1 text-[10.5px] font-semibold text-emerald-700 dark:text-emerald-400 hover:underline cursor-pointer"
+              className="mt-1.5 flex items-center gap-1 text-[10.5px] font-semibold text-gold dark:text-gold hover:underline cursor-pointer"
             >
               <FolderOpen className="w-3 h-3" />
               Show in folder

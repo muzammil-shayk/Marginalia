@@ -44,7 +44,7 @@ import { ThemeItem } from '../types';
 
 /** Prominence is a closed set, so each value gets its own chip rather than one neutral tag. */
 const PROMINENCE_STYLES: Record<ThemeItem['prominence'], string> = {
-  Primary: 'bg-[#435c52]/12 text-[#435c52] dark:bg-emerald-400/15 dark:text-emerald-300',
+  Primary: 'bg-gold/12 text-gold dark:bg-gold/15 dark:text-gold',
   Secondary: 'bg-amber-500/12 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300',
   'Recurring Motif': 'bg-stone-500/12 text-stone-600 dark:bg-stone-400/15 dark:text-stone-300'
 };
@@ -53,12 +53,12 @@ const MODE_TAB =
   'flex-1 flex items-center justify-center gap-1.5 px-2 py-2 text-[11.5px] font-semibold border-b-2 transition-colors cursor-pointer';
 
 const FIELD =
-  'w-full px-3 py-2 rounded-xl text-[12.5px] bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-stone-900 dark:text-stone-100 placeholder:text-stone-400 focus:outline-none focus:border-[#435c52] dark:focus:border-emerald-500';
+  'w-full px-3 py-2 rounded-xl text-[12.5px] bg-white dark:bg-stone-900 border border-stone-200 dark:border-stone-700 text-stone-900 dark:text-stone-100 placeholder:text-muted focus:outline-none focus:border-gold dark:focus:border-gold';
 
-const FIELD_LABEL = 'text-[10.5px] font-semibold tracking-wider uppercase text-stone-500';
+const FIELD_LABEL = 'caps text-muted';
 
 const PRIMARY_BUTTON =
-  'w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-[#435c52] text-white text-[13px] font-semibold hover:bg-[#3a5048] disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors';
+  'w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-full bg-accent caps text-on-accent text-[13px] font-semibold hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors';
 
 interface ThematicAnalysisViewProps {
   /**
@@ -161,10 +161,10 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
   return (
     <div className={className}>
       <header className="space-y-1">
-        <h2 className="font-serif text-[17px] font-bold text-stone-900 dark:text-white leading-tight">
+        <h2 className="title-hand text-[26px] text-stone-900 dark:text-paper">
           Thematic analysis
         </h2>
-        <p className="text-[11.5px] text-stone-500 dark:text-stone-400 leading-relaxed">
+        <p className="text-[11.5px] text-muted leading-relaxed">
           The only feature that sends anything off your machine, and only when you press the
           button. Any copy uploaded for the reading is deleted as soon as it returns.
         </p>
@@ -179,36 +179,36 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
           <button
             type="button"
             onClick={() => setMode('document')}
-            className="w-full flex items-start gap-3 p-3 rounded-xl border border-stone-200 dark:border-stone-800 hover:border-[#435c52] dark:hover:border-emerald-500 text-left transition-colors cursor-pointer group"
+            className="w-full flex items-start gap-3 p-3 rounded-xl border border-stone-200 dark:border-stone-800 hover:border-gold dark:hover:border-gold text-left transition-colors cursor-pointer group"
           >
-            <Upload className="w-4 h-4 mt-0.5 shrink-0 text-[#435c52] dark:text-emerald-400" />
+            <Upload className="w-4 h-4 mt-0.5 shrink-0 text-gold dark:text-gold" />
             <span className="flex-1 min-w-0 space-y-0.5">
-              <span className="block font-serif text-[13.5px] font-semibold text-stone-900 dark:text-white">
+              <span className="block font-serif text-[13.5px] font-semibold text-stone-900 dark:text-paper">
                 A book you have
               </span>
-              <span className="block text-[11.5px] text-stone-500 dark:text-stone-400 leading-relaxed">
+              <span className="block text-[11.5px] text-muted leading-relaxed">
                 Reads the actual file — a scan's page images as well as ordinary text. Slower, and
                 the only reading that is about your copy.
               </span>
             </span>
-            <ChevronRight className="w-4 h-4 mt-0.5 shrink-0 text-stone-300 group-hover:text-[#435c52] dark:group-hover:text-emerald-400" />
+            <ChevronRight className="w-4 h-4 mt-0.5 shrink-0 text-stone-300 group-hover:text-gold dark:group-hover:text-gold" />
           </button>
           <button
             type="button"
             onClick={() => setMode('web')}
-            className="w-full flex items-start gap-3 p-3 rounded-xl border border-stone-200 dark:border-stone-800 hover:border-[#435c52] dark:hover:border-emerald-500 text-left transition-colors cursor-pointer group"
+            className="w-full flex items-start gap-3 p-3 rounded-xl border border-stone-200 dark:border-stone-800 hover:border-gold dark:hover:border-gold text-left transition-colors cursor-pointer group"
           >
-            <Globe className="w-4 h-4 mt-0.5 shrink-0 text-[#435c52] dark:text-emerald-400" />
+            <Globe className="w-4 h-4 mt-0.5 shrink-0 text-gold dark:text-gold" />
             <span className="flex-1 min-w-0 space-y-0.5">
-              <span className="block font-serif text-[13.5px] font-semibold text-stone-900 dark:text-white">
+              <span className="block font-serif text-[13.5px] font-semibold text-stone-900 dark:text-paper">
                 A book by title and edition
               </span>
-              <span className="block text-[11.5px] text-stone-500 dark:text-stone-400 leading-relaxed">
+              <span className="block text-[11.5px] text-muted leading-relaxed">
                 Searches the web for what critics and study guides say. Near-instant and far
                 cheaper, but second-hand rather than read from the text.
               </span>
             </span>
-            <ChevronRight className="w-4 h-4 mt-0.5 shrink-0 text-stone-300 group-hover:text-[#435c52] dark:group-hover:text-emerald-400" />
+            <ChevronRight className="w-4 h-4 mt-0.5 shrink-0 text-stone-300 group-hover:text-gold dark:group-hover:text-gold" />
           </button>
         </div>
       ) : (
@@ -219,8 +219,8 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
               onClick={() => setMode('document')}
               className={`${MODE_TAB} ${
                 mode === 'document'
-                  ? 'border-[#435c52] text-[#435c52] dark:border-emerald-400 dark:text-emerald-300'
-                  : 'border-transparent text-stone-500 hover:text-stone-700 dark:hover:text-stone-300'
+                  ? 'border-gold text-gold dark:border-gold dark:text-gold'
+                  : 'border-transparent text-muted hover:text-stone-700 dark:hover:text-stone-300'
               }`}
             >
               <BookOpen className="w-3.5 h-3.5" />
@@ -231,8 +231,8 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
               onClick={() => setMode('web')}
               className={`${MODE_TAB} ${
                 mode === 'web'
-                  ? 'border-[#435c52] text-[#435c52] dark:border-emerald-400 dark:text-emerald-300'
-                  : 'border-transparent text-stone-500 hover:text-stone-700 dark:hover:text-stone-300'
+                  ? 'border-gold text-gold dark:border-gold dark:text-gold'
+                  : 'border-transparent text-muted hover:text-stone-700 dark:hover:text-stone-300'
               }`}
             >
               <Globe className="w-3.5 h-3.5" />
@@ -243,7 +243,7 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
           {mode === 'document' ? (
             <div className="space-y-2.5">
               {docId ? (
-                <p className="text-[11.5px] text-stone-500 dark:text-stone-400 leading-relaxed">
+                <p className="text-[11.5px] text-muted leading-relaxed">
                   Reads {documentTitle} itself — a scanned book's page images just as well as
                   ordinary text.
                 </p>
@@ -251,12 +251,12 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
                 <>
                   <span className={FIELD_LABEL}>Choose a book</span>
                   {library === null ? (
-                    <p className="text-[11.5px] text-stone-500 flex items-center gap-1.5">
+                    <p className="text-[11.5px] text-muted flex items-center gap-1.5">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       Reading your library…
                     </p>
                   ) : library.length === 0 ? (
-                    <p className="text-[11.5px] text-stone-500 dark:text-stone-400 leading-relaxed">
+                    <p className="text-[11.5px] text-muted leading-relaxed">
                       Your library is empty. Add a document first, or look one up by title instead.
                     </p>
                   ) : (
@@ -271,7 +271,7 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
                           }}
                           className={`w-full flex items-center gap-2 px-2.5 py-2 rounded-xl border text-left transition-colors cursor-pointer ${
                             pickedId === meta.id
-                              ? 'border-[#435c52] bg-[#435c52]/6 dark:border-emerald-500 dark:bg-emerald-500/10'
+                              ? 'border-gold bg-gold/6 dark:border-gold dark:bg-gold/10'
                               : 'border-stone-200 dark:border-stone-800 hover:border-stone-300 dark:hover:border-stone-700'
                           }`}
                         >
@@ -280,7 +280,7 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
                             <span className="block text-[12px] font-medium text-stone-900 dark:text-stone-100 truncate">
                               {meta.title}
                             </span>
-                            <span className="block text-[10.5px] text-stone-500 tabular-nums">
+                            <span className="block text-[10.5px] text-muted tabular-nums">
                               {meta.format.toUpperCase()} · {meta.wordCount.toLocaleString()} words
                             </span>
                           </span>
@@ -292,7 +292,7 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
                     <button
                       type="button"
                       onClick={onAddDocument}
-                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-dashed border-stone-300 dark:border-stone-700 text-[11.5px] font-medium text-stone-600 dark:text-stone-400 hover:border-[#435c52] dark:hover:border-emerald-500 cursor-pointer transition-colors"
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl border border-dashed border-stone-300 dark:border-stone-700 text-[11.5px] font-medium text-stone-600 dark:text-stone-400 hover:border-gold dark:hover:border-gold cursor-pointer transition-colors"
                     >
                       <Upload className="w-3.5 h-3.5" />
                       Add a book to the library
@@ -303,7 +303,7 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
               {/* Said out loud, so the button does not flip from "Analyse" to "Re-analyse" under
                   the reader's eyes a moment after the panel opens. */}
               {loadingSaved && !analysis && (
-                <p className="text-[11.5px] text-stone-400 flex items-center gap-1.5">
+                <p className="text-[11.5px] text-muted flex items-center gap-1.5">
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   Looking for a saved analysis…
                 </p>
@@ -334,7 +334,7 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
             </div>
           ) : (
             <form onSubmit={handleWebSubmit} className="space-y-2.5">
-              <p className="text-[11.5px] text-stone-500 dark:text-stone-400 leading-relaxed">
+              <p className="text-[11.5px] text-muted leading-relaxed">
                 Searches the web for a book and reports what critics and study guides say about it.
               </p>
               <label className="block space-y-1">
@@ -372,7 +372,7 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
                   placeholder="Stephen Mitchell translation, 2004"
                   className={FIELD}
                 />
-                <span className="block text-[10.5px] text-stone-400 leading-relaxed">
+                <span className="block text-[10.5px] text-muted leading-relaxed">
                   Worth naming for a translation or an abridgement — they do not all carry the same
                   themes.
                 </span>
@@ -391,7 +391,7 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
       )}
 
       {loading && (
-        <p className="text-[11.5px] text-stone-500 dark:text-stone-400 text-center leading-relaxed">
+        <p className="text-[11.5px] text-muted text-center leading-relaxed">
           {mode === 'web'
             ? 'Searching and reading what it finds.'
             : 'Reading the pages and drawing out the themes. A long or scanned book can take a couple of minutes.'}
@@ -418,7 +418,7 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
       {analysis && !loading && (
         <div className="space-y-5">
           <section className="space-y-1.5">
-            <div className="flex items-center gap-1.5 text-[10px] font-semibold tracking-wider uppercase text-stone-500">
+            <div className="caps caps-sm flex items-center gap-1.5 text-muted">
               {source === 'web' ? (
                 <>
                   <Globe className="w-3 h-3" />
@@ -431,11 +431,11 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
                 </>
               )}
             </div>
-            <h3 className="font-serif text-[15px] font-semibold text-stone-900 dark:text-white leading-snug">
+            <h3 className="font-serif text-[15px] font-semibold text-stone-900 dark:text-paper leading-snug">
               {analysis.bookTitle}
             </h3>
             {analysedAt && (
-              <p className="text-[10.5px] text-stone-400 tabular-nums">
+              <p className="text-[10.5px] text-muted tabular-nums">
                 Saved analysis ·{' '}
                 {new Date(analysedAt).toLocaleDateString(undefined, {
                   day: 'numeric',
@@ -450,7 +450,7 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
           </section>
 
           <section className="space-y-2.5">
-            <h4 className="text-[10.5px] font-semibold tracking-wider uppercase text-stone-500">
+            <h4 className="caps text-muted">
               Themes
             </h4>
             {analysis.themes.map((theme) => (
@@ -459,7 +459,7 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
                 className="p-3 rounded-xl border border-stone-200 dark:border-stone-800 bg-white dark:bg-stone-900/40 space-y-2"
               >
                 <div className="flex items-start justify-between gap-2">
-                  <h5 className="font-serif text-[13.5px] font-semibold text-stone-900 dark:text-white leading-snug">
+                  <h5 className="font-serif text-[13.5px] font-semibold text-stone-900 dark:text-paper leading-snug">
                     {theme.themeName}
                   </h5>
                   <span
@@ -478,7 +478,7 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
                     {theme.evidence.map((item, i) => (
                       <li
                         key={i}
-                        className="text-[11.5px] text-stone-500 dark:text-stone-400 leading-relaxed list-disc marker:text-[#435c52] dark:marker:text-emerald-400"
+                        className="text-[11.5px] text-muted leading-relaxed list-disc marker:text-gold dark:marker:text-gold"
                       >
                         {item}
                       </li>
@@ -491,7 +491,7 @@ export const ThematicAnalysisView: React.FC<ThematicAnalysisViewProps> = ({
 
           {analysis.narrativeArc && (
             <section className="space-y-1.5">
-              <h4 className="text-[10.5px] font-semibold tracking-wider uppercase text-stone-500">
+              <h4 className="caps text-muted">
                 Narrative arc
               </h4>
               <p className="text-[12.5px] text-stone-700 dark:text-stone-300 leading-relaxed">

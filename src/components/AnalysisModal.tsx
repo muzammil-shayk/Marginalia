@@ -43,8 +43,8 @@ export const AnalysisModal: React.FC<AnalysisModalProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className={`w-full max-w-md max-h-[80vh] flex flex-col rounded-3xl shadow-2xl border overflow-hidden ${
-          isDark ? 'bg-[#1b201d] border-stone-700 text-white' : 'bg-white border-stone-200 text-stone-900'
+        className={`ink-card w-full max-w-md max-h-[80vh] flex flex-col rounded-3xl shadow-2xl border overflow-hidden ${
+          isDark ? 'bg-night-3 border-stone-700 text-paper' : 'bg-white border-stone-200 text-stone-900'
         }`}
       >
         <div className="flex justify-end px-3 pt-3 pb-0">
@@ -52,7 +52,7 @@ export const AnalysisModal: React.FC<AnalysisModalProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="p-1.5 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
+            className="p-1.5 rounded-lg text-muted hover:text-stone-600 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>

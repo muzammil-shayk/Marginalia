@@ -111,7 +111,7 @@ export const InstanceNavigator: React.FC<InstanceNavigatorProps> = ({
       aria-label={`${focus.label} in this document`}
       data-instance-navigator
       className={`absolute left-1/2 bottom-5 z-30 flex items-center gap-1 pl-3 pr-1.5 py-1.5 rounded-full border shadow-lg backdrop-blur-sm ${
-        isDark ? 'bg-[#1b201d]/95 border-stone-700' : 'bg-white/95 border-stone-200'
+        isDark ? 'bg-night-3/95 border-stone-700' : 'bg-white/95 border-stone-200'
       }`}
       style={{
         transform: 'translateX(-50%)',
@@ -138,7 +138,7 @@ export const InstanceNavigator: React.FC<InstanceNavigatorProps> = ({
       {listOpen && matches.length > 0 && (
         <div
           className={`absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-[22rem] max-h-72 overflow-y-auto rounded-2xl border shadow-xl ${
-            isDark ? 'bg-[#1b201d] border-stone-700' : 'bg-white border-stone-200'
+            isDark ? 'bg-night-3 border-stone-700' : 'bg-white border-stone-200'
           }`}
         >
           <ul className="p-1.5 space-y-0.5">
@@ -156,7 +156,7 @@ export const InstanceNavigator: React.FC<InstanceNavigatorProps> = ({
                       : 'hover:bg-stone-500/[0.07]'
                   }`}
                 >
-                  <span className="text-[10.5px] text-stone-400 tabular-nums w-9 shrink-0 pt-0.5">
+                  <span className="text-[10.5px] text-muted tabular-nums w-9 shrink-0 pt-0.5">
                     p{match.page}
                   </span>
                   <span className="flex-1 min-w-0 text-[12px] text-stone-700 dark:text-stone-300 line-clamp-2">
@@ -177,7 +177,7 @@ export const InstanceNavigator: React.FC<InstanceNavigatorProps> = ({
       <span className="text-[12px] font-medium text-stone-800 dark:text-stone-200 whitespace-nowrap">
         {focus.label}
       </span>
-      <span className="text-[11.5px] text-stone-500 tabular-nums whitespace-nowrap ml-1">
+      <span className="text-[11.5px] text-muted tabular-nums whitespace-nowrap ml-1">
         {matches.length === 0 ? 'none here' : `${safeIndex + 1} of ${matches.length}`}
       </span>
 
@@ -188,7 +188,7 @@ export const InstanceNavigator: React.FC<InstanceNavigatorProps> = ({
         aria-expanded={listOpen}
         aria-label={listOpen ? 'Hide the list of marks' : 'List every mark'}
         title={listOpen ? 'Hide the list' : 'List every mark'}
-        className="p-1 rounded-full text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 disabled:opacity-35 disabled:cursor-default cursor-pointer transition-[transform,color] duration-150 ease-out active:scale-[0.92]"
+        className="p-1 rounded-full text-muted hover:text-stone-700 dark:hover:text-stone-200 disabled:opacity-35 disabled:cursor-default cursor-pointer transition-[transform,color] duration-150 ease-out active:scale-[0.92]"
       >
         <ChevronUp className={`w-3.5 h-3.5 transition-transform duration-200 ${listOpen ? 'rotate-180' : ''}`} />
       </button>
@@ -200,7 +200,7 @@ export const InstanceNavigator: React.FC<InstanceNavigatorProps> = ({
         onClick={() => step(-1)}
         disabled={matches.length === 0}
         aria-label={`Previous ${focus.label} mark`}
-        className="p-1.5 rounded-full text-stone-500 hover:text-stone-900 dark:hover:text-white disabled:opacity-35 disabled:cursor-default cursor-pointer transition-[transform,color] duration-150 ease-out active:scale-[0.92]"
+        className="p-1.5 rounded-full text-muted hover:text-stone-900 dark:hover:text-white disabled:opacity-35 disabled:cursor-default cursor-pointer transition-[transform,color] duration-150 ease-out active:scale-[0.92]"
       >
         <ChevronLeft className="w-4 h-4" />
       </button>
@@ -209,7 +209,7 @@ export const InstanceNavigator: React.FC<InstanceNavigatorProps> = ({
         onClick={() => step(1)}
         disabled={matches.length === 0}
         aria-label={`Next ${focus.label} mark`}
-        className="p-1.5 rounded-full text-stone-500 hover:text-stone-900 dark:hover:text-white disabled:opacity-35 disabled:cursor-default cursor-pointer transition-[transform,color] duration-150 ease-out active:scale-[0.92]"
+        className="p-1.5 rounded-full text-muted hover:text-stone-900 dark:hover:text-white disabled:opacity-35 disabled:cursor-default cursor-pointer transition-[transform,color] duration-150 ease-out active:scale-[0.92]"
       >
         <ChevronRight className="w-4 h-4" />
       </button>
@@ -217,7 +217,7 @@ export const InstanceNavigator: React.FC<InstanceNavigatorProps> = ({
         type="button"
         onClick={onClose}
         aria-label="Stop stepping through marks"
-        className="p-1.5 rounded-full text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer transition-[transform,color] duration-150 ease-out active:scale-[0.92]"
+        className="p-1.5 rounded-full text-muted hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer transition-[transform,color] duration-150 ease-out active:scale-[0.92]"
       >
         <X className="w-3.5 h-3.5" />
       </button>

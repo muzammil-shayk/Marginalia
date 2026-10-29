@@ -296,14 +296,14 @@ export const PdfPage: React.FC<PdfPageProps> = ({
           {confirmingDelete ? (
             <div
               className={`flex items-center gap-1.5 px-2 py-1.5 rounded-lg shadow-lg border text-[11px] ${
-                isDark ? 'bg-[#1b201d] border-stone-700 text-stone-200' : 'bg-white border-stone-200 text-stone-700'
+                isDark ? 'bg-night-4 border-stone-700 text-stone-200' : 'bg-white border-stone-200 text-stone-700'
               }`}
             >
               <span className="font-medium">Delete page {pageNumber}?</span>
               <button
                 type="button"
                 onClick={() => setConfirmingDelete(false)}
-                className="px-1.5 py-0.5 rounded text-stone-500 hover:text-stone-800 dark:hover:text-white cursor-pointer"
+                className="px-1.5 py-0.5 rounded text-muted hover:text-stone-800 dark:hover:text-white cursor-pointer"
               >
                 Cancel
               </button>
@@ -344,7 +344,7 @@ export const PdfPage: React.FC<PdfPageProps> = ({
       {/* Placeholder while a page is off-screen or mid-render, so scrolling a long document shows
           page-shaped space rather than a collapsing gap. */}
       {!isRendered && (
-        <div className="absolute inset-0 flex items-center justify-center text-[11px] text-stone-400 select-none">
+        <div className="absolute inset-0 flex items-center justify-center text-[11px] text-stone-600 select-none">
           Page {pageNumber}
         </div>
       )}

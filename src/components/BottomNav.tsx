@@ -71,12 +71,12 @@ export const BottomNav: React.FC<BottomNavProps> = ({
       }}
       initial="visible"
       animate={hidden ? "hidden" : "visible"}
-      transition={{ type: 'spring', bounce: 0, duration: 0.4 }}
+      transition={{ duration: 0.35, ease: [0.23, 1, 0.32, 1] }}
       id="bottom-navigation-bar"
       className={`fixed bottom-0 z-30 w-full max-w-full overflow-hidden border-t px-4 pt-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] transition-colors md:hidden ${
         isDark 
-          ? 'bg-[#121514]/95 border-white/5 text-stone-300 backdrop-blur-md' 
-          : 'bg-[#f9f9f7]/95 border-black/6 text-stone-700 backdrop-blur-md'
+          ? 'bg-night/95 border-white/5 text-stone-300 backdrop-blur-md' 
+          : 'bg-paper/95 border-black/6 text-stone-700 backdrop-blur-md'
       }`}
     >
       <div className="flex items-center justify-around max-w-sm mx-auto w-full">
@@ -99,13 +99,13 @@ export const BottomNav: React.FC<BottomNavProps> = ({
                   ? 'p-2.5 rounded-full text-stone-300 dark:text-stone-700 cursor-not-allowed'
                   : `cursor-pointer ${
                       tab.isActive
-                        ? 'bg-[#435c52] text-white p-2.5 rounded-full shadow-md active:scale-95'
-                        : 'p-2.5 rounded-full text-stone-500 hover:text-stone-900 dark:hover:text-stone-100 hover:bg-black/5 dark:hover:bg-white/5 active:scale-95'
+                        ? 'bg-accent text-on-accent p-2.5 rounded-full shadow-md active:scale-95'
+                        : 'p-2.5 rounded-full text-muted hover:text-stone-900 dark:hover:text-stone-100 hover:bg-black/5 dark:hover:bg-white/5 active:scale-95'
                     }`
               }`}
               title={isDisabled ? 'Upload a document to start reading' : tab.label}
             >
-              <Icon className={`w-5 h-5 shrink-0 ${tab.isActive && !isDisabled ? 'text-white' : ''}`} />
+              <Icon className={`w-5 h-5 shrink-0 ${tab.isActive && !isDisabled ? 'text-on-accent' : ''}`} />
             </button>
           );
         })}

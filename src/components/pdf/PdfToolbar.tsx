@@ -327,7 +327,7 @@ const ToolChip: React.FC<{
         <div
           ref={menuRef}
           className={`fixed z-50 p-2 rounded-xl shadow-xl border flex items-center gap-1.5 ${
-            isDark ? 'bg-[#1b201d] border-stone-700' : 'bg-white border-stone-200'
+            isDark ? 'bg-night-3 border-stone-700' : 'bg-white border-stone-200'
           }`}
           style={{
             left: menuPos?.left ?? 0,
@@ -481,7 +481,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
   return (
     <div
       className={`flex flex-col shrink-0 border-b ${
-        isDark ? 'bg-[#181c19] border-stone-800' : 'bg-white border-stone-200'
+        isDark ? 'bg-night-2 border-stone-800' : 'bg-white border-stone-200'
       }`}
     >
       {/* Tools, undo, zoom and pages */}
@@ -528,12 +528,12 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
                       aria-pressed={isActive}
                       className={`${compact ? 'p-1.5' : 'p-2'} rounded-lg transition-all cursor-pointer ${
                         isActive
-                          ? 'bg-[#435c52] text-white shadow-xs'
+                          ? 'bg-accent text-on-accent shadow-xs'
                           : actsNow
-                            ? 'text-[#435c52] dark:text-emerald-300 bg-emerald-500/10 ring-1 ring-emerald-500/40'
+                            ? 'text-gold dark:text-gold bg-gold/10 ring-1 ring-gold/40'
                             : isDark
                               ? 'text-stone-400 hover:bg-stone-800 hover:text-stone-200'
-                              : 'text-stone-500 hover:bg-stone-100 hover:text-stone-800'
+                              : 'text-muted hover:bg-stone-100 hover:text-stone-800'
                       }`}
                     >
                       {/* Selected tools thicken as well as change colour. A single-weight icon
@@ -600,7 +600,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
               onClick={onUndo}
               disabled={!canUndo}
               aria-label="Undo"
-              className="p-2 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 hover:text-stone-800 dark:hover:text-stone-200 disabled:opacity-30 cursor-pointer disabled:cursor-default"
+              className="p-2 rounded-lg text-muted hover:bg-stone-100 dark:hover:bg-stone-800 hover:text-stone-800 dark:hover:text-stone-200 disabled:opacity-30 cursor-pointer disabled:cursor-default"
             >
               <Undo2 className="w-4 h-4" />
             </button>
@@ -612,7 +612,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
               onClick={onRedo}
               disabled={!canRedo}
               aria-label="Redo"
-              className="p-2 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 hover:text-stone-800 dark:hover:text-stone-200 disabled:opacity-30 cursor-pointer disabled:cursor-default"
+              className="p-2 rounded-lg text-muted hover:bg-stone-100 dark:hover:bg-stone-800 hover:text-stone-800 dark:hover:text-stone-200 disabled:opacity-30 cursor-pointer disabled:cursor-default"
             >
               <Redo2 className="w-4 h-4" />
             </button>
@@ -627,7 +627,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
               type="button"
               onClick={() => onGoToPage(Math.max(1, currentPage - 1))}
               disabled={currentPage <= 1}
-              className="p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 disabled:opacity-30 cursor-pointer disabled:cursor-default"
+              className="p-1.5 rounded-lg text-muted hover:bg-stone-100 dark:hover:bg-stone-800 disabled:opacity-30 cursor-pointer disabled:cursor-default"
             >
               <ChevronUp className="w-4 h-4" />
             </button>
@@ -640,7 +640,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
               type="button"
               onClick={() => onGoToPage(Math.min(pageCount, currentPage + 1))}
               disabled={currentPage >= pageCount}
-              className="p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 disabled:opacity-30 cursor-pointer disabled:cursor-default"
+              className="p-1.5 rounded-lg text-muted hover:bg-stone-100 dark:hover:bg-stone-800 disabled:opacity-30 cursor-pointer disabled:cursor-default"
             >
               <ChevronDown className="w-4 h-4" />
             </button>
@@ -651,7 +651,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
 
         <div className="flex items-center gap-0.5">
           <HoverTooltip label="Zoom out">
-            <button type="button" onClick={() => stepZoom(-1)} className="p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer">
+            <button type="button" onClick={() => stepZoom(-1)} className="p-1.5 rounded-lg text-muted hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer">
               <ZoomOut className="w-4 h-4" />
             </button>
           </HoverTooltip>
@@ -659,12 +659,12 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
             {Math.round(scale * 100)}%
           </span>
           <HoverTooltip label="Zoom in">
-            <button type="button" onClick={() => stepZoom(1)} className="p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer">
+            <button type="button" onClick={() => stepZoom(1)} className="p-1.5 rounded-lg text-muted hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer">
               <ZoomIn className="w-4 h-4" />
             </button>
           </HoverTooltip>
           <HoverTooltip label="Fit to width">
-            <button type="button" onClick={onFitWidth} className="p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer">
+            <button type="button" onClick={onFitWidth} className="p-1.5 rounded-lg text-muted hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer">
               <Maximize2 className="w-4 h-4" />
             </button>
           </HoverTooltip>
@@ -679,10 +679,10 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
             aria-pressed={viewMode === 'spread'}
             className={`p-1.5 rounded-lg cursor-pointer ${
               viewMode === 'spread'
-                ? 'bg-[#435c52] text-white shadow-xs'
+                ? 'bg-accent text-on-accent shadow-xs'
                 : isDark
                   ? 'text-stone-400 hover:bg-stone-800 hover:text-stone-200'
-                  : 'text-stone-500 hover:bg-stone-100 hover:text-stone-800'
+                  : 'text-muted hover:bg-stone-100 hover:text-stone-800'
             }`}
           >
             {viewMode === 'spread' ? <BookOpen className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
@@ -693,7 +693,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
           <button
             type="button"
             onClick={onInsertPage}
-            className="p-1.5 rounded-lg text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
+            className="p-1.5 rounded-lg text-muted hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
           >
             <FilePlus2 className="w-4 h-4" />
           </button>
@@ -715,7 +715,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
 
         {markCount > 0 && (
           <HoverTooltip label="Marks saved on this computer">
-          <span className="text-[11px] font-semibold px-2 py-1 rounded-full bg-emerald-600/10 text-emerald-800 dark:text-emerald-300 select-none">
+          <span className="text-[11px] font-semibold px-2 py-1 rounded-full bg-gold/10 text-gold dark:text-gold select-none">
             {markCount}
           </span>
           </HoverTooltip>
@@ -743,7 +743,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
           isDark ? 'border-stone-800' : 'border-stone-100'
         }`}
       >
-        <span className="text-[10px] font-semibold tracking-wider uppercase text-stone-400 mr-1 shrink-0">
+        <span className="caps caps-sm text-muted mr-1 shrink-0">
           Theme
         </span>
 
@@ -762,7 +762,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
               title={`File new marks under "${theme.name}"`}
               className={`flex items-center gap-1.5 px-2 py-1 rounded-lg font-medium transition-all cursor-pointer shrink-0 snap-start ${
                 isActive
-                  ? 'bg-stone-200/90 dark:bg-stone-700 text-stone-900 dark:text-white'
+                  ? 'bg-stone-200/90 dark:bg-stone-700 text-stone-900 dark:text-paper'
                   : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
               }`}
             >
@@ -782,8 +782,8 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
           title="New marks are not filed under any theme"
           className={`px-2 py-1 rounded-lg font-medium transition-all cursor-pointer shrink-0 snap-start whitespace-nowrap ${
             activeThemeId === null
-              ? 'bg-stone-200/90 dark:bg-stone-700 text-stone-900 dark:text-white'
-              : 'text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800'
+              ? 'bg-stone-200/90 dark:bg-stone-700 text-stone-900 dark:text-paper'
+              : 'text-muted hover:bg-stone-100 dark:hover:bg-stone-800'
           }`}
         >
           Untagged

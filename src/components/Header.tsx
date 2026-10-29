@@ -46,9 +46,9 @@ export const Header: React.FC<HeaderProps> = ({
       }}
       initial="visible"
       animate={hidden ? "hidden" : "visible"}
-      transition={{ type: 'spring', bounce: 0, duration: 0.4 }}
+      transition={{ duration: 0.35, ease: [0.23, 1, 0.32, 1] }}
       className={`app-drag sticky top-0 z-30 flex items-center justify-between px-5 py-4 transition-colors ${
-      isDark ? 'bg-[#121514] text-white border-b border-white/5' : 'bg-[#f9f9f7] text-[#1c2321] border-b border-black/4'
+      isDark ? 'bg-night text-paper border-b border-white/5' : 'bg-paper text-ink border-b border-black/4'
     }`}>
       {/* Menu Icon Button */}
       <button
@@ -69,7 +69,7 @@ export const Header: React.FC<HeaderProps> = ({
         onClick={handleLogoClick}
         className="cursor-pointer select-none hover:opacity-85 transition-opacity"
       >
-        <img src={logo} alt="Marginalia" className="h-16 w-auto" />
+        <img src={logo} alt="Marginalia" className="h-16 w-auto dark:box-content dark:bg-paper dark:rounded-2xl dark:p-2 dark:shadow-sm" />
       </h1>
 
       {/* Search Button (also fulfills //a[contains(., 'Search')] | //button[contains(., 'search')]) */}

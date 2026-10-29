@@ -36,8 +36,24 @@ contextBridge.exposeInMainWorld('marginaliaDesktop', {
    * Returns an unsubscribe function so the settings panel can stop listening on unmount.
    */
   onUpdateStatus: (callback) => {
+    let active = true;
     const listener = (_event, status) => callback(status);
     ipcRenderer.on('marginalia:updater-status', listener);
-    return () => ipcRenderer.removeListener('marginalia:updater-status', listener);
-  }
+    // A status sent before this subscription (e.g. a download that finished before a reload) is
+    // fetched once, so a late subscriber still hears it. Pushes made before this reply arrive first.
+    ipcRenderer
+      .invoke('marginalia:updater-last-status')
+      .then((status) => {
+        if (active && status) callback(status);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+      ipcRenderer.removeListener('marginalia:updater-status', listener);
+    };
+  },
+  /** The update version the reader said "Later" to, kept on disk across restarts. */
+  getDismissedUpdate: () => ipcRenderer.invoke('marginalia:updater-get-dismissed'),
+  /** Records the update version the reader said "Later" to. */
+  setDismissedUpdate: (version) => ipcRenderer.invoke('marginalia:updater-set-dismissed', version)
 });

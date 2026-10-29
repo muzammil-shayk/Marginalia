@@ -66,7 +66,7 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
         // narrower collapsed rail put the zoom button half over the content area with the
         // sidebar's own edge running between them. The rail is now wider than they are.
         collapsed ? 'w-20' : 'w-55'
-      } ${isDark ? 'bg-[#121514]' : 'bg-[#f9f9f7]'}`}
+      } ${isDark ? 'bg-night' : 'bg-paper'}`}
     >
       {/*
         The sidebar's edge, drawn from below the title bar rather than by a `border-r` on the
@@ -97,7 +97,7 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
             onClick={() => onNavigate('home', 'push_back')}
             className="cursor-pointer hover:opacity-80 transition-opacity select-none flex-1 min-w-0 overflow-hidden"
           >
-            <img src={logo} alt="Marginalia" className="h-20 w-auto shrink-0" />
+            <img src={logo} alt="Marginalia" className="h-20 w-auto shrink-0 dark:box-content dark:bg-paper dark:rounded-2xl dark:p-2 dark:shadow-sm" />
           </h1>
         )}
         {collapsed && (
@@ -118,7 +118,7 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
           title={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
           aria-label={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
           aria-expanded={!collapsed}
-          className="p-1.5 rounded-lg shrink-0 text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-200/70 dark:hover:bg-white/5 cursor-pointer transition-colors"
+          className="p-1.5 rounded-lg shrink-0 text-muted hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-200/70 dark:hover:bg-white/5 cursor-pointer transition-colors"
         >
           {/* One glyph, mirrored. Phosphor has no open/close pair for a sidebar, and the
               direction is the whole message: the panel opens the way the icon points. */}
@@ -150,7 +150,7 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
                   ? 'cursor-not-allowed text-stone-300 dark:text-stone-700'
                   : `cursor-pointer ${
                       active
-                        ? 'bg-[#435c52] text-white shadow-sm'
+                        ? 'bg-accent text-on-accent shadow-sm'
                         : isDark
                           ? 'text-stone-400 hover:text-stone-200 hover:bg-white/5'
                           : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100/80'
@@ -161,7 +161,7 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
               {/* Larger when collapsed: with the labels gone the glyph is the whole control, and
                   a 16px icon alone in an 80px rail reads as an afterthought. */}
               <Icon className={`shrink-0 ${collapsed ? 'w-5.5 h-5.5' : 'w-4 h-4'}`} />
-              {!collapsed && <span className="truncate whitespace-nowrap">{tab.label}</span>}
+              {!collapsed && <span className="caps truncate whitespace-nowrap">{tab.label}</span>}
             </button>
           );
         })}
@@ -180,7 +180,7 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
             }`}
           >
             <Search className={`shrink-0 ${collapsed ? 'w-5.5 h-5.5' : 'w-4 h-4'}`} />
-            {!collapsed && <span>Search</span>}
+            {!collapsed && <span className="caps">Search</span>}
           </button>
         )}
 
@@ -200,23 +200,23 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
             }`}
           >
             <Sparkles className={`shrink-0 ${collapsed ? 'w-5.5 h-5.5' : 'w-4 h-4'}`} />
-            {!collapsed && <span className="truncate whitespace-nowrap">AI Analysis</span>}
+            {!collapsed && <span className="caps truncate whitespace-nowrap">AI Analysis</span>}
           </button>
         )}
       </nav>
 
       {/* Bottom section */}
       {!collapsed && (
-        <div className={`px-4 py-4 border-t text-[13px] text-stone-500 dark:text-stone-600 space-y-1.5 overflow-hidden whitespace-nowrap ${
+        <div className={`px-4 py-4 border-t text-[13px] text-muted space-y-1.5 overflow-hidden whitespace-nowrap ${
           isDark ? 'border-white/5' : 'border-black/4'
         }`}>
-          <span className="font-serif font-bold tracking-tight text-[#435c52] dark:text-emerald-300 block truncate whitespace-nowrap">
+          <span className="title-hand text-[16px] text-gold block truncate whitespace-nowrap">
             Marginalia • Annotator
           </span>
-          <p className="italic text-[12px] text-stone-400 dark:text-stone-600 leading-snug truncate whitespace-nowrap">
+          <p className="italic text-[12px] text-muted leading-snug truncate whitespace-nowrap">
             For close readers,
           </p>
-          <p className="italic text-[12px] text-stone-400 dark:text-stone-600 leading-snug truncate whitespace-nowrap">
+          <p className="italic text-[12px] text-muted leading-snug truncate whitespace-nowrap">
             Built with care by Shama Iqbal Hussain.
           </p>
         </div>

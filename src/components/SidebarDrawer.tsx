@@ -39,21 +39,21 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
             initial={{ x: '-100%' }}
             animate={{ x: 0 }}
             exit={{ x: '-100%' }}
-            transition={{ type: 'spring', bounce: 0, duration: 0.4 }}
+            transition={{ duration: 0.35, ease: [0.23, 1, 0.32, 1] }}
             className={`relative z-10 w-72 max-w-[80vw] h-full p-6 flex flex-col justify-between shadow-2xl border-r ${
-              isDark ? 'bg-[#151917] border-stone-800 text-white' : 'bg-[#f9f9f7] border-stone-200 text-stone-900'
+              isDark ? 'bg-night-1 border-stone-800 text-paper' : 'bg-paper border-stone-200 text-stone-900'
             }`}
           >
             <div className="space-y-6">
           {/* Header */}
           <div className="flex items-center justify-between pb-4 border-b border-stone-200 dark:border-stone-800">
             <h2>
-              <img src={logo} alt="Marginalia" className="h-16 w-auto" />
+              <img src={logo} alt="Marginalia" className="h-16 w-auto dark:box-content dark:bg-paper dark:rounded-2xl dark:p-2 dark:shadow-sm" />
             </h2>
             <button
               type="button"
               onClick={onClose}
-              className="p-1 rounded-lg text-stone-400 hover:text-stone-600 dark:hover:text-stone-200"
+              className="p-1 rounded-lg text-muted hover:text-stone-600 dark:hover:text-stone-200"
             >
               <X className="w-5 h-5" />
             </button>
@@ -69,8 +69,8 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               }}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-stone-200/60 dark:hover:bg-stone-800 text-[14px] font-medium transition-colors text-left"
             >
-              <BookOpen className="w-4 h-4 text-[#435c52]" />
-              <span>Library</span>
+              <BookOpen className="w-4 h-4 text-gold" />
+              <span className="caps">Library</span>
             </button>
 
             {onOpenAnalysis && (
@@ -82,8 +82,8 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
                 }}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-stone-200/60 dark:hover:bg-stone-800 text-[14px] font-medium transition-colors text-left"
               >
-                <Sparkles className="w-4 h-4 text-[#435c52]" />
-                <span>AI Analysis</span>
+                <Sparkles className="w-4 h-4 text-gold" />
+                <span className="caps">AI Analysis</span>
               </button>
             )}
 
@@ -95,8 +95,8 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               }}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-stone-200/60 dark:hover:bg-stone-800 text-[14px] font-medium transition-colors text-left"
             >
-              <PlusCircle className="w-4 h-4 text-emerald-600" />
-              <span>Scan / Upload</span>
+              <PlusCircle className="w-4 h-4 text-gold" />
+              <span className="caps">Scan / Upload</span>
             </button>
 
             <button
@@ -107,15 +107,15 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               }}
               className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-stone-200/60 dark:hover:bg-stone-800 text-[14px] font-medium transition-colors text-left"
             >
-              <Settings className="w-4 h-4 text-stone-500" />
-              <span>Settings</span>
+              <Settings className="w-4 h-4 text-gold" />
+              <span className="caps">Settings</span>
             </button>
           </nav>
         </div>
 
         {/* Footer info */}
-        <div className="pt-4 border-t border-stone-200 dark:border-stone-800 text-[11px] text-stone-400 space-y-1">
-          <p className="font-semibold text-stone-500 dark:text-stone-300">Marginalia</p>
+        <div className="pt-4 border-t border-stone-200 dark:border-stone-800 text-[11px] text-muted space-y-1">
+          <p className="title-hand text-[15px] text-gold">Marginalia</p>
           <p>Mindful reading and AI thematic synthesis</p>
           <p className="italic pt-1">
             For close readers,

@@ -547,6 +547,8 @@ export interface DesktopBridge {
   getAutoUpdatePreference(): Promise<boolean>;
   setAutoUpdatePreference(enabled: boolean): Promise<void>;
   onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
+  getDismissedUpdate(): Promise<string | null>;
+  setDismissedUpdate(version: string): Promise<void>;
 }
 
 export function desktopBridge(): DesktopBridge | null {

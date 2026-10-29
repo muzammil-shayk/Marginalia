@@ -122,8 +122,8 @@ export const SearchModal: React.FC<SearchModalProps> = ({
         aria-modal="true"
         aria-label="Search the library"
         onClick={(e) => e.stopPropagation()}
-        className={`w-full max-w-xl rounded-3xl shadow-2xl border overflow-hidden ${
-          isDark ? 'bg-[#1b201d] border-stone-700 text-white' : 'bg-white border-stone-200 text-stone-900'
+        className={`ink-card w-full max-w-xl rounded-3xl shadow-2xl border overflow-hidden ${
+          isDark ? 'bg-night-3 border-stone-700 text-paper' : 'bg-white border-stone-200 text-stone-900'
         }`}
       >
         <div className="flex items-center gap-3 px-5 py-4 border-b border-stone-200 dark:border-stone-800">
@@ -134,14 +134,14 @@ export const SearchModal: React.FC<SearchModalProps> = ({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search marks, themes, terminology and text…"
-            className="flex-1 bg-transparent outline-none text-[14px] placeholder:text-stone-400"
+            className="flex-1 bg-transparent outline-none text-[14px] placeholder:text-muted"
           />
           {searching && <Loader2 className="w-4 h-4 animate-spin text-stone-400 shrink-0" />}
           <button
             type="button"
             onClick={onClose}
             aria-label="Close search"
-            className="p-1 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer shrink-0"
+            className="p-1 rounded-lg text-muted hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
@@ -149,19 +149,19 @@ export const SearchModal: React.FC<SearchModalProps> = ({
 
         <div className="max-h-[60vh] overflow-y-auto px-3 py-3 space-y-4">
           {query.trim().length < 2 ? (
-            <p className="px-2 py-6 text-center text-[12.5px] text-stone-500 leading-relaxed">
+            <p className="px-2 py-6 text-center text-[12.5px] text-muted leading-relaxed">
               Type to search everything on this computer — the words you highlighted, your notes,
               a theme's name, terminology, and the full text of every book.
             </p>
           ) : !searching && hits.length === 0 ? (
-            <p className="px-2 py-6 text-center text-[12.5px] text-stone-500">
+            <p className="px-2 py-6 text-center text-[12.5px] text-muted">
               Nothing matches “{query.trim()}”.
             </p>
           ) : (
             <>
               {grouped.marks.length > 0 && (
                 <section className="space-y-1">
-                  <h3 className="px-2 text-[10.5px] font-semibold tracking-wider uppercase text-stone-500">
+                  <h3 className="caps px-2 text-muted">
                     Marks · {grouped.marks.length}
                   </h3>
                   {grouped.marks.map((hit) => (
@@ -180,7 +180,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                         <span className="block text-[12.5px] text-stone-800 dark:text-stone-200 line-clamp-2">
                           {hit.snippet}
                         </span>
-                        <span className="block text-[11px] text-stone-500 truncate">
+                        <span className="block text-[11px] text-muted truncate">
                           {hit.title}
                           {hit.page ? ` · page ${hit.page}` : ''}
                           {hit.isTerminology ? ' · Terminology' : hit.themeName ? ` · ${hit.themeName}` : ''}
@@ -198,7 +198,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
 
               {grouped.documents.length > 0 && (
                 <section className="space-y-1">
-                  <h3 className="px-2 text-[10.5px] font-semibold tracking-wider uppercase text-stone-500">
+                  <h3 className="caps px-2 text-muted">
                     In the text · {grouped.documents.length}
                   </h3>
                   {grouped.documents.map((hit) => (
@@ -213,9 +213,9 @@ export const SearchModal: React.FC<SearchModalProps> = ({
                         <span className="block font-serif text-[13px] text-stone-800 dark:text-stone-200 truncate">
                           {hit.title}
                         </span>
-                        <span className="block text-[11.5px] text-stone-500 line-clamp-2">{hit.snippet}</span>
+                        <span className="block text-[11.5px] text-muted line-clamp-2">{hit.snippet}</span>
                       </span>
-                      <span className="text-[11px] text-stone-400 tabular-nums shrink-0 mt-1">
+                      <span className="text-[11px] text-muted tabular-nums shrink-0 mt-1">
                         {hit.matches}
                       </span>
                     </button>

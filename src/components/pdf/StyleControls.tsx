@@ -35,7 +35,7 @@ export const WEIGHT_STEPS: { label: string; value: number }[] = [
 
 const segment = (active: boolean) =>
   `px-2 h-6 rounded-md flex items-center justify-center gap-1 text-[10.5px] font-semibold transition-colors cursor-pointer ${
-    active ? 'bg-stone-200 dark:bg-stone-700 text-stone-900 dark:text-white' : 'text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800'
+    active ? 'bg-stone-200 dark:bg-stone-700 text-stone-900 dark:text-paper' : 'text-muted hover:bg-stone-100 dark:hover:bg-stone-800'
   }`;
 
 export const Divider: React.FC<{ isDark: boolean }> = ({ isDark }) => (
@@ -332,8 +332,8 @@ export const FontPicker: React.FC<{
         aria-label={`${font.label} typeface`}
         className={`h-6 px-1.5 rounded-md flex items-center justify-center text-[12px] transition-colors cursor-pointer ${
           (value ?? 'sans') === font.value
-            ? 'bg-stone-200 dark:bg-stone-700 text-stone-900 dark:text-white'
-            : 'text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800'
+            ? 'bg-stone-200 dark:bg-stone-700 text-stone-900 dark:text-paper'
+            : 'text-muted hover:bg-stone-100 dark:hover:bg-stone-800'
         }`}
         // The specimen IS the choice: each button is set in the face it selects.
         style={{ fontFamily: font.stack }}
@@ -361,8 +361,8 @@ export const EmphasisPicker: React.FC<{
       aria-pressed={active}
       className={`w-6 h-6 rounded-md flex items-center justify-center text-[12px] transition-colors cursor-pointer ${
         active
-          ? 'bg-stone-200 dark:bg-stone-700 text-stone-900 dark:text-white'
-          : 'text-stone-500 hover:bg-stone-100 dark:hover:bg-stone-800'
+          ? 'bg-stone-200 dark:bg-stone-700 text-stone-900 dark:text-paper'
+          : 'text-muted hover:bg-stone-100 dark:hover:bg-stone-800'
       }`}
       style={style}
     >

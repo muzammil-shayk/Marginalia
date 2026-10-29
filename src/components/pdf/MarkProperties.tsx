@@ -108,14 +108,14 @@ export const MarkProperties: React.FC<MarkPropertiesProps> = ({
     <div
       ref={ref}
       className={`fixed z-50 flex items-center gap-1 p-1.5 rounded-xl shadow-2xl border ${
-        isDark ? 'bg-[#1b201d] border-stone-700' : 'bg-white border-stone-200'
+        isDark ? 'bg-night-3 border-stone-700' : 'bg-white border-stone-200'
       }`}
       style={panel}
       // Never let this steal a text selection or start a drag on the page beneath.
       onMouseDown={(e) => e.preventDefault()}
       onPointerDown={(e) => e.stopPropagation()}
     >
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-stone-400 px-1 capitalize">
+      <span className="caps caps-sm text-muted px-1 capitalize">
         {mark.isTerminology ? 'Terminology' : mark.kind}
       </span>
 
@@ -125,7 +125,7 @@ export const MarkProperties: React.FC<MarkPropertiesProps> = ({
         // Its colour is the live Settings → Terminology setting, not a per-mark choice — offering
         // a palette here would change `mark.color` for nothing, since rendering and export both
         // ignore it in favour of that setting.
-        <span className="text-[10.5px] text-stone-400 dark:text-stone-500 px-1 italic whitespace-nowrap">
+        <span className="text-[10.5px] text-muted px-1 italic whitespace-nowrap">
           Colour set in Settings → Terminology
         </span>
       ) : (
@@ -195,7 +195,7 @@ export const MarkProperties: React.FC<MarkPropertiesProps> = ({
           type="button"
           onClick={onEdit}
           title="Write a comment on this mark"
-          className="p-1.5 rounded-lg text-stone-500 hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
+          className="p-1.5 rounded-lg text-muted hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
         >
           <Pencil className="w-3.5 h-3.5" />
         </button>
@@ -204,7 +204,7 @@ export const MarkProperties: React.FC<MarkPropertiesProps> = ({
         type="button"
         onClick={onDelete}
         title="Delete this mark"
-        className="p-1.5 rounded-lg text-stone-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 cursor-pointer"
+        className="p-1.5 rounded-lg text-muted hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 cursor-pointer"
       >
         <Trash2 className="w-3.5 h-3.5" />
       </button>

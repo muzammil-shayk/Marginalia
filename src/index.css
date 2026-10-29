@@ -15,11 +15,65 @@
 @import "tailwindcss";
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* ── App palette: the shelf's night-and-paper world, app-wide ──────────────
+   The reference pairs black with cream ink and one gold. Stone is retuned
+   toward that cream (paper at the top, warm ink at the bottom) so every
+   existing neutral follows; `night` is the dark theme's black stage. The
+   accent tokens flip with the theme: the primary fill is ink on paper in
+   light and cream on black in dark (as the shelf's own primary button), and
+   gold darkens in light so it still reads as text (5.5:1 on paper). */
+@theme {
+  --color-stone-50: #f8f5ef;
+  --color-stone-100: #ece6da;
+  --color-stone-200: #e2dbcd;
+  --color-stone-300: #d2cab9;
+  --color-stone-400: #a39b8a;
+  --color-stone-500: #706959;
+  --color-stone-600: #565043;
+  --color-stone-700: #3c3830;
+  --color-stone-800: #262420;
+  --color-stone-900: #181715;
+  --color-stone-950: #0d0c0b;
+
+  --color-paper: #f3efe7;
+  --color-paper-2: #f8f5ef;
+  --color-ink: #181715;
+  --color-night: #0b0b0a;
+  --color-night-1: #100f0e;
+  --color-night-2: #131210;
+  --color-night-3: #151412;
+  --color-night-4: #1c1b18;
+  --color-night-5: #22201d;
+}
+
+@theme inline {
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-on-accent: var(--on-accent);
+  --color-gold: var(--gold);
+  --color-muted: var(--muted);
+}
+
 @layer base {
   :root {
     --font-serif: 'Literata Variable', 'Newsreader Variable', Georgia, Cambria, serif;
     --font-display: 'Newsreader Variable', 'Literata Variable', Georgia, serif;
     --font-sans: 'Plus Jakarta Sans Variable', system-ui, -apple-system, sans-serif;
+    --font-hand: 'Patrick Hand', 'Caveat Variable', cursive;
+    --accent: #181715;
+    --accent-hover: #34312b;
+    --on-accent: #f3efe7;
+    --gold: #7d5a0f;
+    /* muted text: >= 4.5:1 on every surface it sits on (4.88 on stone-200 light, 4.77 on stone-800 dark) */
+    --muted: #625b4d;
+  }
+
+  .dark {
+    --accent: #f3efe7;
+    --accent-hover: #ffffff;
+    --on-accent: #0b0b0a;
+    --gold: #e9b949;
+    --muted: #968e7d;
   }
 
   html, body {
@@ -54,6 +108,62 @@
   font-family: 'Caveat Variable', 'Patrick Hand', cursive;
 }
 
+/* ── The reference's type, app-wide ────────────────────────────────────────
+   `caps`: small hand-lettered capitals for section labels and nav, as the
+   shelf's labels. `caps-sm` for the tight spots (toolbars, badges) where 13px
+   would crowd. `title-hand`: a screen or dialog title in Caveat, with a gold
+   hand-drawn stroke under it. Caveat sits small, so titles run ~1.4x the
+   serif size they replace. */
+.caps {
+  font-family: var(--font-hand);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  line-height: 1.3;
+}
+
+.caps-sm {
+  font-size: 12px;
+  letter-spacing: 0.12em;
+}
+
+.title-hand {
+  font-family: 'Caveat Variable', 'Patrick Hand', cursive;
+  font-weight: 600;
+  line-height: 1.02;
+  letter-spacing: 0;
+}
+
+/* A dialog drawn like the shelf's note card: one confident ink outline. */
+.ink-card {
+  border-width: 1.5px;
+  border-style: solid;
+  border-color: color-mix(in oklab, var(--color-ink) 82%, transparent);
+}
+.dark .ink-card {
+  border-color: color-mix(in oklab, var(--color-paper) 70%, transparent);
+}
+
+.title-hand-rule {
+  position: relative;
+  display: inline-block;
+  padding-bottom: 0.32em;
+}
+
+.title-hand-rule::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: min(100%, 9em);
+  height: 0.28em;
+  background: var(--gold);
+  /* One wavering pen stroke, drawn once and stretched; the mask lets it take the theme's gold. */
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 10' preserveAspectRatio='none'%3E%3Cpath d='M2 6.5C30 3.2 58 7.6 92 5.1S160 2.6 198 5.4' fill='none' stroke='%23000' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E") center / 100% 100% no-repeat;
+  pointer-events: none;
+}
+
 /* Custom Scrollbar for reader and notes */
 ::-webkit-scrollbar {
   width: 6px;
@@ -65,12 +175,12 @@
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(100, 116, 139, 0.25);
+  background: rgba(112, 105, 89, 0.3);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 0.4);
+  background: rgba(112, 105, 89, 0.5);
 }
 
 /* ── Dashboard motion ──────────────────────────────────────────────────────
@@ -122,13 +232,9 @@
    covers every control that does not style its own, and `:focus-visible` keeps
    it off mouse clicks. */
 :where(button, [role='button'], a, summary):focus-visible {
-  outline: 2px solid #435c52;
+  outline: 2px solid var(--gold);
   outline-offset: 2px;
   border-radius: 0.5rem;
-}
-
-.dark :where(button, [role='button'], a, summary):focus-visible {
-  outline-color: #6ee7b7;
 }
 
 /* ── Panel and tab transitions ─────────────────────────────────────────────
@@ -171,4 +277,897 @@
     opacity: 1;
     transform: translateX(0);
   }
+}
+
+/* ── Update dialog: the host platform's own alert ──────────────────────────
+   macOS (data-os="mac"): an NSAlert. 260px wide, translucent vibrancy-like
+   material, app icon top-left, bold 13px title, 11px informative text, stacked
+   full-width buttons, system blue default (deepened to #0071eb so white text
+   reaches 4.6:1). Windows (data-os="win"): a Windows 11 ContentDialog. Solid
+   Mica-like surface, 8px corners, 20px semibold title, 14px body, a darker
+   command bar with right-aligned 32px buttons (accent + standard).
+   Both themes follow the app (data-theme). The logo sits on a paper plate,
+   because its olive ink would vanish on a dark panel. */
+.upd-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.upd-scrim[data-os='mac'] {
+  background: rgb(0 0 0 / 0.16);
+}
+.upd-scrim[data-os='win'] {
+  background: rgb(0 0 0 / 0.3); /* Fluent SmokeFillColorDefault */
+}
+
+.upd,
+.upd-note {
+  -webkit-font-smoothing: antialiased;
+  color: var(--upd-text);
+  text-align: left;
+}
+.upd[data-os='mac'],
+.upd-note[data-os='mac'] {
+  --upd-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  --upd-accent: #0071eb;
+  --upd-on-accent: #fff;
+  --upd-text: rgb(0 0 0 / 0.85);
+  --upd-sub: rgb(0 0 0 / 0.62); /* >= 5.7:1 on the panel over the app's light surfaces */
+  --upd-panel: rgb(236 236 236 / 0.8);
+  --upd-edge: rgb(0 0 0 / 0.14);
+  --upd-shine: rgb(255 255 255 / 0.6);
+  --upd-btn: #fff;
+  --upd-btn-edge: rgb(0 0 0 / 0.12);
+  --upd-track: rgb(0 0 0 / 0.1);
+  font-family: var(--upd-font);
+  background: var(--upd-panel);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  backdrop-filter: blur(40px) saturate(180%);
+  box-shadow:
+    inset 0 0 0 0.5px var(--upd-shine),
+    0 0 0 0.5px var(--upd-edge),
+    0 22px 56px rgb(0 0 0 / 0.28),
+    0 2px 8px rgb(0 0 0 / 0.12);
+}
+.upd[data-os='mac'][data-theme='dark'],
+.upd-note[data-os='mac'][data-theme='dark'] {
+  --upd-text: rgb(255 255 255 / 0.88);
+  --upd-sub: rgb(255 255 255 / 0.6);
+  --upd-panel: rgb(40 40 40 / 0.78);
+  --upd-edge: rgb(0 0 0 / 0.7);
+  --upd-shine: rgb(255 255 255 / 0.16);
+  --upd-btn: rgb(255 255 255 / 0.18);
+  --upd-btn-edge: transparent;
+  --upd-track: rgb(255 255 255 / 0.14);
+}
+.upd[data-os='win'],
+.upd-note[data-os='win'] {
+  --upd-font: 'Segoe UI Variable Text', 'Segoe UI', system-ui, sans-serif;
+  --upd-accent: #005fb8;
+  --upd-accent-hover: #196ebf;
+  --upd-on-accent: #fff;
+  --upd-text: rgb(0 0 0 / 0.9);
+  --upd-sub: rgb(0 0 0 / 0.61);
+  --upd-panel: #fff;
+  --upd-bar: #f3f3f3;
+  --upd-edge: rgb(117 117 117 / 0.4);
+  --upd-divider: rgb(0 0 0 / 0.08);
+  --upd-btn: #fbfbfb;
+  --upd-btn-hover: #f6f6f6;
+  --upd-btn-edge: rgb(0 0 0 / 0.06);
+  --upd-btn-floor: rgb(0 0 0 / 0.16);
+  --upd-focus: #000;
+  --upd-track: rgb(0 0 0 / 0.14);
+  font-family: var(--upd-font);
+  background: var(--upd-panel);
+  border: 1px solid var(--upd-edge);
+  box-shadow:
+    0 32px 64px rgb(0 0 0 / 0.19),
+    0 2px 21px rgb(0 0 0 / 0.15);
+}
+.upd[data-os='win'][data-theme='dark'],
+.upd-note[data-os='win'][data-theme='dark'] {
+  --upd-accent: #60cdff;
+  --upd-accent-hover: #5bb9e6;
+  --upd-on-accent: #000;
+  --upd-text: #fff;
+  --upd-sub: rgb(255 255 255 / 0.79);
+  --upd-panel: #2b2b2b;
+  --upd-bar: #202020;
+  --upd-divider: rgb(255 255 255 / 0.06);
+  --upd-btn: rgb(255 255 255 / 0.06);
+  --upd-btn-hover: rgb(255 255 255 / 0.084);
+  --upd-btn-edge: rgb(255 255 255 / 0.09);
+  --upd-btn-floor: rgb(255 255 255 / 0.07);
+  --upd-focus: #fff;
+  --upd-track: rgb(255 255 255 / 0.2);
+  box-shadow:
+    0 32px 64px rgb(0 0 0 / 0.37),
+    0 2px 21px rgb(0 0 0 / 0.3);
+}
+
+/* The logo, unchanged, on a paper plate shaped like an app icon. */
+.upd-plate {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 56px;
+  aspect-ratio: 7 / 4.4;
+  padding: 4px 6px;
+  border-radius: 13px;
+  background: #f3efe7;
+  box-shadow:
+    inset 0 0 0 0.5px rgb(0 0 0 / 0.08),
+    0 1px 3px rgb(0 0 0 / 0.18);
+}
+.upd-plate img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.upd[data-os='win'] .upd-plate {
+  height: 48px;
+  border-radius: 8px;
+}
+.upd-plate-sm {
+  height: 30px;
+  padding: 2px 3px;
+  border-radius: 7px;
+  flex-shrink: 0;
+}
+
+/* macOS alert: 260 wide; 20 pad, icon, 12, title 16, 6, body, 16, buttons 28 x n, gap 8, 16 pad. */
+.upd[data-os='mac'] {
+  width: 260px;
+  max-width: 100%;
+  padding: 20px 16px 16px;
+  border-radius: 14px;
+}
+.upd[data-os='mac'] .upd-content {
+  padding: 0 4px;
+}
+.upd[data-os='mac'] .upd-title {
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 700;
+}
+.upd[data-os='mac'] .upd-body {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 14px;
+}
+.upd[data-os='mac'] .upd-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+.upd[data-os='mac'] .upd-btn {
+  height: 28px;
+  border-radius: 7px;
+  font-size: 13px;
+  background: var(--upd-btn);
+  box-shadow:
+    0 0 0 0.5px var(--upd-btn-edge),
+    0 0.5px 1px rgb(0 0 0 / 0.12);
+}
+.upd[data-os='mac'] .upd-btn[data-role='primary'] {
+  /* Flat, no sheen: any white wash over #0071eb takes white text under 4.5:1. */
+  background: var(--upd-accent);
+  color: var(--upd-on-accent);
+  font-weight: 500;
+}
+.upd[data-os='mac'] .upd-btn:active:not(:disabled) {
+  filter: brightness(0.88);
+}
+.upd[data-os='mac'][data-theme='dark'] .upd-btn:active:not(:disabled) {
+  filter: brightness(1.25);
+}
+.upd[data-os='mac'] .upd-btn:focus-visible,
+.upd-note[data-os='mac'] .upd-note-close:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgb(0 113 235 / 0.55);
+}
+
+/* Windows ContentDialog: 24 pad, logo 48, 16, title 28, 12, body; bar 24 pad, 32px buttons. */
+.upd[data-os='win'] {
+  width: 448px;
+  max-width: 100%;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.upd[data-os='win'] .upd-content {
+  padding: 24px;
+}
+.upd[data-os='win'] .upd-title {
+  margin-top: 16px;
+  font-family: 'Segoe UI Variable Display', var(--upd-font);
+  font-size: 20px;
+  line-height: 28px;
+  font-weight: 600;
+}
+.upd[data-os='win'] .upd-body {
+  margin-top: 12px;
+  font-size: 14px;
+  line-height: 20px;
+}
+.upd[data-os='win'] .upd-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 24px;
+  background: var(--upd-bar);
+  border-top: 1px solid var(--upd-divider);
+}
+.upd[data-os='win'] .upd-btn {
+  min-width: 96px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  background: var(--upd-btn);
+  border: 1px solid var(--upd-btn-edge);
+  border-bottom-color: var(--upd-btn-floor);
+}
+.upd[data-os='win'] .upd-btn[data-role='history'] {
+  margin-right: auto;
+}
+.upd[data-os='win'] .upd-btn:hover:not(:disabled) {
+  background: var(--upd-btn-hover);
+}
+.upd[data-os='win'] .upd-btn[data-role='primary'] {
+  background: var(--upd-accent);
+  color: var(--upd-on-accent);
+  border-color: rgb(255 255 255 / 0.08);
+  border-bottom-color: rgb(0 0 0 / 0.4);
+}
+.upd[data-os='win'] .upd-btn[data-role='primary']:hover:not(:disabled) {
+  background: var(--upd-accent-hover);
+}
+.upd[data-os='win'] .upd-btn:active:not(:disabled) {
+  opacity: 0.8;
+}
+.upd[data-os='win'] .upd-btn:focus-visible,
+.upd-note[data-os='win'] .upd-note-close:focus-visible {
+  outline: 2px solid var(--upd-focus);
+  outline-offset: 1px;
+}
+
+.upd-title,
+.upd-body {
+  overflow-wrap: anywhere;
+}
+.upd-body {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  overflow: hidden;
+}
+.upd-alert {
+  color: #b3261e; /* 5.2:1 on the translucent Mac panel, 6.5:1 on Windows white */
+}
+[data-theme='dark'] .upd-alert {
+  color: #ff99a4;
+}
+.upd-btn {
+  color: var(--upd-text);
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background-color 120ms ease-out,
+    opacity 120ms ease-out,
+    filter 120ms ease-out;
+}
+.upd-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Download note: a small panel in the same material, with a determinate bar. */
+.upd-note {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 280px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 6px 10px 10px;
+}
+.upd-note[data-os='mac'] {
+  border-radius: 12px;
+}
+.upd-note[data-os='win'] {
+  border-radius: 8px;
+  box-shadow: 0 8px 16px rgb(0 0 0 / 0.14);
+}
+.upd-note-text {
+  flex: 1;
+  min-width: 0;
+}
+.upd-note-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 16px;
+}
+.upd-note[data-os='mac'] .upd-note-label {
+  font-weight: 600;
+}
+.upd-note-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.upd-note-pct {
+  color: var(--upd-sub);
+  font-variant-numeric: tabular-nums;
+}
+.upd-progress {
+  height: 4px;
+  margin-top: 6px;
+  border-radius: 2px;
+  background: var(--upd-track);
+  overflow: hidden;
+}
+.upd-note[data-os='win'] .upd-progress {
+  height: 3px;
+}
+.upd-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--upd-accent);
+  transition: width 300ms ease-out;
+}
+.upd-note-close {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  color: var(--upd-sub);
+  cursor: pointer;
+  transition: background-color 120ms ease-out;
+}
+.upd-note-close:hover {
+  background: var(--upd-track);
+  color: var(--upd-text);
+}
+
+/* ── The bookshelf (Home library) ──────────────────────────────────────────
+   A night shelf: black stage, cream ink, gold bookends. It keeps these colours
+   in both themes, the way a lit bookcase looks the same whatever the room.
+   Hover and keyboard focus share one state (`data-lifted`): the spine rises on
+   a long ease-out with no overshoot, and the caption above names it. With
+   reduced motion the spine does not move; a cream ring marks it instead. */
+.shelf-stage {
+  --shelf-bg: #000;
+  --shelf-ink: #f3efe7;
+  --shelf-card: #101010;
+  --shelf-gold: #e9b949;
+  --shelf-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  background: var(--shelf-bg);
+  color: var(--shelf-ink);
+  border-radius: 1.5rem;
+  overflow: hidden;
+}
+
+.shelf-label {
+  font-family: 'Patrick Hand', 'Caveat Variable', cursive;
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--shelf-ink) 72%, transparent);
+}
+
+.shelf-underline {
+  padding-bottom: 0.6rem;
+  background: linear-gradient(var(--shelf-ink), var(--shelf-ink)) left bottom / min(100%, 22rem) 1.5px no-repeat;
+}
+
+/* The caption has its own band at the top of the stage, clear of every book. Pixel budget, from the
+   stage top: caption 20 → ~80 (Caveat 26px title ~33 + 4 + meta ~20), then the 112px shelf padding
+   (`pt-28`) + the row's 36px top padding = 148 for the tallest spine (306px) at rest; lifted 20px and
+   with its 9px ribbon its highest pixel is 119, so the text keeps ~39px of air. Only the arrow
+   (`.shelf-pointer`) reaches down into that air. */
+.shelf-caption {
+  position: absolute;
+  top: 20px;
+  width: min(30rem, calc(100% - 2rem));
+  transform: translateX(-50%);
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease-out;
+  z-index: 3;
+}
+
+.shelf-pointer {
+  position: absolute;
+  width: 15px;
+  height: 22px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease-out;
+  z-index: 3;
+}
+
+.shelf-caption[data-show],
+.shelf-pointer[data-show] {
+  opacity: 1;
+}
+
+.shelf-row {
+  /* Positioned: the offset parent for spines, which the caption math relies on. */
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  /* Centred while the books fit; `safe` falls back to the start once the shelf scrolls. */
+  justify-content: safe center;
+  gap: 2px;
+  /* 36px top padding + the tallest spine (306px): the row's top edge never moves, so the caption
+     band above it stays clear whatever books are on the shelf. */
+  min-height: calc(2.25rem + 306px);
+  /* Top room for the 20px lift plus the 9px ribbon: a scroller clips both axes. */
+  padding: 2.25rem 7% 0;
+  overflow-x: auto;
+  overflow-y: visible;
+  scrollbar-width: none;
+}
+.shelf-row::-webkit-scrollbar {
+  display: none;
+}
+
+.shelf-spine {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0 10px;
+  border-radius: 3px 3px 1px 1px;
+  background:
+    radial-gradient(140% 22% at 20% var(--band-at), var(--band) 0 55%, transparent 56%),
+    radial-gradient(120% 18% at 85% calc(var(--band-at) + 9%), var(--band) 0 50%, transparent 51%),
+    var(--cloth);
+  box-shadow:
+    inset 3px 0 4px rgb(255 255 255 / 0.14),
+    inset -4px 0 6px rgb(0 0 0 / 0.38),
+    0 -3px 0 0 color-mix(in oklab, var(--cloth) 70%, #fff);
+  cursor: pointer;
+  transition:
+    transform 0.32s var(--shelf-ease),
+    opacity 0.32s var(--shelf-ease),
+    filter 0.2s ease-out;
+}
+
+.shelf-spine[data-lifted] {
+  transform: translateY(-20px);
+  filter: brightness(1.06);
+}
+
+/* Off the shelf: the book is in the air or on the desk, and its slot stays as a gap. No transition,
+   so the flying copy takes over (and hands back) on the same frame. */
+.shelf-spine[data-out] {
+  transform: none;
+  opacity: 0;
+  transition: none;
+}
+
+.shelf-spine:focus-visible {
+  outline: none;
+  border-radius: 3px;
+  box-shadow:
+    0 0 0 2px var(--shelf-bg),
+    0 0 0 4.5px var(--shelf-ink);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shelf-spine,
+  .shelf-caption,
+  .shelf-pointer {
+    transition: none;
+  }
+  .shelf-spine[data-lifted],
+  .shelf-spine[data-out] {
+    transform: none;
+  }
+  .shelf-spine[data-lifted] {
+    box-shadow:
+      0 0 0 2px var(--shelf-bg),
+      0 0 0 4.5px var(--shelf-ink);
+  }
+}
+
+/* The box the title must fit: everything between the spine's top padding and its foot. The size and
+   line breaks come from `fitSpineTitle`; `overflow: hidden` is only a net under it. */
+.shelf-spine-title {
+  flex: 1 1 0;
+  min-height: 0;
+  align-self: stretch;
+  display: flex;
+  justify-content: center;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+.shelf-spine-title > span {
+  writing-mode: vertical-rl;
+  font-family: var(--font-serif);
+  font-weight: 600;
+  line-height: 1.08;
+  white-space: nowrap;
+  text-align: start;
+}
+
+.shelf-spine-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.shelf-spine-format {
+  writing-mode: vertical-rl;
+  font-family: var(--font-sans);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.shelf-spine-badge {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-family: var(--font-sans);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+/* A gold ribbon over the top of every book that carries marks. */
+.shelf-ribbon {
+  position: absolute;
+  top: -9px;
+  right: 22%;
+  width: 6px;
+  height: 22px;
+  background: var(--shelf-gold);
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%);
+}
+
+.shelf-bookend {
+  flex-shrink: 0;
+  width: 30px;
+  height: 150px;
+  padding-top: 14px;
+  border-radius: 2px 2px 0 0;
+  background: linear-gradient(90deg, #f0c45a, var(--shelf-gold) 40%, #c99a33);
+  color: #1b1a18;
+  font-family: var(--font-serif);
+  font-size: 11px;
+  font-weight: 700;
+  writing-mode: vertical-rl;
+  text-align: start;
+  margin: 0 3px;
+}
+
+.shelf-plank {
+  position: relative;
+  height: 16px;
+  margin: 0 1.5%;
+  border-top: 2px solid color-mix(in oklab, var(--shelf-ink) 85%, transparent);
+  border-radius: 2px;
+  background: linear-gradient(#262626, #0b0b0b);
+  margin-bottom: 40px;
+}
+
+.shelf-bracket {
+  position: absolute;
+  top: 100%;
+  width: 14px;
+  height: 22px;
+  border-left: 1.5px solid var(--shelf-ink);
+  border-bottom: 1.5px solid var(--shelf-ink);
+  border-bottom-left-radius: 3px;
+}
+
+.shelf-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 7%;
+  pointer-events: none;
+  z-index: 2;
+}
+.shelf-edge-l {
+  left: 0;
+  background: linear-gradient(to right, var(--shelf-bg), transparent);
+}
+.shelf-edge-r {
+  right: 0;
+  background: linear-gradient(to left, var(--shelf-bg), transparent);
+}
+
+.shelf-desk {
+  position: relative;
+  padding: clamp(18px, 4vw, 40px);
+  border: 1.5px solid var(--shelf-ink);
+  border-radius: 22px;
+  background: #121212;
+  box-shadow: 0 6px 0 -4px #121212, 0 6px 0 -2.5px var(--shelf-ink);
+}
+
+.shelf-desk-leg {
+  position: absolute;
+  top: calc(100% + 6px);
+  width: 6px;
+  height: 46px;
+  border-left: 1.5px solid var(--shelf-ink);
+  border-right: 1.5px solid var(--shelf-ink);
+}
+
+/* The book lies open: endpaper on the left, first page on the right. The spread is laid out from the
+   page (`.shelf-desk-book`), which is where the flying book lands before its cover swings left. */
+.shelf-desk-spread {
+  display: flex;
+  justify-content: flex-end;
+  width: min(100%, 460px);
+}
+
+.shelf-desk-book {
+  position: relative;
+  width: 50%;
+  aspect-ratio: 3 / 4;
+  transform: rotate(-3deg);
+}
+
+.shelf-desk-book,
+.shelf-endpaper,
+.shelf-fly-page,
+.shelf-cover {
+  border-radius: 3px;
+  box-shadow: 14px 22px 36px rgb(0 0 0 / 0.65), 2px 3px 0 rgb(0 0 0 / 0.5);
+}
+
+.shelf-endpaper {
+  display: block;
+  border-radius: 3px 0 0 3px;
+  /* Cast left, away from the page it lies beside. */
+  box-shadow: -12px 22px 30px -4px rgb(0 0 0 / 0.6), -2px 3px 0 rgb(0 0 0 / 0.5);
+  background:
+    linear-gradient(to left, rgb(0 0 0 / 0.22), transparent 12%),
+    color-mix(in oklab, var(--cloth) 24%, #efe6d4);
+}
+.shelf-desk-endpaper {
+  position: absolute;
+  top: 0;
+  right: 100%;
+  width: 100%;
+  height: 100%;
+}
+
+/* ── A book in flight ── a box with the spine at the front and the cover on its right-hand side;
+   the cover is a leaf hinged at the spine. Positioned only by the transform set per frame. */
+.shelf-flyer {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 5;
+  pointer-events: none;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+.shelf-flyer .shelf-fly-spine,
+.shelf-fly-side,
+.shelf-fly-page,
+.shelf-fly-leaf,
+.shelf-fly-leaf > * {
+  position: absolute;
+  top: 0;
+  backface-visibility: hidden;
+}
+.shelf-flyer .shelf-fly-spine {
+  left: 0;
+}
+.shelf-fly-side,
+.shelf-fly-leaf {
+  transform-style: preserve-3d;
+}
+.shelf-fly-page,
+.shelf-fly-leaf,
+.shelf-fly-leaf > * {
+  inset: 0;
+}
+/* Just under the cover, so the closed cover wins the depth sort. */
+.shelf-fly-page {
+  transform: translateZ(-1px);
+}
+.shelf-fly-leaf {
+  transform-origin: left center;
+}
+.shelf-fly-back {
+  transform: rotateY(180deg);
+}
+
+.shelf-cover {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 26px 22px 22px 26px;
+  border-radius: 2px 4px 4px 2px;
+  background:
+    linear-gradient(to right, rgb(0 0 0 / 0.28), transparent 7%),
+    radial-gradient(140% 22% at 20% var(--band-at), var(--band) 0 55%, transparent 56%),
+    var(--cloth);
+}
+.shelf-cover .shelf-label {
+  color: inherit;
+  opacity: 0.8;
+}
+.shelf-cover-title {
+  font-family: var(--font-serif);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.12;
+  text-wrap: balance;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 5;
+  overflow: hidden;
+}
+.shelf-cover .shelf-spine-badge {
+  margin-top: auto;
+}
+
+.shelf-note {
+  position: relative;
+  padding: clamp(20px, 3.2vw, 34px);
+  border: 1.5px solid var(--shelf-ink);
+  border-radius: 16px;
+  background: var(--shelf-card);
+}
+
+/* The desk keeps one size for every book: each variable part of the note has a fixed slot.
+   Title: 2 lines of Caveat at 1.12 leading (2 x 1.12em = 2.24em; descenders fit in the 0.12em). */
+.shelf-clamp {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.shelf-note-title {
+  font-size: clamp(34px, 4.4vw, 52px);
+  line-height: 1.12;
+  height: 2.24em;
+}
+/* Summary: 2 lines of 16px serif at 1.625 = 52px. */
+.shelf-note-summary {
+  font-size: 16px;
+  line-height: 1.625;
+  height: 52px;
+}
+/* Chips: 2 rows of 30px plus an 8px gap = 68px; the rest goes behind "+N". */
+.shelf-chips {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 8px;
+  height: 68px;
+  overflow: hidden;
+}
+.shelf-chips .shelf-chip {
+  height: 30px;
+  max-width: min(100%, 15em);
+}
+.shelf-chips .shelf-chip[hidden] {
+  display: none;
+}
+.shelf-actions {
+  grid-area: 1 / 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 10px;
+}
+
+.shelf-chip,
+.shelf-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.4rem 0.95rem;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in oklab, var(--shelf-ink) 55%, transparent);
+  font-family: 'Patrick Hand', 'Caveat Variable', cursive;
+  font-size: 13px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--shelf-ink);
+}
+
+.shelf-pill {
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease-out,
+    background-color 0.15s ease-out;
+}
+.shelf-pill:hover:not(:disabled) {
+  border-color: var(--shelf-ink);
+  background: rgb(243 239 231 / 0.06);
+}
+.shelf-pill:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.shelf-pill-danger {
+  border-color: #f2a08a;
+  color: #f2a08a;
+}
+
+.shelf-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 1.6rem;
+  border-radius: 999px;
+  background: var(--shelf-ink);
+  color: #000;
+  font-family: 'Patrick Hand', 'Caveat Variable', cursive;
+  font-size: 17px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition:
+    transform 0.16s var(--shelf-ease),
+    background-color 0.15s ease-out;
+}
+.shelf-primary:hover {
+  background: #fff;
+}
+.shelf-primary:active {
+  transform: scale(0.97);
+}
+@media (prefers-reduced-motion: reduce) {
+  .shelf-primary {
+    transition: background-color 0.15s ease-out;
+  }
+  .shelf-primary:active {
+    transform: none;
+  }
+}
+
+.shelf-link {
+  font-family: 'Patrick Hand', 'Caveat Variable', cursive;
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--shelf-ink) 80%, transparent);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in oklab, var(--shelf-ink) 35%, transparent);
+  text-underline-offset: 5px;
+  cursor: pointer;
+}
+.shelf-link:hover {
+  color: var(--shelf-ink);
+  text-decoration-color: var(--shelf-ink);
+}
+
+.shelf-stage :where(button):focus-visible {
+  outline-color: var(--shelf-ink);
 }

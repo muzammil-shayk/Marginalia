@@ -57,7 +57,7 @@ export const ErrorDialog: React.FC<ErrorDialogProps> = ({
         aria-labelledby="error-dialog-title"
         aria-describedby="error-dialog-message"
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-sm rounded-3xl p-5 shadow-2xl border space-y-4 bg-white border-stone-200 text-stone-900 dark:bg-[#1b201d] dark:border-stone-700 dark:text-white"
+        className="ink-card w-full max-w-sm rounded-3xl p-5 shadow-2xl border space-y-4 bg-white border-stone-200 text-stone-900 dark:bg-night-3 dark:border-stone-700 dark:text-paper"
       >
         <div className="flex gap-3">
           <span className="w-9 h-9 rounded-full shrink-0 flex items-center justify-center bg-red-500/12 text-red-600 dark:text-red-400">
@@ -66,7 +66,7 @@ export const ErrorDialog: React.FC<ErrorDialogProps> = ({
           <div className="flex-1 min-w-0 space-y-1">
             <h2
               id="error-dialog-title"
-              className="font-serif text-[15px] font-bold leading-snug text-stone-900 dark:text-white"
+              className="title-hand text-[24px] text-stone-900 dark:text-paper"
             >
               {title}
             </h2>
@@ -87,7 +87,7 @@ export const ErrorDialog: React.FC<ErrorDialogProps> = ({
             className={`px-4 py-2 rounded-xl text-[12.5px] font-semibold cursor-pointer transition-colors ${
               onRetry
                 ? 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
-                : 'bg-[#435c52] text-white hover:bg-[#3a5048]'
+                : 'bg-accent text-on-accent hover:bg-accent-hover'
             }`}
           >
             {onRetry ? 'Dismiss' : 'OK'}
@@ -96,7 +96,7 @@ export const ErrorDialog: React.FC<ErrorDialogProps> = ({
             <button
               type="button"
               onClick={onRetry}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#435c52] text-white text-[12.5px] font-semibold hover:bg-[#3a5048] cursor-pointer transition-colors"
+              className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-accent caps text-on-accent text-[12.5px] font-semibold hover:bg-accent-hover cursor-pointer transition-colors"
             >
               <RotateCcw className="w-3.5 h-3.5" />
               Retry

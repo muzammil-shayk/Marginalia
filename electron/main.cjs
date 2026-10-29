@@ -52,8 +52,11 @@ const APP_ICON_PATH = (() => {
    * The format is NOT interchangeable. Windows wants the .ico, because it carries the small sizes
    * Windows actually draws at; macOS cannot decode one, and handing it to `app.dock.setIcon`
    * throws "Failed to load image from path" during startup and takes the whole app down with it.
+   * macOS gets its own `icon-mac.png`, drawn for the Dock; the packaged .app uses `icon.icns`.
    */
-  const file = process.platform === 'win32' ? 'icon.ico' : 'icon.png';
+  const file = process.platform === 'win32' ? 'icon.ico'
+    : process.platform === 'darwin' ? 'icon-mac.png'
+      : 'icon.png';
   return path.join(__dirname, '..', 'build', file);
 })();
 
@@ -65,12 +68,93 @@ function readConfig() {
   }
 }
 
+/** Writes to a temp file and renames it over config.json, so a crash mid-write never leaves a half file. */
 function writeConfig(config) {
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf-8');
+  const tmpPath = `${CONFIG_PATH}.${process.pid}.tmp`;
+  try {
+    const fd = fs.openSync(tmpPath, 'w');
+    try {
+      fs.writeFileSync(fd, JSON.stringify(config, null, 2), 'utf-8');
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+    fs.renameSync(tmpPath, CONFIG_PATH);
+  } catch (err) {
+    try {
+      fs.rmSync(tmpPath, { force: true });
+    } catch {
+      // The write error is the one worth reporting; a leftover temp file is swept at next launch.
+    }
+    throw err;
+  }
+}
+
+/** Removes temp files a crash left between writing and renaming (`config.json.<pid>.tmp`). */
+function removeStaleConfigTemps() {
+  const dir = path.dirname(CONFIG_PATH);
+  const prefix = `${path.basename(CONFIG_PATH)}.`;
+  try {
+    for (const name of fs.readdirSync(dir)) {
+      if (name.startsWith(prefix) && name.endsWith('.tmp')) fs.rmSync(path.join(dir, name), { force: true });
+    }
+  } catch (err) {
+    console.error('[config] could not sweep stale temp files', err);
+  }
+}
+
+/**
+ * Merges `patch` into the stored config and returns whether it was saved.
+ *
+ * A missing file counts as empty. A file that is not valid JSON is copied to `config.json.bad`
+ * and then also treated as empty, so one corrupt file cannot block every later save. Any other
+ * read error (EACCES, EIO, ...) skips the write: overwriting from `{}` would drop the storeDir.
+ */
+function updateConfig(patch) {
+  let current = {};
+  try {
+    current = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+  } catch (err) {
+    if (err instanceof SyntaxError) {
+      try {
+        fs.copyFileSync(CONFIG_PATH, `${CONFIG_PATH}.bad`);
+      } catch (copyErr) {
+        console.error('[config] not updating config.json: it is corrupt and could not be backed up', copyErr);
+        return false;
+      }
+      console.error('[config] config.json was corrupt; kept a copy as config.json.bad', err);
+    } else if (err.code !== 'ENOENT') {
+      console.error('[config] not updating config.json: it could not be read', err);
+      return false;
+    }
+  }
+  try {
+    writeConfig({ ...current, ...patch });
+    return true;
+  } catch (err) {
+    console.error('[config] could not save config.json', err);
+    return false;
+  }
+}
+
+/**
+ * Saves the library location. On failure tells the user (the library is already in place for
+ * this session, but the next launch would open the old folder) and returns an error code.
+ */
+async function persistStoreDir(dir) {
+  if (updateConfig({ storeDir: dir })) return null;
+  await dialog.showMessageBox(mainWindow, {
+    type: 'error',
+    message: 'Marginalia could not remember your storage folder.',
+    detail: 'Your documents are in place for now, but the next launch may open the previous folder. ' +
+      'Check that the app can write to its settings folder, then choose the folder again.'
+  });
+  return 'config-save-failed';
 }
 
 // The store root must be set before the server module is loaded, because the backend reads it
 // when it first resolves.
+removeStaleConfigTemps();
 let storeDir = readConfig().storeDir || DEFAULT_STORE_DIR;
 process.env.MARGINALIA_STORE_DIR = storeDir;
 
@@ -329,10 +413,10 @@ ipcMain.handle('marginalia:choose-storage-dir', async () => {
   }
 
   storeDir = chosen;
-  writeConfig({ ...readConfig(), storeDir });
   serverModule?.setStoreDirectory(storeDir);
+  const saveError = await persistStoreDir(storeDir);
 
-  return { changed: true, path: storeDir, moved: movedCount };
+  return { changed: true, path: storeDir, moved: movedCount, ...(saveError && { error: saveError }) };
 });
 
 /** Puts the library back in the default per-user location. */
@@ -341,9 +425,9 @@ ipcMain.handle('marginalia:reset-storage-dir', async () => {
   const previous = storeDir;
   await migrateLibrary(previous, DEFAULT_STORE_DIR).catch(() => {});
   storeDir = DEFAULT_STORE_DIR;
-  writeConfig({ ...readConfig(), storeDir: undefined });
   serverModule?.setStoreDirectory(storeDir);
-  return { changed: true, path: storeDir };
+  const saveError = await persistStoreDir(undefined);
+  return { changed: true, path: storeDir, ...(saveError && { error: saveError }) };
 });
 
 // ── App info, for the About section in Settings ───────────────────────────────
@@ -365,7 +449,10 @@ ipcMain.handle('marginalia:app-info', () => ({
  * screen's update panel reflects a check or download that started automatically on launch, before
  * any UI existed to request one.
  */
+let lastUpdateStatus = null;
+
 function broadcastUpdateStatus(status) {
+  lastUpdateStatus = status;
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('marginalia:updater-status', status);
   }
@@ -424,10 +511,26 @@ ipcMain.handle('marginalia:updater-quit-and-install', () => {
   autoUpdater.quitAndInstall(false, true);
 });
 
+/**
+ * The last status sent, for a subscriber that arrives after it went out (a reloaded or recreated
+ * window). The preload asks for it once on subscribe; a push sent before then would be dropped.
+ */
+ipcMain.handle('marginalia:updater-last-status', () => lastUpdateStatus);
+
+/**
+ * The version the reader said "Later" to. Kept in the config file, not localStorage: the embedded
+ * server binds a fresh port each launch, and a new port is a new origin with empty storage.
+ */
+ipcMain.handle('marginalia:updater-get-dismissed', () => readConfig().dismissedUpdateVersion ?? null);
+
+ipcMain.handle('marginalia:updater-set-dismissed', (_event, version) => {
+  updateConfig({ dismissedUpdateVersion: typeof version === 'string' ? version.slice(0, 64) : undefined });
+});
+
 ipcMain.handle('marginalia:updater-get-preference', () => readConfig().autoUpdateEnabled !== false);
 
 ipcMain.handle('marginalia:updater-set-preference', (_event, enabled) => {
-  writeConfig({ ...readConfig(), autoUpdateEnabled: !!enabled });
+  updateConfig({ autoUpdateEnabled: !!enabled });
   scheduleAutoUpdateChecks();
 });
 
@@ -443,9 +546,10 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
-  // macOS's Dock icon, for an unpackaged run — see APP_ICON_PATH. A packaged .app gets its Dock
-  // icon from Info.plist automatically and never touches this.
-  if (process.platform === 'darwin' && app.dock && fs.existsSync(APP_ICON_PATH)) {
+  // macOS's Dock icon, for an unpackaged run only — see APP_ICON_PATH. A packaged .app takes its
+  // Dock icon from `icon.icns` via Info.plist; `build/icon.*` also ships inside it, so without the
+  // isPackaged check the flat PNG would replace the icns at runtime.
+  if (process.platform === 'darwin' && !app.isPackaged && app.dock && fs.existsSync(APP_ICON_PATH)) {
     app.dock.setIcon(APP_ICON_PATH);
   }
 

@@ -22,9 +22,48 @@ export interface ReleaseNote {
   highlights: ChangelogItem[];
 }
 
-export const CURRENT_APP_VERSION = '2.2.0';
+export const CURRENT_APP_VERSION = '2.3.0';
 
 export const CHANGELOG_RELEASES: ReleaseNote[] = [
+  {
+    version: '2.3.0',
+    title: 'The Bookshelf, and a Quieter Look',
+    date: 'October 2026',
+    summary:
+      'Your library is now a shelf of books, the whole app wears one new look, and updates announce themselves.',
+    highlights: [
+      {
+        category: 'feature',
+        title: 'A bookshelf for your library',
+        description:
+          'Home shows your documents as book spines on a shelf. Hover a spine and it lifts, with its title written above. Click a book and it slides onto a desk below, open at its first page; Read takes it into the reader. Shelve it, or Esc, puts it back, and Previous and Next move along the shelf. Arrow keys work too. Titles always fit their spines, and a book with notes carries a gold ribbon. The list view is still there.'
+      },
+      {
+        category: 'feature',
+        title: 'Update prompts',
+        description:
+          'Marginalia now tells you when an update is ready, with Restart now or Later, in a window styled for Mac or Windows. Later is remembered for that version, even after a restart. Check for updates in Settings now says when you are up to date, and Version History opens these notes.'
+      },
+      {
+        category: 'improvement',
+        title: 'One look across the app',
+        description:
+          'Cream, ink and gold, with handwritten titles and small-caps labels, across navigation, Settings, Upload, the reader toolbar and panels, and dialogs. Light and dark themes both follow it, and the text is easier to read.'
+      },
+      {
+        category: 'improvement',
+        title: 'Motion that eases',
+        description:
+          'No more springy or bouncy animation. Everything now eases into place.'
+      },
+      {
+        category: 'fix',
+        title: 'Settings are saved more safely',
+        description:
+          'A damaged settings file no longer stops Marginalia from saving; the old copy is kept aside. And if your library moves but the new location cannot be saved, you now see an error, instead of an empty library after the next restart.'
+      }
+    ]
+  },
   {
     version: '2.2.0',
     title: 'What Changed, and Where Things Are Kept',

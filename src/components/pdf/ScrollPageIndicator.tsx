@@ -70,7 +70,7 @@ export const ScrollPageIndicator: React.FC<ScrollPageIndicatorProps> = ({
     <div
       className={`fixed z-40 px-2.5 py-1 rounded-lg text-[12px] font-semibold tabular-nums select-none shadow-lg border pointer-events-none transition-opacity ${
         isDark
-          ? 'bg-[#232a26] border-stone-700 text-stone-100'
+          ? 'bg-night-4 border-stone-700 text-stone-100'
           : 'bg-white/95 border-stone-200 text-stone-800'
       }`}
       style={{ top: state.offset, right }}

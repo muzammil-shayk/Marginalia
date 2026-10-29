@@ -98,7 +98,7 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
     <div
       ref={ref}
       className={`fixed z-50 flex items-center gap-0.5 p-1 rounded-xl shadow-2xl border ${
-        isDark ? 'bg-[#1b201d] border-stone-700' : 'bg-white border-stone-200'
+        isDark ? 'bg-night-3 border-stone-700' : 'bg-white border-stone-200'
       }`}
       style={panel}
       // Pressing anything here must not clear the selection it is about to act on.
@@ -180,7 +180,7 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
         type="button"
         onClick={onClose}
         title="Dismiss"
-        className="p-1.5 rounded-lg text-stone-400 hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer"
+        className="p-1.5 rounded-lg text-muted hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer"
       >
         <X className="w-3.5 h-3.5" />
       </button>
