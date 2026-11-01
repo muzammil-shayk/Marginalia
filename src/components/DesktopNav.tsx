@@ -82,14 +82,14 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
         aria-hidden
         className={`absolute top-12 right-0 bottom-0 w-px ${isDark ? 'bg-white/5' : 'bg-black/4'}`}
       />
-      {/* Brand, and the control that gives the window back to the document. */}
-      {/* Also a drag handle: on macOS the traffic lights sit in this corner and the rest of the
-          row is the only chrome the window has left to be moved by. */}
+      {/* Brand. Also a drag handle: on macOS the traffic lights sit in this corner and the rest
+          of the row is the only chrome the window has left to be moved by. The collapse toggle
+          lives at the bottom of the sidebar, never beside the logo. */}
       <div
         className={`app-drag flex items-center pb-4 overflow-hidden ${
           // Collapsed, this column starts under macOS's traffic lights, so it begins lower than
           // the expanded sidebar does — where the wordmark is tall enough to clear them anyway.
-          collapsed ? 'flex-col gap-4 px-2 pt-11' : 'px-4 gap-2 pt-6'
+          collapsed ? 'justify-center px-2 pt-11' : 'px-4 pt-6'
         }`}
       >
         {!collapsed && (
@@ -112,18 +112,6 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
             <img src="/favicon.png" alt="Marginalia" className="w-10 h-10 rounded-xl" />
           </button>
         )}
-        <button
-          type="button"
-          onClick={onToggleCollapsed}
-          title={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
-          aria-label={collapsed ? 'Expand the sidebar' : 'Collapse the sidebar'}
-          aria-expanded={!collapsed}
-          className="p-1.5 rounded-lg shrink-0 text-muted hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-200/70 dark:hover:bg-white/5 cursor-pointer transition-colors"
-        >
-          {/* One glyph, mirrored. Phosphor has no open/close pair for a sidebar, and the
-              direction is the whole message: the panel opens the way the icon points. */}
-          <PanelLeftOpen className={`transition-transform duration-200 ${collapsed ? 'w-5 h-5' : 'w-4 h-4 scale-x-[-1]'}`} />
-        </button>
       </div>
 
       {/* Nav Items */}
@@ -200,24 +188,44 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
         )}
       </nav>
 
-      {/* Bottom section */}
-      {!collapsed && (
-        <div className={`px-4 py-4 border-t text-[13px] text-muted space-y-1.5 overflow-hidden whitespace-nowrap ${
-          isDark ? 'border-white/5' : 'border-black/4'
-        }`}>
-          <span className="title-hand text-[16px] text-gold block truncate whitespace-nowrap">
-            Marginalia • Annotator
-          </span>
-          <p className="italic text-[12px] text-muted leading-snug truncate whitespace-nowrap">
-            For close readers,
-          </p>
-          <p className="italic text-[12px] text-muted leading-snug truncate whitespace-nowrap">
-            Built with care by
-            <br />
-            Shama Iqbal Hussain.
-          </p>
-        </div>
-      )}
+      {/* The control that gives the window back to the document. Same spot in both states:
+          24px from the left edge (centred in the 80px rail), and the same height from the
+          bottom, because the credit below keeps its height while hidden in the collapsed rail. */}
+      <div className="px-6 pb-3">
+        <button
+          type="button"
+          onClick={onToggleCollapsed}
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!collapsed}
+          aria-controls="desktop-sidebar-nav"
+          className="flex p-1.5 rounded-lg text-muted hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-200/70 dark:hover:bg-white/5 cursor-pointer transition-colors duration-150 ease-out"
+        >
+          {/* One glyph, mirrored. Phosphor has no open/close pair for a sidebar, and the
+              direction is the whole message: the panel opens the way the icon points. */}
+          <PanelLeftOpen className={`w-5 h-5 transition-transform duration-200 ease-out ${collapsed ? '' : 'scale-x-[-1]'}`} />
+        </button>
+      </div>
+
+      {/* Credit. Hidden, not removed, in the collapsed rail so the toggle above never moves. */}
+      <div
+        aria-hidden={collapsed || undefined}
+        className={`px-4 py-4 border-t text-[13px] text-muted space-y-1.5 overflow-hidden whitespace-nowrap ${
+          collapsed ? 'invisible' : ''
+        } ${isDark ? 'border-white/5' : 'border-black/4'}`}
+      >
+        <span className="title-hand text-[16px] text-gold block truncate whitespace-nowrap">
+          Marginalia • Annotator
+        </span>
+        <p className="italic text-[12px] text-muted leading-snug truncate whitespace-nowrap">
+          For close readers,
+        </p>
+        <p className="italic text-[12px] text-muted leading-snug truncate whitespace-nowrap">
+          Built with care by
+          <br />
+          Shama Iqbal Hussain.
+        </p>
+      </div>
     </aside>
   );
 };

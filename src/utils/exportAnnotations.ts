@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import { StickyNote } from '../types';
+import { groupHeads, sortTextMarks, type TextMark, type TextMarkKind } from './textMarks';
 
 /** The global theme list, just enough of it to resolve an id to a display name. */
 export type ThemeRef = { id: string; name: string };
@@ -22,10 +23,10 @@ function themeName(themeId: string | null | undefined, themes: ThemeRef[]): stri
 /**
  * Filter annotations based on user selection
  */
-export function getFilteredAnnotations(
-  notes: StickyNote[],
+export function getFilteredAnnotations<T extends { themeId: string | null }>(
+  notes: T[],
   themeFilter: string = 'All'
-): StickyNote[] {
+): T[] {
   return notes.filter((note) => {
     if (themeFilter !== 'All' && note.themeId !== themeFilter) return false;
     return true;
@@ -35,7 +36,7 @@ export function getFilteredAnnotations(
 /**
  * Generate formatted plain text representation
  */
-export function generatePlainText(notes: StickyNote[], options: ExportOptions): string {
+export function generatePlainText(notes: ExportEntry[], options: ExportOptions): string {
   const dateStr = new Date().toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
@@ -60,13 +61,15 @@ export function generatePlainText(notes: StickyNote[], options: ExportOptions): 
     const date = noteDateLabel(note);
     if (date) output += `   Date:      ${date}\n`;
 
-    if (note.quote && options.includeQuotes) {
+    if (showsQuote(note, options)) {
       output += `\n   Passage Excerpt:\n`;
       output += `   "${note.quote}"\n`;
     }
 
-    output += `\n   Annotation Note:\n`;
-    output += `   ${note.content}\n`;
+    if (showsBody(note)) {
+      output += `\n   Annotation Note:\n`;
+      output += `   ${note.content}\n`;
+    }
 
     output += `\n-----------------------------------------------------------------\n\n`;
   });
@@ -77,7 +80,7 @@ export function generatePlainText(notes: StickyNote[], options: ExportOptions): 
 /**
  * Generate structured Markdown representation
  */
-export function generateMarkdown(notes: StickyNote[], options: ExportOptions): string {
+export function generateMarkdown(notes: ExportEntry[], options: ExportOptions): string {
   const dateStr = new Date().toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'long',
@@ -98,11 +101,11 @@ export function generateMarkdown(notes: StickyNote[], options: ExportOptions): s
     md += `- **Author:** ${note.author || 'Reader'}${date ? ` (${date})` : ''}\n`;
     md += `\n`;
 
-    if (note.quote && options.includeQuotes) {
+    if (showsQuote(note, options)) {
       md += `> "${note.quote}"\n\n`;
     }
 
-    md += `${note.content}\n\n`;
+    if (showsBody(note)) md += `${note.content}\n\n`;
 
     md += `---\n\n`;
   });
@@ -113,7 +116,7 @@ export function generateMarkdown(notes: StickyNote[], options: ExportOptions): s
 /**
  * Export annotations as a beautifully formatted PDF document
  */
-export function exportToPDF(notes: StickyNote[], options: ExportOptions): void {
+export function exportToPDF(notes: ExportEntry[], options: ExportOptions): void {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -192,10 +195,10 @@ export function exportToPDF(notes: StickyNote[], options: ExportOptions): void {
   // Iterate over notes
   notes.forEach((note, index) => {
     // Estimate note height
-    const quoteLines = note.quote && options.includeQuotes
+    const quoteLines = showsQuote(note, options)
       ? doc.splitTextToSize(`"${note.quote}"`, contentWidth - 8)
       : [];
-    const contentLines = doc.splitTextToSize(note.content, contentWidth - 4);
+    const contentLines: string[] = showsBody(note) ? doc.splitTextToSize(note.content, contentWidth - 4) : [];
 
     const estimatedHeight =
       12 + // title
@@ -230,7 +233,7 @@ export function exportToPDF(notes: StickyNote[], options: ExportOptions): void {
     y += 5;
 
     // Quote Block (if exists)
-    if (note.quote && options.includeQuotes) {
+    if (quoteLines.length > 0) {
       doc.setFillColor(235, 233, 227);
       doc.rect(margin + 2, y, contentWidth - 4, quoteLines.length * 4.5 + 2, 'F');
 
@@ -295,4 +298,68 @@ export function noteDateLabel(note: StickyNote): string {
   }
   const legacy = (note.timestamp || '').trim();
   return /^just now$/i.test(legacy) ? '' : legacy;
+}
+
+/**
+ * A line of the export. Older callers pass sticky notes; text-document marks come through
+ * `textMarksForExport` and carry their `kind`, so a highlight prints as its passage.
+ */
+export type ExportEntry = StickyNote & { kind?: TextMarkKind; isTerminology?: boolean };
+
+/** A mark whose substance is the passage it covers, not words the reader wrote. */
+function isPassage(entry: ExportEntry): boolean {
+  return entry.kind !== undefined && entry.kind !== 'note';
+}
+
+/** The passage is printed when asked for, and always for a passage mark (it is the whole entry). */
+function showsQuote(entry: ExportEntry, options: ExportOptions): boolean {
+  return !!entry.quote && (options.includeQuotes || isPassage(entry));
+}
+
+/** A note always prints its body; a passage mark only when the reader wrote something on it. */
+function showsBody(entry: ExportEntry): boolean {
+  return !isPassage(entry) || !!entry.content;
+}
+
+const KIND_LABELS: Record<TextMarkKind, string> = {
+  highlight: 'Highlight',
+  underline: 'Underline',
+  strikeout: 'Strikethrough',
+  note: 'Note',
+  question: 'Reaction (?)',
+  star: 'Reaction (*)',
+  exclamation: 'Reaction (!)',
+  bold: 'Bold',
+  circle: 'Circled'
+};
+
+/**
+ * A text document's marks as export entries: one per mark (the ranges of a multi-paragraph mark
+ * joined), in reading order. Marks migrated from older formats stored no quote, so the words are
+ * taken from `paragraphs`, the document text split the way the reader splits it.
+ */
+export function textMarksForExport(marks: TextMark[], paragraphs: string[]): ExportEntry[] {
+  const words = (m: TextMark) => m.quote ?? (paragraphs[m.anchor.paragraphIndex] ?? '').slice(m.anchor.start, m.anchor.end);
+  const ordered = sortTextMarks(marks);
+  return groupHeads(ordered).map((head) => {
+    const ranges = head.groupId ? ordered.filter((m) => m.groupId === head.groupId) : [head];
+    const quote = ranges.map(words).filter(Boolean).join(' ');
+    const label = head.isTerminology ? 'Term' : KIND_LABELS[head.kind];
+    const entry: ExportEntry = {
+      id: head.id,
+      kind: head.kind,
+      paragraphIndex: head.anchor.paragraphIndex,
+      color: head.color ?? '',
+      // An untitled note is called what its card in the reader calls it.
+      title: head.kind === 'note' ? head.title || 'Reader Note' : label,
+      content: head.text ?? '',
+      author: head.author ?? '',
+      timestamp: head.timestamp ?? '',
+      themeId: head.themeId
+    };
+    if (quote) entry.quote = quote;
+    if (head.createdAt) entry.createdAt = head.createdAt;
+    if (head.isTerminology) entry.isTerminology = true;
+    return entry;
+  });
 }

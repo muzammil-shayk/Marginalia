@@ -160,10 +160,29 @@ export function computeThemeIds(annotations: StoredAnnotation[]): string[] {
   return Array.from(ids).sort();
 }
 
+/**
+ * One entry per mark: a text-document mark covering several paragraphs is stored as one entry
+ * per paragraph sharing a `groupId`, and counts once. Its ranges share theme and term flags.
+ */
+function oneEntryPerMark(annotations: StoredAnnotation[]): StoredAnnotation[] {
+  const seen = new Set<string>();
+  return annotations.filter((a) => {
+    if (typeof a.groupId !== 'string') return true;
+    if (seen.has(a.groupId)) return false;
+    seen.add(a.groupId);
+    return true;
+  });
+}
+
+/** How many marks a document holds. See `DocumentMeta.annotationCount`. */
+export function countMarks(annotations: StoredAnnotation[]): number {
+  return oneEntryPerMark(annotations).length;
+}
+
 /** How many annotations sit under each theme id. See `DocumentMeta.themeCounts`. */
 export function computeThemeCounts(annotations: StoredAnnotation[]): Record<string, number> {
   const counts: Record<string, number> = {};
-  for (const a of annotations) {
+  for (const a of oneEntryPerMark(annotations)) {
     if (typeof a.themeId === 'string' && a.themeId) counts[a.themeId] = (counts[a.themeId] ?? 0) + 1;
   }
   return counts;
@@ -182,7 +201,7 @@ export function summarizeAnalysis(analysis: StoredAnalysis | null): AnalysisSumm
 
 /** How many of this document's annotations are marked terminology. See `DocumentMeta.terminologyCount`. */
 export function countTerminology(annotations: StoredAnnotation[]): number {
-  return annotations.filter((a) => a.isTerminology === true).length;
+  return oneEntryPerMark(annotations).filter((a) => a.isTerminology === true).length;
 }
 
 export interface SaveDocumentParams {

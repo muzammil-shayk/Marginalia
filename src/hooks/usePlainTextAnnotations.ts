@@ -1,163 +1,110 @@
 /**
- * Server-backed, docId-keyed persistence for the plain-text/EPUB reader's sticky notes and
- * inline formats.
+ * Server-backed, docId-keyed annotations for the text reader (TXT, EPUB, DOCX).
  *
- * Uses the same load gate and debounced saver as `PdfWorkspace` (`hooks/debouncedSaver`, 700ms,
- * flushed on unmount and on window close/reload/quit via `hooks/unloadFlush`) — replacing what used to be a `sessionStorage` map
- * keyed by document TITLE, which was wiped on every app restart and collision-prone since titles
- * are neither unique nor stable. Reuses the existing, deliberately opaque
- * `/api/documents/:id/annotations` endpoint PDF annotations already go through rather than adding
- * new routes: each note or format is tagged with a `kind` discriminant so the two arrays can be
- * split back apart on load.
+ * A thin React wrapper over `createTextAnnotationSession`, which owns the rules: marks in the
+ * `utils/textMarks` model (older notes and formats converted on read, written in the new shape
+ * only after the first edit), the shared 100-step undo history, the 700ms debounced save (flushed
+ * on unmount, on document change and on window close/reload/quit via `hooks/unloadFlush`), and
+ * every entry it does not own (PDF marks) carried through untouched.
  *
- * Returns empty, no-op state when `docId` is undefined — a document that was never saved (e.g.
- * pasted text not yet stored) has nothing to key a server-side record on yet. Callers should fall
- * back to session-only state in that case.
+ * A document that was never saved has no `docId` to key a record on. Given a `memory` key
+ * instead, the same session runs against an in-memory store for this run of the app, seeded
+ * with whatever older notes and formats the caller still holds for it. With neither, it returns
+ * empty, no-op state.
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { StickyNote } from '../types';
-import { CustomFormat } from '../utils/documentExporter';
-import { Annotation, fetchAnnotations, saveAnnotations } from '../utils/documentStorage';
-import { createDebouncedSaver } from './debouncedSaver';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { fetchAnnotations, saveAnnotations, type Annotation as StoredEntry } from '../utils/documentStorage';
+import type { ParagraphRange } from '../utils/textFormatting';
+import type { NewTextMark, TextMark, TextMarkPatch } from '../utils/textMarks';
+import { createTextAnnotationSession, TextAnnotationSession, TextAnnotationState } from './textAnnotationSession';
 import { registerUnloadFlush } from './unloadFlush';
 
 const SAVE_DEBOUNCE_MS = 700;
 
-/**
- * Splits a document's stored entries into the two this hook owns — and everything else.
- *
- * `others` is the important one. A document's annotations are ONE list, shared with the PDF
- * workspace, whose marks carry no `kind`. Dropping them here and then writing back only notes and
- * formats replaced every PDF mark in the document with nothing — and because the save fires as
- * soon as the load completes, merely opening an annotated PDF was enough to erase it. Anything
- * this hook does not understand is carried through untouched instead.
- */
-export function splitEntries(raw: Annotation[]): {
-  notes: StickyNote[];
-  formats: CustomFormat[];
-  others: Annotation[];
-} {
-  const notes: StickyNote[] = [];
-  const formats: CustomFormat[] = [];
-  const others: Annotation[] = [];
-  for (const entry of raw) {
-    const { kind, ...rest } = entry as Annotation & { kind?: string };
-    if (kind === 'format') formats.push(rest as unknown as CustomFormat);
-    else if (kind === 'note') notes.push(rest as unknown as StickyNote);
-    else others.push(entry);
-  }
-  return { notes, formats, others };
+export interface PlainTextAnnotations extends TextAnnotationState {
+  /** Undo/redo through the shared 100-step history. Every mark edit below is one step. */
+  undo: () => void;
+  redo: () => void;
+  /** Marks a selection (one range per paragraph, as `rangesFromSelectionParts` returns). Linked by `groupId` when several. */
+  addMarks: (ranges: ParagraphRange[], props: NewTextMark, paragraphs: string[]) => TextMark[];
+  /** Edits the marks named and every other range of their groups. */
+  updateMarks: (ids: Iterable<string>, patch: TextMarkPatch) => void;
+  recolour: (ids: Iterable<string>, color: string) => void;
+  retag: (ids: Iterable<string>, themeId: string | null) => void;
+  deleteMarks: (ids: Iterable<string>) => void;
+  /** Selects whole groups; `additive` adds to the current selection (shift/cmd-click). */
+  select: (ids: Iterable<string>, opts?: { additive?: boolean }) => void;
+  clearSelection: () => void;
 }
 
-export function mergeEntries(
-  notes: StickyNote[],
-  formats: CustomFormat[],
-  others: Annotation[]
-): Annotation[] {
-  return [
-    ...others,
-    ...notes.map((n) => ({ ...n, kind: 'note' as const })),
-    ...formats.map((f) => ({ ...f, kind: 'format' as const }))
-  ];
-}
+/** Marks of unsaved documents, for the rest of this run. */
+const memoryStore = new Map<string, StoredEntry[]>();
 
-export interface PlainTextAnnotations {
-  notes: StickyNote[];
-  setNotes: (updater: (prev: StickyNote[]) => StickyNote[]) => void;
-  formats: CustomFormat[];
-  setFormats: (updater: (prev: CustomFormat[]) => CustomFormat[]) => void;
-  isLoaded: boolean;
-}
+const EMPTY_STATE: TextAnnotationState = { marks: [], isLoaded: false, canUndo: false, canRedo: false, selectedIds: [] };
+const noSubscribe = () => () => {};
+const noop = () => {};
 
-export function usePlainTextAnnotations(docId: string | undefined): PlainTextAnnotations {
-  const [notes, setNotesState] = useState<StickyNote[]>([]);
-  const [formats, setFormatsState] = useState<CustomFormat[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
-
+export function usePlainTextAnnotations(
+  docId: string | undefined,
+  memory?: { key: string; seed: () => StoredEntry[] }
+): PlainTextAnnotations {
   /**
-   * The document whose entries are loaded into state. Unlike `isLoaded` (state, still true in the
-   * render where `docId` changes) this is cleared synchronously by the load effect, so the save
-   * effect below can never schedule the previous document's notes under the new id.
+   * One session per document, made inside the effect rather than memoised: StrictMode runs
+   * effects twice in development, and a memoised session would be disposed by the first cleanup
+   * and then ignore its own load. Tagged with its key so the render where the document changes
+   * shows nothing rather than the previous document's marks.
    */
-  const loadedForRef = useRef<string | undefined>(undefined);
-  /** Entries belonging to the PDF workspace, held only so every save can hand them back. */
-  const othersRef = useRef<Annotation[]>([]);
+  const key = docId ?? (memory ? `memory:${memory.key}` : undefined);
+  const [entry, setEntry] = useState<{ key: string; session: TextAnnotationSession } | null>(null);
+  // Read once per document; the seed only matters the first time a document is opened.
+  const seed = memory?.seed;
 
-  /** One saver per document; also flushed on window close/reload/quit (see `unloadFlush`). */
-  const saver = useMemo(
-    () =>
-      docId
-        ? createDebouncedSaver<Annotation[]>({ save: (entries) => saveAnnotations(docId, entries), delayMs: SAVE_DEBOUNCE_MS })
-        : null,
-    [docId]
-  );
-  useEffect(
-    () =>
-      saver
-        ? registerUnloadFlush(saver, (entries) => ({
-            url: `/api/documents/${docId}/annotations`,
-            body: JSON.stringify({ annotations: entries })
-          }))
-        : undefined,
-    [saver, docId]
-  );
-
-  // Load whenever the document changes, resetting to empty state until the fetch resolves so a
-  // save effect below can never fire against the PREVIOUS document's leftover state.
   useEffect(() => {
-    setNotesState([]);
-    setFormatsState([]);
-    if (!docId) {
-      setIsLoaded(false);
-      return;
-    }
-    setIsLoaded(false);
-    loadedForRef.current = undefined;
-    othersRef.current = [];
-    // Cancelled when the document changes, because a slow read for the PREVIOUS document must
-    // never land as this one's. Without it, opening A then B while A's read is in flight installs
-    // A's notes under B's id — and the save effect below then writes A's entire annotation list
-    // over B's. The workspace has always guarded its own read this way; this one did not.
-    let cancelled = false;
-    fetchAnnotations(docId).then((stored) => {
-      if (cancelled) return;
-      // A failed read is not an empty document. Leaving `isLoaded` false keeps the save effect
-      // below switched off, so a document whose marks could not be read is never written over
-      // with the nothing we managed to load.
-      if (!stored) return;
-      const {
-        notes: loadedNotes,
-        formats: loadedFormats,
-        others
-      } = splitEntries(stored.annotations);
-      othersRef.current = others;
-      setNotesState(loadedNotes);
-      setFormatsState(loadedFormats);
-      loadedForRef.current = docId;
-      setIsLoaded(true);
-    });
+    if (!key) return;
+    const session = docId
+      ? createTextAnnotationSession({
+          load: () => fetchAnnotations(docId),
+          save: (entries) => saveAnnotations(docId, entries),
+          delayMs: SAVE_DEBOUNCE_MS
+        })
+      : createTextAnnotationSession({
+          load: async () => ({ annotations: memoryStore.get(key) ?? seed?.() ?? [] }),
+          save: async (entries) => {
+            memoryStore.set(key, entries);
+            return true;
+          },
+          delayMs: 0
+        });
+    setEntry({ key, session });
+    void session.load();
+    const unregister = docId
+      ? registerUnloadFlush(session.saver, (entries) => ({
+          url: `/api/documents/${docId}/annotations`,
+          body: JSON.stringify({ annotations: entries })
+        }))
+      : noop;
     return () => {
-      cancelled = true;
+      unregister();
+      // Writes a still-pending edit, so navigating away never loses it.
+      void session.dispose();
     };
-  }, [docId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
 
-  // Debounced save whenever either array changes, only once this document's load has completed.
-  useEffect(() => {
-    if (!saver || !isLoaded || loadedForRef.current !== docId) return;
-    saver.schedule(mergeEntries(notes, formats, othersRef.current));
-  }, [saver, docId, isLoaded, notes, formats]);
-
-  // Flush on unmount / docId change, so a still-pending debounce is never lost to a navigate-away.
-  // Every load and every edit (deleting the only note included) schedules a save, so "pending"
-  // covers what the old unconditional write did.
-  useEffect(() => () => void saver?.flush(), [saver]);
+  const session = entry && entry.key === key ? entry.session : null;
+  const state = useSyncExternalStore(session ? session.subscribe : noSubscribe, session ? session.getState : () => EMPTY_STATE);
 
   return {
-    notes,
-    formats,
-    setNotes: (updater) => setNotesState(updater),
-    setFormats: (updater) => setFormatsState(updater),
-    isLoaded
+    ...state,
+    undo: session ? session.undo : noop,
+    redo: session ? session.redo : noop,
+    addMarks: session ? session.addMarks : () => [],
+    updateMarks: session ? session.updateMarks : noop,
+    recolour: session ? session.recolour : noop,
+    retag: session ? session.retag : noop,
+    deleteMarks: session ? session.deleteMarks : noop,
+    select: session ? session.select : noop,
+    clearSelection: session ? session.clearSelection : noop
   };
 }

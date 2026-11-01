@@ -16,19 +16,34 @@ import React from 'react';
 import { ChevronLeft, ChevronRight, ChevronUp, X } from '../icons';
 import { AnnotationFocus } from '../../types';
 import { Annotation, annotationBounds } from './annotationModel';
+import { groupHeads, type TextMark } from '../../utils/textMarks';
 
-/** Marks matching the focus, in reading order. Exported for its own test. */
-export function matchingAnnotations(
-  annotations: Annotation[],
+/**
+ * Marks matching the focus, in reading order. Exported for its own test.
+ *
+ * Takes PDF marks (ordered by page, then height on the page) or text-document marks (ordered by
+ * paragraph, then character offset). A text mark covering several paragraphs is one stop, at its
+ * first range, rather than one stop per paragraph.
+ */
+export function matchingAnnotations<T extends Annotation | TextMark>(
+  annotations: T[],
   focus: AnnotationFocus
-): Annotation[] {
-  return annotations
-    .filter((a) =>
-      focus.kind === 'terminology' ? a.isTerminology === true : a.themeId === focus.themeId
-    )
-    // Reading order: down the page, not creation order — someone stepping through marks is
-    // walking the book, and the order they were drawn in is meaningless to that.
-    .sort((a, b) => a.page - b.page || (annotationBounds(a)?.y ?? 0) - (annotationBounds(b)?.y ?? 0));
+): T[] {
+  const matching = annotations.filter((a) =>
+    focus.kind === 'terminology' ? a.isTerminology === true : a.themeId === focus.themeId
+  );
+  // Reading order: down the page, not creation order — someone stepping through marks is
+  // walking the book, and the order they were drawn in is meaningless to that.
+  const position = (a: T): [number, number] =>
+    'anchor' in a ? [a.anchor.paragraphIndex, a.anchor.start] : [a.page, annotationBounds(a)?.y ?? 0];
+  const heads = new Set(groupHeads(matching.filter((a): a is T & TextMark => 'anchor' in a)));
+  return matching
+    .filter((a) => !('anchor' in a) || heads.has(a as T & TextMark))
+    .sort((a, b) => {
+      const [pa, ya] = position(a);
+      const [pb, yb] = position(b);
+      return pa - pb || ya - yb;
+    });
 }
 
 /**
@@ -52,14 +67,19 @@ interface InstanceNavigatorProps {
   onGoTo: (annotation: Annotation) => boolean | void;
   onClose: () => void;
   isDark?: boolean;
+  /** Short location shown beside each listed mark. Text documents say paragraph, not page. */
+  locationLabel?: (annotation: Annotation) => string;
 }
+
+const shortPage = (a: Annotation) => `p${a.page}`;
 
 export const InstanceNavigator: React.FC<InstanceNavigatorProps> = ({
   focus,
   annotations,
   onGoTo,
   onClose,
-  isDark = false
+  isDark = false,
+  locationLabel = shortPage
 }) => {
   const matches = React.useMemo(
     () => matchingAnnotations(annotations, focus),
@@ -157,7 +177,7 @@ export const InstanceNavigator: React.FC<InstanceNavigatorProps> = ({
                   }`}
                 >
                   <span className="text-[10.5px] text-muted tabular-nums w-9 shrink-0 pt-0.5">
-                    p{match.page}
+                    {locationLabel(match)}
                   </span>
                   <span className="flex-1 min-w-0 text-[12px] text-stone-700 dark:text-stone-300 line-clamp-2">
                     {preview(match)}

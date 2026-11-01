@@ -279,3 +279,71 @@ test('the gemini filter ignores case, on the way out and on the way in', async (
   await backend.saveClientSettings({ GeminiApiKey: 'from-client', userName: 'A' });
   assert.deepEqual(await backend.getSettings(), { userName: 'A' });
 });
+
+// ── Phase B1: text-mark migration keeps the old shape as the backup ─────────────────────────
+
+test('the first save of migrated text marks leaves the legacy notes in {id}.json.bak', async (t) => {
+  const { root, backend } = await tempStore(t);
+  const meta = await backend.saveDocument({ title: 'Essay', text: 'One.\n\nTwo.', format: 'TXT', filename: 'essay.txt' });
+  const legacy = [{ id: 'note-1', kind: 'note', paragraphIndex: 0, title: 'T', content: 'C', author: 'M', timestamp: 'Just now', themeId: null }];
+  await backend.updateDocument(meta.id, { annotations: legacy as StoredAnnotation[] });
+  const migrated = [{ id: 'note-1', kind: 'note', anchor: { paragraphIndex: 0, start: 0, end: 0 }, paragraphOnly: true, title: 'T', text: 'C edited', author: 'M', timestamp: 'Just now', themeId: null, updatedAt: '2026-10-29T12:00:00.000Z' }];
+  await backend.updateDocument(meta.id, { annotations: migrated as StoredAnnotation[] });
+  const bak = JSON.parse(await fs.readFile(path.join(root, 'documents', `${meta.id}.json.bak`), 'utf-8'));
+  assert.deepEqual(bak.annotations, legacy);
+  assert.equal((await backend.getDocument(meta.id))?.annotations[0].text, 'C edited');
+});
+
+test('the legacy record survives later saves in {id}.json.legacy, written exactly once', async (t) => {
+  const { root, backend } = await tempStore(t);
+  const meta = await backend.saveDocument({ title: 'Essay', text: 'One.\n\nTwo.', format: 'TXT', filename: 'essay.txt' });
+  const legacy = [{ id: 'note-1', kind: 'note', paragraphIndex: 0, title: 'T', content: 'C', author: 'M', timestamp: 'Just now', themeId: null }];
+  await backend.updateDocument(meta.id, { annotations: legacy as StoredAnnotation[] });
+  const legacyPath = path.join(root, 'documents', `${meta.id}.json.legacy`);
+  const realRename = fs.rename;
+  let legacyWrites = 0;
+  t.mock.method(fs, 'rename', (from: string, to: string) => {
+    if (to === legacyPath) legacyWrites++;
+    return realRename(from, to);
+  });
+  const edited = (text: string) => [{ id: 'note-1', kind: 'note', anchor: { paragraphIndex: 0, start: 0, end: 0 }, paragraphOnly: true, title: 'T', text, author: 'M', timestamp: 'Just now', themeId: null }] as StoredAnnotation[];
+  for (const text of ['C1', 'C2', 'C3']) await backend.updateDocument(meta.id, { annotations: edited(text) });
+  const kept = JSON.parse(await fs.readFile(legacyPath, 'utf-8'));
+  assert.deepEqual(kept.annotations, legacy);
+  assert.equal(legacyWrites, 1);
+  assert.equal((await backend.getDocument(meta.id))?.annotations[0].text, 'C3');
+});
+
+test('a document with no legacy entries gets no {id}.json.legacy', async (t) => {
+  const { root, backend } = await tempStore(t);
+  const id = await makeDoc(backend);
+  await backend.updateDocument(id, { annotations: [mark('a', 1)] });
+  await backend.updateDocument(id, { annotations: [mark('a', 1), mark('b', 2)] });
+  assert.ok(!(await fs.readdir(path.join(root, 'documents'))).some((n) => n.endsWith('.legacy')));
+});
+
+test('a failed legacy copy stops the save, so the legacy record is not replaced', async (t) => {
+  const { root, backend } = await tempStore(t);
+  const meta = await backend.saveDocument({ title: 'Essay', text: 'One.', format: 'TXT', filename: 'essay.txt' });
+  const legacy = [{ id: 'f-1', kind: 'format', type: 'bold', paragraphIndex: 0, start: 0, end: 3, themeId: null }];
+  await backend.updateDocument(meta.id, { annotations: legacy as StoredAnnotation[] });
+  const legacyPath = path.join(root, 'documents', `${meta.id}.json.legacy`);
+  const realRename = fs.rename;
+  t.mock.method(fs, 'rename', (from: string, to: string) =>
+    to === legacyPath ? Promise.reject(Object.assign(new Error('disk full'), { code: 'ENOSPC' })) : realRename(from, to)
+  );
+  await assert.rejects(backend.updateDocument(meta.id, { annotations: [] }));
+  const record = JSON.parse(await fs.readFile(path.join(root, 'documents', `${meta.id}.json`), 'utf-8'));
+  assert.deepEqual(record.annotations, legacy);
+});
+
+test('deleting a document removes its {id}.json.legacy too', async (t) => {
+  const { root, backend } = await tempStore(t);
+  const meta = await backend.saveDocument({ title: 'Essay', text: 'One.', format: 'TXT', filename: 'essay.txt' });
+  const legacy = [{ id: 'f-1', kind: 'format', type: 'bold', paragraphIndex: 0, start: 0, end: 3, themeId: null }];
+  await backend.updateDocument(meta.id, { annotations: legacy as StoredAnnotation[] });
+  await backend.updateDocument(meta.id, { annotations: [] });
+  assert.ok((await fs.readdir(path.join(root, 'documents'))).includes(`${meta.id}.json.legacy`));
+  await backend.deleteDocument(meta.id);
+  assert.deepEqual(await fs.readdir(path.join(root, 'documents')), []);
+});

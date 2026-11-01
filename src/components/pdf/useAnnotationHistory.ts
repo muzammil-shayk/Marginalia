@@ -13,14 +13,13 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { Annotation } from './annotationModel';
+import { emptyHistory, historyCommit, historyRedo, historyUndo, HistoryState } from '../../hooks/historyCore';
 
-/** How many steps back the reader can go. Deep enough for a session, bounded so it cannot grow. */
-const HISTORY_LIMIT = 100;
-
-export interface AnnotationHistory {
-  annotations: Annotation[];
+/** The rules (100 steps, no-op edits are not steps) live in `hooks/historyCore`, shared with the text reader. */
+export interface AnnotationHistory<T = Annotation> {
+  annotations: T[];
   /** Records an undoable change. Accepts a value or an updater, like `setState`. */
-  commit: (next: Annotation[] | ((prev: Annotation[]) => Annotation[])) => void;
+  commit: (next: T[] | ((prev: T[]) => T[])) => void;
   /**
    * Replaces the list WITHOUT recording a step, and clears the history.
    *
@@ -28,84 +27,42 @@ export interface AnnotationHistory {
    * moment the document opened and wipe every mark they had ever made in it — an undo stack must
    * never reach back further than the session that filled it.
    */
-  reset: (next: Annotation[]) => void;
+  reset: (next: T[]) => void;
   undo: () => void;
   redo: () => void;
   canUndo: boolean;
   canRedo: boolean;
 }
 
-export function useAnnotationHistory(): AnnotationHistory {
-  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+export function useAnnotationHistory<T = Annotation>(): AnnotationHistory<T> {
+  const [annotations, setAnnotations] = useState<T[]>([]);
   const [canUndo, setCanUndo] = useState(false);
   const [canRedo, setCanRedo] = useState(false);
 
-  // The stacks live in refs, not state: they are read and written inside the same callback that
+  // The history lives in a ref, not state: it is read and written inside the same callback that
   // sets the list, and a stale render-time copy would drop steps made in quick succession.
-  const past = useRef<Annotation[][]>([]);
-  const future = useRef<Annotation[][]>([]);
-  const present = useRef<Annotation[]>([]);
+  const history = useRef<HistoryState<T>>(emptyHistory<T>([]));
 
-  const sync = useCallback(() => {
-    setCanUndo(past.current.length > 0);
-    setCanRedo(future.current.length > 0);
+  const apply = useCallback((next: HistoryState<T> | null) => {
+    if (!next) return;
+    history.current = next;
+    setAnnotations(next.present);
+    setCanUndo(next.past.length > 0);
+    setCanRedo(next.future.length > 0);
   }, []);
 
   const commit = useCallback(
-    (next: Annotation[] | ((prev: Annotation[]) => Annotation[])) => {
-      const previous = present.current;
-      const value = typeof next === 'function' ? (next as (p: Annotation[]) => Annotation[])(previous) : next;
-      // An edit that changed nothing must not consume an undo step, or the reader presses undo
-      // and watches nothing happen. Most no-op edits arrive as a fresh array of the very same
-      // objects — `prev.map(...)` over a list where no element matched — so identity per element
-      // catches them without a deep comparison.
-      if (value === previous) return;
-      if (
-        value.length === previous.length &&
-        value.every((mark, index) => mark === previous[index])
-      ) {
-        return;
-      }
-
-      past.current = [...past.current, previous].slice(-HISTORY_LIMIT);
-      future.current = [];
-      present.current = value;
-      setAnnotations(value);
-      sync();
+    (next: T[] | ((prev: T[]) => T[])) => {
+      const previous = history.current.present;
+      const value = typeof next === 'function' ? (next as (p: T[]) => T[])(previous) : next;
+      apply(historyCommit(history.current, value));
     },
-    [sync]
+    [apply]
   );
 
-  const reset = useCallback(
-    (next: Annotation[]) => {
-      past.current = [];
-      future.current = [];
-      present.current = next;
-      setAnnotations(next);
-      sync();
-    },
-    [sync]
-  );
-
-  const undo = useCallback(() => {
-    const previous = past.current[past.current.length - 1];
-    if (!previous) return;
-    past.current = past.current.slice(0, -1);
-    future.current = [present.current, ...future.current].slice(0, HISTORY_LIMIT);
-    present.current = previous;
-    setAnnotations(previous);
-    sync();
-  }, [sync]);
-
-  const redo = useCallback(() => {
-    const next = future.current[0];
-    if (!next) return;
-    future.current = future.current.slice(1);
-    past.current = [...past.current, present.current].slice(-HISTORY_LIMIT);
-    present.current = next;
-    setAnnotations(next);
-    sync();
-  }, [sync]);
+  const reset = useCallback((next: T[]) => apply(emptyHistory(next)), [apply]);
+  const undo = useCallback(() => apply(historyUndo(history.current)), [apply]);
+  const redo = useCallback(() => apply(historyRedo(history.current)), [apply]);
 
   return { annotations, commit, reset, undo, redo, canUndo, canRedo };
 }

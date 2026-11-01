@@ -55,9 +55,11 @@ import {
   AlignPicker,
   BracketSidePicker,
   ColorPalette,
+  DARK_SWATCH_RING,
   EmphasisPicker,
   FontPicker,
   Divider,
+  isInkOnDark,
   NEUTRAL_COLORS,
   NoteStylePicker,
   StrokeStylePicker,
@@ -67,6 +69,7 @@ import {
 import { useDismiss } from './useDismiss';
 import { UserSettings } from '../../types';
 import { HoverTooltip } from '../HoverTooltip';
+import { TOOL_HOTKEYS, themeShortcut, withShortcut } from './workspaceKeys';
 
 export { NEUTRAL_COLORS, WEIGHT_STEPS } from './StyleControls';
 
@@ -318,7 +321,7 @@ const ToolChip: React.FC<{
           onClick={() => setOpen((v) => !v)}
           aria-label={`${label} options`}
           aria-expanded={open}
-          className="w-6 h-2.5 rounded-full border border-black/15 dark:border-white/25 cursor-pointer transition-transform hover:scale-110"
+          className="w-6 h-2.5 rounded-full border border-black/15 dark:border-paper/50 cursor-pointer transition-transform hover:scale-110"
           style={{ backgroundColor: color }}
         />
       </HoverTooltip>
@@ -494,7 +497,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
         ones reached most, and nothing is ever hidden without a way to reach it.
       */}
       <div
-        className={`flex items-center flex-nowrap py-2 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0 ${
+        className={`flex items-center flex-nowrap py-2 overflow-x-auto hide-scrollbar [&>*]:shrink-0 ${
           compact ? 'gap-0.5 px-2' : 'gap-1 px-3'
         }`}
       >
@@ -516,7 +519,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
               const strokes = isStroked(id as never);
               return (
                 <div key={id} className="flex flex-col items-center gap-0.5">
-                  <HoverTooltip label={actsNow ? `${label} the selected text` : hint}>
+                  <HoverTooltip label={withShortcut(actsNow ? `${label} the selected text` : hint, TOOL_HOTKEYS[id])}>
                     <button
                       type="button"
                       // Pressing a button moves focus, which would clear the text selection before
@@ -524,7 +527,8 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
                       // alive — and visible — so tapping the tool can apply to it.
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => onToolChange(id)}
-                      aria-label={label}
+                      aria-label={withShortcut(label, TOOL_HOTKEYS[id])}
+                      aria-keyshortcuts={TOOL_HOTKEYS[id]}
                       aria-pressed={isActive}
                       className={`${compact ? 'p-1.5' : 'p-2'} rounded-lg transition-all cursor-pointer ${
                         isActive
@@ -747,7 +751,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
           Theme
         </span>
 
-        {settings.activeThemes.map((theme) => {
+        {settings.activeThemes.map((theme, i) => {
           const isActive = activeThemeId === theme.id;
           return (
             <button
@@ -759,15 +763,17 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
                 onThemeChange(theme.id);
                 if (tool !== 'erase' && tool !== 'select') onToolColorChange(tool, theme.color);
               }}
-              title={`File new marks under "${theme.name}"`}
+              title={withShortcut(`File new marks under "${theme.name}"`, themeShortcut(i))}
+              aria-keyshortcuts={themeShortcut(i)}
+              aria-pressed={isActive}
               className={`flex items-center gap-1.5 px-2 py-1 rounded-lg font-medium transition-all cursor-pointer shrink-0 snap-start ${
                 isActive
-                  ? 'bg-stone-200/90 dark:bg-stone-700 text-stone-900 dark:text-paper'
-                  : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-stone-800'
+                  ? 'bg-stone-200/90 dark:bg-nav-active text-stone-900 dark:text-nav-active-fg dark:shadow-[inset_0_0_0_1px_var(--nav-active-ring)]'
+                  : 'text-stone-600 dark:text-stone-300 hover:bg-stone-100 dark:hover:bg-nav-hover dark:hover:text-paper'
               }`}
             >
               <span
-                className="w-3 h-3 rounded-full border border-black/10 shrink-0"
+                className={`w-3 h-3 rounded-full border border-black/10 shrink-0 ${isInkOnDark(theme.color) ? DARK_SWATCH_RING : ''}`}
                 style={{ backgroundColor: theme.color }}
               />
               <span className="whitespace-nowrap">{theme.name}</span>
@@ -780,10 +786,11 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => onThemeChange(null)}
           title="New marks are not filed under any theme"
+          aria-pressed={activeThemeId === null}
           className={`px-2 py-1 rounded-lg font-medium transition-all cursor-pointer shrink-0 snap-start whitespace-nowrap ${
             activeThemeId === null
-              ? 'bg-stone-200/90 dark:bg-stone-700 text-stone-900 dark:text-paper'
-              : 'text-muted hover:bg-stone-100 dark:hover:bg-stone-800'
+              ? 'bg-stone-200/90 dark:bg-nav-active text-stone-900 dark:text-nav-active-fg dark:shadow-[inset_0_0_0_1px_var(--nav-active-ring)]'
+              : 'text-muted dark:text-paper/70 hover:bg-stone-100 dark:hover:bg-nav-hover dark:hover:text-paper'
           }`}
         >
           Untagged

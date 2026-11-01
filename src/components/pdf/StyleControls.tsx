@@ -21,6 +21,7 @@ import {
 } from './annotationModel';
 import { UserSettings } from '../../types';
 import { HoverTooltip } from '../HoverTooltip';
+import { themeShortcut, withShortcut } from './workspaceKeys';
 
 /** Neutral colours for marks that are not thematic — a correction, a stray arrow. */
 export const NEUTRAL_COLORS = ['#1c1917', '#6b7280', '#dc2626'];
@@ -33,10 +34,38 @@ export const WEIGHT_STEPS: { label: string; value: number }[] = [
   { label: 'Heavy', value: 0.007 }
 ];
 
+/*
+ * Dark-mode tile colours, shared by every picker. On the night pill the glyphs are cream, not the
+ * mark's colour (a black mark's swatches vanished on it): rest cream/70 (8.3:1 on night-3), hover
+ * full cream on nav-hover (13.6:1), selected = the nav's active chip with its inner ring, full
+ * cream (10.0:1). Light mode keeps the mark's colour and the stone tiles.
+ */
+const DARK_ON = 'dark:bg-nav-active dark:text-nav-active-fg dark:shadow-[inset_0_0_0_1px_var(--nav-active-ring)]';
+const DARK_OFF = 'dark:text-paper/70 dark:hover:text-paper dark:hover:bg-nav-hover';
+const tile = (active: boolean) => (active ? `bg-stone-200 ${DARK_ON}` : `hover:bg-stone-100 ${DARK_OFF}`);
+const textTile = (active: boolean) =>
+  active ? `bg-stone-200 text-stone-900 ${DARK_ON}` : `text-muted hover:bg-stone-100 ${DARK_OFF}`;
+
+/**
+ * True when a colour would vanish on the dark pill (under 3:1 against night-3, i.e. relative
+ * luminance below ~0.121). Such swatches get a cream ring in dark mode so they read as a dot.
+ * Non-hex values are assumed readable.
+ */
+export const isInkOnDark = (color: string) => {
+  const m = /^#([0-9a-f]{6})$/i.exec(color);
+  if (!m) return false;
+  const [r, g, b] = [0, 2, 4].map((i) => {
+    const v = parseInt(m[1].slice(i, i + 2), 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b < 0.121;
+};
+
+/** Cream ring that lets a near-black swatch read as a dot on the dark pill (4.8:1 against it). */
+export const DARK_SWATCH_RING = 'dark:ring-1 dark:ring-paper/50';
+
 const segment = (active: boolean) =>
-  `px-2 h-6 rounded-md flex items-center justify-center gap-1 text-[10.5px] font-semibold transition-colors cursor-pointer ${
-    active ? 'bg-stone-200 dark:bg-stone-700 text-stone-900 dark:text-paper' : 'text-muted hover:bg-stone-100 dark:hover:bg-stone-800'
-  }`;
+  `px-2 h-6 rounded-md flex items-center justify-center gap-1 text-[10.5px] font-semibold transition-colors cursor-pointer ${textTile(active)}`;
 
 export const Divider: React.FC<{ isDark: boolean }> = ({ isDark }) => (
   <div className={`w-px h-5 mx-0.5 shrink-0 ${isDark ? 'bg-stone-700' : 'bg-stone-200'}`} />
@@ -73,9 +102,11 @@ export const ColorPalette: React.FC<{
         // about to mark.
         onMouseDown={(e) => e.preventDefault()}
         onClick={() => onChange(value, themeId)}
+        aria-label={themeId ? `Theme: ${label}` : `${label} ${value}`}
+        aria-pressed={color.toLowerCase() === value.toLowerCase()}
         className={`w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 cursor-pointer shrink-0 ${
           color.toLowerCase() === value.toLowerCase() ? 'border-stone-800 dark:border-white' : 'border-transparent'
-        }`}
+        } ${isInkOnDark(value) ? DARK_SWATCH_RING : ''}`}
         style={{ backgroundColor: value }}
       />
     </HoverTooltip>
@@ -83,7 +114,7 @@ export const ColorPalette: React.FC<{
 
   return (
     <div className="flex items-center gap-1">
-      {themes.map((theme) => swatch(theme.color, theme.name, theme.id))}
+      {themes.map((theme, i) => swatch(theme.color, withShortcut(theme.name, themeShortcut(i)), theme.id))}
       {themes.length > 0 && customColors.length > 0 && (
         <span className="w-px h-4 bg-stone-200 dark:bg-stone-700 mx-0.5 shrink-0" aria-hidden />
       )}
@@ -99,6 +130,7 @@ export const ColorPalette: React.FC<{
         >
           <input
             type="color"
+            aria-label="Custom colour"
             value={color}
             onChange={(e) => onChange(e.target.value, null)}
             className="opacity-0 w-full h-full cursor-pointer"
@@ -126,13 +158,13 @@ export const WeightPicker: React.FC<{
         onClick={() => onChange(step.value)}
         title={`${step.label} thickness`}
         className={`w-6 h-6 rounded-md flex items-center justify-center transition-colors cursor-pointer ${
-          weight === step.value ? 'bg-stone-200 dark:bg-stone-700' : 'hover:bg-stone-100 dark:hover:bg-stone-800'
+          tile(weight === step.value)
         }`}
       >
-        {/* The swatch IS the weight, drawn at the size it will draw at. */}
+        {/* The swatch IS the weight, drawn at the size it will draw at (cream in dark mode). */}
         <span
-          className="block w-4 rounded-full"
-          style={{ height: Math.max(1, step.value * swatchScale), backgroundColor: color }}
+          className="block w-4 rounded-full bg-(--mark) dark:bg-current"
+          style={{ height: Math.max(1, step.value * swatchScale), '--mark': color } as React.CSSProperties}
         />
       </button>
     ))}
@@ -161,18 +193,16 @@ export const StrokeStylePicker: React.FC<{
         title={`${option.label} line`}
         aria-label={`${option.label} line`}
         className={`w-7 h-6 rounded-md flex items-center justify-center transition-colors cursor-pointer ${
-          (value ?? 'solid') === option.value
-            ? 'bg-stone-200 dark:bg-stone-700'
-            : 'hover:bg-stone-100 dark:hover:bg-stone-800'
+          tile((value ?? 'solid') === option.value)
         }`}
       >
-        <svg width="18" height="8" viewBox="0 0 18 8" aria-hidden>
+        <svg width="18" height="8" viewBox="0 0 18 8" aria-hidden style={{ '--mark': color } as React.CSSProperties}>
           <line
             x1="1"
             y1="4"
             x2="17"
             y2="4"
-            stroke={color}
+            className="stroke-(--mark) dark:stroke-current"
             strokeWidth="2"
             strokeLinecap="round"
             strokeDasharray={option.dash || undefined}
@@ -207,11 +237,11 @@ export const NoteStylePicker: React.FC<{
           title={option.hint}
           aria-label={option.label}
           className={`w-7 h-6 rounded-md flex items-center justify-center transition-colors cursor-pointer ${
-            active ? 'bg-stone-200 dark:bg-stone-700' : 'hover:bg-stone-100 dark:hover:bg-stone-800'
+            tile(active)
           }`}
         >
           <span
-            className="block w-4 h-3.5 rounded-[2px]"
+            className={`block w-4 h-3.5 rounded-[2px] ${isInkOnDark(color) ? DARK_SWATCH_RING : ''}`}
             style={{
               background:
                 option.value === 'solid' ? color : option.value === 'translucent' ? `${color}4d` : '#fffdf5',
@@ -262,10 +292,15 @@ export const TextSizePicker: React.FC<{
         title={`${step.label} text`}
         aria-label={`${step.label} text`}
         className={`w-6 h-6 rounded-md flex items-end justify-center pb-0.5 transition-colors cursor-pointer ${
-          value === step.value ? 'bg-stone-200 dark:bg-stone-700' : 'hover:bg-stone-100 dark:hover:bg-stone-800'
+          tile(value === step.value)
         }`}
       >
-        <span style={{ color, fontSize: 8 + index * 3, lineHeight: 1, fontWeight: 600 }}>A</span>
+        <span
+          className="text-(--mark) dark:text-current"
+          style={{ '--mark': color, fontSize: 8 + index * 3, lineHeight: 1, fontWeight: 600 } as React.CSSProperties}
+        >
+          A
+        </span>
       </button>
     ))}
   </div>
@@ -293,18 +328,16 @@ export const AlignPicker: React.FC<{
         title={option.label}
         aria-label={option.label}
         className={`w-6 h-6 rounded-md flex flex-col justify-center gap-[2px] px-1 transition-colors cursor-pointer ${
-          (value ?? 'left') === option.value
-            ? 'bg-stone-200 dark:bg-stone-700'
-            : 'hover:bg-stone-100 dark:hover:bg-stone-800'
+          tile((value ?? 'left') === option.value)
         }`}
+        style={{ '--mark': color } as React.CSSProperties}
       >
         {option.bars.map((width, i) => (
           <span
             key={i}
-            className="block h-[1.5px] rounded-full"
+            className="block h-[1.5px] rounded-full bg-(--mark) dark:bg-current"
             style={{
               width: `${width * 100}%`,
-              backgroundColor: color,
               // The bars ARE the alignment: ragged on the side the text is not set against.
               alignSelf:
                 option.value === 'left' ? 'flex-start' : option.value === 'right' ? 'flex-end' : 'center'
@@ -331,9 +364,7 @@ export const FontPicker: React.FC<{
         title={`${font.label} typeface`}
         aria-label={`${font.label} typeface`}
         className={`h-6 px-1.5 rounded-md flex items-center justify-center text-[12px] transition-colors cursor-pointer ${
-          (value ?? 'sans') === font.value
-            ? 'bg-stone-200 dark:bg-stone-700 text-stone-900 dark:text-paper'
-            : 'text-muted hover:bg-stone-100 dark:hover:bg-stone-800'
+          textTile((value ?? 'sans') === font.value)
         }`}
         // The specimen IS the choice: each button is set in the face it selects.
         style={{ fontFamily: font.stack }}
@@ -359,11 +390,9 @@ export const EmphasisPicker: React.FC<{
       title={label}
       aria-label={label}
       aria-pressed={active}
-      className={`w-6 h-6 rounded-md flex items-center justify-center text-[12px] transition-colors cursor-pointer ${
+      className={`w-6 h-6 rounded-md flex items-center justify-center text-[12px] transition-colors cursor-pointer ${textTile(
         active
-          ? 'bg-stone-200 dark:bg-stone-700 text-stone-900 dark:text-paper'
-          : 'text-muted hover:bg-stone-100 dark:hover:bg-stone-800'
-      }`}
+      )}`}
       style={style}
     >
       {label[0]}

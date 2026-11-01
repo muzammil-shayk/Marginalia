@@ -41,6 +41,7 @@ import { InstanceNavigator } from './InstanceNavigator';
 import { ErrorDialog } from '../ErrorDialog';
 import { ThematicAnalysisView } from '../ThematicAnalysisView';
 import { SelectionPopover, SelectionAnchor } from './SelectionPopover';
+import { isTypingTarget, resolveWorkspaceKey } from './workspaceKeys';
 import { LiveSelectionOverlay } from './LiveSelectionOverlay';
 import { MarkProperties } from './MarkProperties';
 import { ScrollPageIndicator } from './ScrollPageIndicator';
@@ -823,39 +824,76 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
    * reader has finished dragging, instead of on each intermediate selection.
    */
   useEffect(() => {
-    const handleUp = () =>
-      window.setTimeout(() => {
-        const groups = readSelection();
-        if (!groups) {
-          // A click that collapses the selection clears it, so a later tool tap does not apply to
-          // something the reader has visibly moved on from.
-          if (!window.getSelection()?.toString().trim()) {
-            setPendingSelection(null);
-            setSelectionAnchor(null);
-          }
-          return;
+    /** Reads the live selection into state; `byPointer` is false for a keyboard selection. */
+    const sync = (byPointer: boolean) => {
+      const groups = readSelection();
+      if (!groups) {
+        // A click that collapses the selection clears it, so a later tool tap does not apply to
+        // something the reader has visibly moved on from.
+        if (!window.getSelection()?.toString().trim()) {
+          setPendingSelection(null);
+          setSelectionAnchor(null);
         }
-        setPendingSelection(groups);
+        return;
+      }
+      // Marking by selection always adds — never undoes. Only on release of a drag: a keyboard
+      // selection grows a character at a time, and an armed tool would mark every pause in it.
+      // The new mark is selected, so its properties toolbar is the one that shows; the selection
+      // menu stays closed (both at once stacked a second toolbar over the passage).
+      if (byPointer && isTextAnchored(tool)) {
+        applyTextMark(tool, groups);
+        setSelectionAnchor(null);
+        window.getSelection()?.removeAllRanges();
+        return;
+      }
+      setPendingSelection(groups);
 
-        // Anchor the menu to the selection's own rectangle.
+      // Anchor the menu to the selection's own rectangle.
+      const sel = window.getSelection();
+      const rect = sel && sel.rangeCount ? sel.getRangeAt(0).getBoundingClientRect() : null;
+      if (rect && rect.width + rect.height > 0) {
+        setSelectionAnchor({ left: rect.left, top: rect.top, bottom: rect.bottom });
+      }
+    };
+
+    const handleUp = () => window.setTimeout(() => sync(true), 0);
+
+    /*
+      Keyboard selection (Shift+Arrow) never produces a mouseup, so the menu also follows
+      `selectionchange` — debounced, so it opens once the reader pauses rather than on every
+      character, and only when the last input was a key, so a drag is still read on release only.
+    */
+    let lastInputWasKey = false;
+    let timer: number | undefined;
+    const onPointerDown = () => {
+      lastInputWasKey = false;
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!isTypingTarget(e.target)) lastInputWasKey = true;
+    };
+    const onSelectionChange = () => {
+      if (!lastInputWasKey) return;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
         const sel = window.getSelection();
-        const rect = sel && sel.rangeCount ? sel.getRangeAt(0).getBoundingClientRect() : null;
-        if (rect && rect.width + rect.height > 0) {
-          setSelectionAnchor({ left: rect.left, top: rect.top, bottom: rect.bottom });
-        }
-        // Marking by selection always adds — never undoes.
-        if (isTextAnchored(tool)) {
-          applyTextMark(tool, groups);
-          // `applyTextMark` clears the pending selection, and the popover that just opened reads
-          // it on every action. Without putting it back, arming a text tool first left the
-          // popover's own buttons — sticky note, the reactions, the other marks — doing nothing
-          // at all, silently, for as long as the reader kept pressing them.
-          setPendingSelection(groups);
-        }
-      }, 0);
+        const node = sel?.anchorNode;
+        // Only selections in the document itself, not in a field or the side panel.
+        if (node && !scrollRef.current?.contains(node)) return;
+        sync(false);
+      }, 300);
+    };
 
     document.addEventListener('mouseup', handleUp);
-    return () => document.removeEventListener('mouseup', handleUp);
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('keydown', onKeyDown, true);
+    document.addEventListener('selectionchange', onSelectionChange);
+    return () => {
+      window.clearTimeout(timer);
+      document.removeEventListener('mouseup', handleUp);
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('keydown', onKeyDown, true);
+      document.removeEventListener('selectionchange', onSelectionChange);
+    };
   }, [tool, readSelection, applyTextMark]);
 
   /**
@@ -1016,41 +1054,110 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   );
 
   /**
-   * Keyboard: Escape leaves whatever tool is active, and the usual undo shortcuts work anywhere
-   * in the workspace.
+   * Choosing a theme while a passage is selected: every mark the selection menu can make picks up
+   * the theme's colour, not just whichever one the reader presses next — the menu has no single
+   * "current tool" the way the toolbar has one. Shared by the menu's dots and the number keys.
+   */
+  const chooseSelectionTheme = useCallback(
+    (id: string) => {
+      setActiveThemeId(id);
+      const theme = settings.activeThemes.find((t) => t.id === id);
+      if (theme) {
+        (['highlight', 'underline', 'strikeout', 'question', 'star', 'exclamation', 'note'] as const).forEach(
+          (kind) => setToolColor(kind, theme.color)
+        );
+      }
+    },
+    [settings.activeThemes, setToolColor]
+  );
+
+  /**
+   * Keyboard shortcuts (mapping in `workspaceKeys.ts`):
+   * - Escape leaves whatever tool is active and closes the menus;
+   * - Cmd/Ctrl+Z undo, Shift+Cmd+Z / Ctrl+Y redo;
+   * - Delete or Backspace removes the selected mark;
+   * - H U S N P E V pick a tool, acting on selected text the way tapping the tool does
+   *   (N with text selected writes a sticky note about it, like the menu's Sticky note);
+   * - 1–9 file the selected text or the selected mark under theme 1–9, or, with nothing
+   *   selected, make it the theme new marks are filed under.
    *
-   * Both are suppressed while a comment is being written. The editor is a text field, where
-   * Escape means "close this" and Cmd+Z means "undo my typing" — letting either reach the
-   * document would rewind the reader's marks while they were mid-sentence.
+   * None of them fire while the reader is typing (an input, a textarea, contenteditable, the
+   * comment editor) or while a dialog is open: there, Escape means "close this", Cmd+Z means
+   * "undo my typing", and a letter is a letter.
    */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (editingId) return;
-      const target = e.target as HTMLElement | null;
-      if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
+      if (editingId || e.defaultPrevented || (e.repeat && !/^(z|y)$/i.test(e.key))) return;
+      if (isTypingTarget(e.target)) return;
+      if (document.querySelector('[aria-modal="true"]')) return;
+      const action = resolveWorkspaceKey(e);
+      if (!action) return;
 
-      if (e.key === 'Escape') {
-        setTool('select');
-        setSelectedId(null);
-        setSelectionAnchor(null);
-        return;
-      }
-
-      const accel = e.metaKey || e.ctrlKey;
-      if (!accel) return;
-      const key = e.key.toLowerCase();
-      // Shift+Cmd+Z is redo on macOS; Ctrl+Y is the Windows spelling of the same thing.
-      if (key === 'z' && !e.shiftKey) {
-        e.preventDefault();
-        undo();
-      } else if ((key === 'z' && e.shiftKey) || key === 'y') {
-        e.preventDefault();
-        redo();
+      const hasSelection = Boolean(selectionAnchor && pendingSelection?.length);
+      switch (action.type) {
+        case 'escape':
+          setTool('select');
+          setSelectedId(null);
+          setSelectionAnchor(null);
+          return;
+        case 'undo':
+          e.preventDefault();
+          undo();
+          return;
+        case 'redo':
+          e.preventDefault();
+          redo();
+          return;
+        case 'delete':
+          if (!selectedId) return;
+          e.preventDefault();
+          deleteAnnotation(selectedId);
+          return;
+        case 'tool':
+          e.preventDefault();
+          if (action.tool === 'note' && hasSelection) {
+            createNoteForSelection();
+            setTool('select');
+            return;
+          }
+          // A tool key with text selected marks it, exactly like tapping the toolbar button.
+          handleToolTap(action.tool);
+          if (hasSelection && isTextAnchored(action.tool)) window.getSelection()?.removeAllRanges();
+          return;
+        case 'theme': {
+          const theme = settings.activeThemes[action.index];
+          if (!theme) return;
+          e.preventDefault();
+          if (hasSelection) {
+            chooseSelectionTheme(theme.id);
+          } else if (selectedId) {
+            retagAnnotation(selectedId, theme.id, theme.color);
+          } else {
+            setActiveThemeId(theme.id);
+            if (tool !== 'erase' && tool !== 'select' && tool !== 'terminology') setToolColor(tool, theme.color);
+          }
+          return;
+        }
       }
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [editingId, undo, redo]);
+  }, [
+    editingId,
+    undo,
+    redo,
+    selectedId,
+    selectionAnchor,
+    pendingSelection,
+    deleteAnnotation,
+    createNoteForSelection,
+    handleToolTap,
+    chooseSelectionTheme,
+    retagAnnotation,
+    settings.activeThemes,
+    tool,
+    setToolColor
+  ]);
 
   // ── Navigation & zoom ──
   const goToPage = useCallback((page: number) => {
@@ -1521,6 +1628,9 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   }, [selectedMark, scale]);
 
   const editing = editingId ? annotations.find((a) => a.id === editingId) : undefined;
+  // The viewer's top edge: popovers above a passage must not climb over the toolbar. Read at
+  // render, which every popover move already causes (anchor and mark rect are state).
+  const popoverTopInset = scrollRef.current?.getBoundingClientRect().top ?? 0;
 
   return (
     <div
@@ -1593,7 +1703,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
                 setPanelTab('notes');
                 setIsPanelOpen(!(isPanelOpen && panelTab === 'notes'));
               }}
-              title={isPanelOpen && panelTab === 'notes' ? 'Hide notes' : 'Show notes'}
+              title={isPanelOpen && panelTab === 'notes' ? 'Hide marks panel' : 'Show marks panel'}
               // One glyph, not two. The note and the panel chevron said the same thing twice, and
               // read as two controls crammed into one button. Open state is carried by weight and
               // colour, the same way every other tool in this row shows it.
@@ -1666,6 +1776,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       <div className="flex-1 flex min-h-0 min-w-0">
         <div
           ref={scrollRef}
+          data-annotation-surface
           className="flex-1 min-w-0 min-h-0 overflow-auto px-4 py-5"
           onClick={(e) => {
             if (e.target === e.currentTarget) setSelectedId(null);
@@ -1820,6 +1931,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
           // OLD themeId in place after its colour visibly stopped matching that theme is exactly
           // the mismatch that made a retagged mark silently miscount on the cross-document dashboard.
           bottomInset={activeFocus ? NAVIGATOR_HEIGHT : 0}
+          topInset={popoverTopInset}
           onColorChange={(color, themeId) => updateAnnotation(selectedMark.id, { color, themeId })}
           onWeightChange={(weight) => updateAnnotation(selectedMark.id, { weight })}
           onStrokeStyleChange={(strokeStyle) => updateAnnotation(selectedMark.id, { strokeStyle })}
@@ -1847,21 +1959,11 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
           anchor={selectionAnchor}
           isDark={isDark}
           bottomInset={activeFocus ? NAVIGATOR_HEIGHT : 0}
+          topInset={popoverTopInset}
           toolColors={toolColors}
           themes={settings.activeThemes}
           activeThemeId={activeThemeId}
-          onThemeChange={(id) => {
-            setActiveThemeId(id);
-            // Every mark this menu can make should pick up the newly chosen theme's colour, not
-            // just whichever one the reader happens to press next — there's no single "current
-            // tool" here the way the main toolbar has one.
-            const theme = settings.activeThemes.find((t) => t.id === id);
-            if (theme) {
-              (['highlight', 'underline', 'strikeout', 'question', 'star', 'exclamation', 'note'] as const).forEach(
-                (kind) => setToolColor(kind, theme.color)
-              );
-            }
-          }}
+          onThemeChange={chooseSelectionTheme}
           onMark={(kind) => {
             if (isReaction(kind)) {
               createReactionForSelection(kind);

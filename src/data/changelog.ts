@@ -22,9 +22,66 @@ export interface ReleaseNote {
   highlights: ChangelogItem[];
 }
 
-export const CURRENT_APP_VERSION = '2.3.2';
+export const CURRENT_APP_VERSION = '2.4.0';
 
 export const CHANGELOG_RELEASES: ReleaseNote[] = [
+  {
+    version: '2.4.0',
+    title: 'One Set of Tools for Every Book',
+    date: 'November 2026',
+    summary:
+      'Text, EPUB and DOCX books now mark up with the same tools as PDFs, with shortcuts, search in your notes, stronger dark-mode highlights and faster long books.',
+    highlights: [
+      {
+        category: 'feature',
+        title: 'The PDF tools in every format',
+        description:
+          'Text, EPUB and DOCX books now use the PDF workspace: the selection pop-over, editing a mark, undo, the notes panel, the navigator, strikeout and terms, and inline notes. Your highlights now appear in exports too.'
+      },
+      {
+        category: 'feature',
+        title: 'Shortcuts and a pop-over that stays clear',
+        description:
+          'Hotkeys switch tools quickly. The pop-over opens above your selection so it does not cover the words you are marking, and on a phone it is sized to fit.'
+      },
+      {
+        category: 'feature',
+        title: 'Search and filter your notes',
+        description:
+          'Find a note by its words, or filter the panel by kind of mark. Filter chips wrap instead of being clipped, and the counts shown always match the marks in the book.'
+      },
+      {
+        category: 'improvement',
+        title: 'Stronger dark-mode marks',
+        description:
+          'Highlights are easier to see in dark mode, and selected text is readable against the dark page.'
+      },
+      {
+        category: 'improvement',
+        title: 'Touch selection',
+        description:
+          'Selecting text with your finger now brings up the marking tools, the same as with a mouse.'
+      },
+      {
+        category: 'improvement',
+        title: 'A calmer note editor',
+        description:
+          'The note editor has a Cancel button, and Escape discards your draft. Focus stays inside the editor while it is open and returns to where you were when it closes. Note cards are tighter, and exported notes are labelled "Reader Note".'
+      },
+      {
+        category: 'improvement',
+        title: 'Accessibility',
+        description:
+          'The marking tools can be reached and used from the keyboard, with clear labels for screen readers.'
+      },
+      {
+        category: 'improvement',
+        title: 'Faster long books',
+        description:
+          'Books with thousands of paragraphs respond faster when you hover and scroll.'
+      }
+    ]
+  },
   {
     version: '2.3.2',
     title: 'Into the Book, and Safer Work',

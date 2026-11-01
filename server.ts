@@ -21,7 +21,7 @@ import { insertBlankPages, removePdfPage, PageEditError } from "./src/services/p
 import { sanitizeImportHtml } from "./src/services/htmlSanitize";
 import { publicSettings } from "./src/services/storage/types";
 import analyzerRouter from "./src/services/analyzer";
-import { wordWindow, markSearchText } from "./searchSnippet";
+import { wordWindow, markSearchHits } from "./searchSnippet";
 
 /**
  * Re-exported for the desktop shell, which owns the folder picker and calls this to re-point the
@@ -322,11 +322,10 @@ app.get("/api/documents/search", async (req, res) => {
        * words it covers, on a note's own writing, on the theme it is filed under, and on the word
        * "terminology" — so a theme's whole contents can be listed by naming it.
        */
-      for (const a of doc.annotations) {
-        const theme = typeof a.themeId === "string" ? themeById.get(a.themeId) : undefined;
+      const themeOf = (a: Record<string, unknown>) => (typeof a.themeId === "string" ? themeById.get(a.themeId) : undefined);
+      for (const { mark: a, hit } of markSearchHits(doc.annotations, needle, (a) => themeOf(a)?.name)) {
+        const theme = themeOf(a);
         const isTerm = a.isTerminology === true;
-        const hit = markSearchText(a, needle, theme?.name);
-        if (!hit) continue;
         results.push({
           kind: "mark",
           id: meta.id,

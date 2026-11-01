@@ -44,6 +44,7 @@ import {
   type Annotation
 } from '../utils/documentStorage';
 import { ErrorDialog } from './ErrorDialog';
+import { groupHeads, migrateTextEntries, sortTextMarks, type TextMark } from '../utils/textMarks';
 
 interface HomeScreenProps {
   onNavigate: (screen: Screen, transition?: TransitionType) => void;
@@ -95,6 +96,21 @@ const TAB_IN_BACK = 'motion-safe:animate-[tab-in-back_220ms_var(--ease-out)]';
  * caret is pressed — the library list carries metadata, not annotations, and reading every
  * document's marks up front to fill a row nobody expanded would be waste.
  */
+/** A text-document mark as a drilldown row: located by paragraph, since it has no page. */
+const textRows = (marks: TextMark[]): Annotation[] => {
+  const sorted = sortTextMarks(marks);
+  return groupHeads(sorted).map((head) => ({
+    ...head,
+    paragraph: head.anchor.paragraphIndex + 1,
+    // A mark across paragraphs reads as one passage: every range's words, in order.
+    quote: (head.groupId ? sorted.filter((m) => m.groupId === head.groupId) : [head])
+      .map((m) => m.quote)
+      .filter(Boolean)
+      .join(' '),
+    page: undefined
+  }));
+};
+
 const MarkPeekRow: React.FC<{
   docId: string;
   title: string;
@@ -111,11 +127,12 @@ const MarkPeekRow: React.FC<{
     let cancelled = false;
     void fetchAnnotations(docId).then((stored) => {
       if (cancelled || !stored) return;
-      setMarks(
-        stored.annotations.filter((a) =>
-          themeId === null ? a.isTerminology === true : a.themeId === themeId
-        )
-      );
+      const keep = (a: { isTerminology?: unknown; themeId?: unknown; id: string }) =>
+        themeId === null ? a.isTerminology === true : a.themeId === themeId;
+      // Text documents store a mark across several paragraphs as one range per paragraph; the
+      // header count is per mark, so the rows are too (one per group, in reading order).
+      const { marks: text, others } = migrateTextEntries(stored.annotations);
+      setMarks([...others.filter(keep), ...textRows(text.filter(keep))]);
     });
     return () => {
       cancelled = true;
@@ -126,7 +143,8 @@ const MarkPeekRow: React.FC<{
   const words = (a: Annotation) => {
     const quote = typeof a.quote === 'string' ? a.quote.trim() : '';
     const text = typeof a.text === 'string' ? a.text.trim() : '';
-    return quote || text || `${String(a.kind ?? 'Mark')} on page ${String(a.page ?? '?')}`;
+    const where = a.paragraph ? `in paragraph ${String(a.paragraph)}` : `on page ${String(a.page ?? '?')}`;
+    return quote || text || `${String(a.kind ?? 'Mark')} ${where}`;
   };
 
   return (
@@ -169,7 +187,7 @@ const MarkPeekRow: React.FC<{
                     onClick={onOpen}
                     className="w-full text-left pl-2 pr-1 py-1 rounded-md text-[11.5px] text-stone-600 dark:text-stone-400 hover:bg-stone-500/[0.07] hover:text-stone-900 dark:hover:text-stone-100 cursor-pointer transition-colors line-clamp-2"
                   >
-                    <span className="text-muted tabular-nums mr-1.5">p{String(a.page ?? '?')}</span>
+                    <span className="text-muted tabular-nums mr-1.5">{a.paragraph ? `¶${String(a.paragraph)}` : `p${String(a.page ?? '?')}`}</span>
                     {words(a)}
                   </button>
                 </li>

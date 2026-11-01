@@ -257,25 +257,11 @@ export default function App() {
   }, []);
 
   // Per-document notes and inline formats, lifted here so they survive navigating away and back.
-  const [documentNotes, setDocumentNotes] = useState<Record<string, StickyNote[]>>(
+  const [documentNotes] = useState<Record<string, StickyNote[]>>(
     savedSession?.documentNotes || {}
   );
-  const [documentFormats, setDocumentFormats] = useState<Record<string, CustomFormat[]>>(
+  const [documentFormats] = useState<Record<string, CustomFormat[]>>(
     savedSession?.documentFormats || {}
-  );
-
-  const updateDocumentNotes = useCallback(
-    (docTitle: string, updater: (prev: StickyNote[]) => StickyNote[]) => {
-      setDocumentNotes((prev) => ({ ...prev, [docTitle]: updater(prev[docTitle] || []) }));
-    },
-    []
-  );
-
-  const updateDocumentFormats = useCallback(
-    (docTitle: string, updater: (prev: CustomFormat[]) => CustomFormat[]) => {
-      setDocumentFormats((prev) => ({ ...prev, [docTitle]: updater(prev[docTitle] || []) }));
-    },
-    []
   );
 
   /**
@@ -296,7 +282,18 @@ export default function App() {
    * write it. PDFs and imported HTML belong to the workspace; everything else to the reader.
    */
   const plainTextAnnotations = usePlainTextAnnotations(
-    analysisDoc.docId && !isAnnotatableFormat(analysisDoc.format) ? analysisDoc.docId : undefined
+    analysisDoc.docId && !isAnnotatableFormat(analysisDoc.format) ? analysisDoc.docId : undefined,
+    // A document with no docId was never saved: its marks live in memory for this run, starting
+    // from the older notes and formats this session still holds for its title (converted on read).
+    analysisDoc.docId
+      ? undefined
+      : {
+          key: analysisDoc.title,
+          seed: () => [
+            ...(documentNotes[analysisDoc.title] || []).map((n) => ({ ...n, kind: 'note' })),
+            ...(documentFormats[analysisDoc.title] || []).map((f) => ({ ...f, kind: 'format' }))
+          ]
+        }
   );
 
   // The library panel reads from disk rather than from `uploadedLibrary`, so it can show
@@ -670,18 +667,8 @@ export default function App() {
             documentText={analysisDoc.text}
             documentTitle={analysisDoc.title}
             docId={analysisDoc.docId}
-            notes={analysisDoc.docId ? plainTextAnnotations.notes : documentNotes[analysisDoc.title] || []}
-            onNotesChange={
-              analysisDoc.docId
-                ? plainTextAnnotations.setNotes
-                : (updater) => updateDocumentNotes(analysisDoc.title, updater)
-            }
-            formats={analysisDoc.docId ? plainTextAnnotations.formats : documentFormats[analysisDoc.title] || []}
-            onFormatsChange={
-              analysisDoc.docId
-                ? plainTextAnnotations.setFormats
-                : (updater) => updateDocumentFormats(analysisDoc.title, updater)
-            }
+            annotations={plainTextAnnotations}
+            focus={annotationFocus ?? undefined}
           />
         ) : (
           <div className="relative flex-1 flex flex-col min-h-screen">

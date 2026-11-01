@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { wordWindow, markSearchText } from './searchSnippet';
+import { wordWindow, markSearchText, markSearchHits } from './searchSnippet';
 
 const text = 'Notes on the Synthesis of Form describe fitness between two parts of a design problem.';
 
@@ -70,4 +70,21 @@ test('a PDF mark is still found by its quote, note text, theme name and "termino
   assert.ok(markSearchText({ id: 'a' }, 'grief', 'Grief'));
   assert.ok(markSearchText({ id: 'a', isTerminology: true }, 'terminology'));
   assert.equal(markSearchText({ id: 'a', quote: 'nothing here' }, 'absent'), null);
+});
+
+// ── Text-document marks (TXT/EPUB/DOCX) ─────────────────────────────────────────────────────
+
+test('a stored legacy note (title/content) and its migrated shape (title/text) both match', () => {
+  const legacy = { id: 'note-1', kind: 'note', paragraphIndex: 0, title: 'Reader Note', content: 'Mortality looms', timestamp: 'Just now' };
+  const migrated = { id: 'note-1', kind: 'note', anchor: { paragraphIndex: 0, start: 0, end: 0 }, title: 'Reader Note', text: 'Mortality looms' };
+  assert.equal(markSearchText(legacy, 'mortality')?.text, 'Mortality looms');
+  assert.equal(markSearchText(migrated, 'mortality')?.text, 'Mortality looms');
+});
+
+test('a mark over three paragraphs is one search hit, from whichever range matched', () => {
+  const g = (id: string, quote: string) => ({ id, kind: 'highlight', groupId: 'g', anchor: { paragraphIndex: 0, start: 0, end: 1 }, quote });
+  const solo = { id: 's', kind: 'highlight', quote: 'mortal coil' };
+  const hits = markSearchHits([g('a', 'nothing here'), g('b', 'mortal men'), g('c', 'mortal gods'), solo], 'mortal', () => undefined);
+  assert.deepEqual(hits.map((h) => h.mark.id), ['b', 's']);
+  assert.equal(hits[0].hit.text, 'mortal men');
 });

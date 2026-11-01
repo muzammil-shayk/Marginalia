@@ -8,12 +8,13 @@
  * Every control here is the same component the main toolbar uses (see `StyleControls`), so a mark
  * can be restyled in exactly the vocabulary it was drawn in.
  *
- * Positioned in viewport coordinates from the mark's own bounds, and flipped above the mark when
- * there is no room beneath it. It closes the moment the reader presses anywhere else — see
- * `useDismiss` — because a strip that outlives the selection it describes is worse than no strip.
+ * Rendered in the shared `AnchoredPopover`: above the mark by default, below it near the top edge,
+ * clamped to the window and wrapped onto more rows on a narrow one. It closes the moment the reader
+ * presses anywhere else, or Escape, because a strip that outlives the selection it describes is
+ * worse than no strip. Delete or Backspace removes the mark (handled by the workspace).
  */
 
-import React, { useRef } from 'react';
+import React from 'react';
 import { Trash2, Pencil } from '../icons';
 import {
   Annotation,
@@ -39,8 +40,14 @@ import {
   TextSizePicker,
   WeightPicker
 } from './StyleControls';
-import { useDismiss } from './useDismiss';
-import { useAnchoredPanel } from './useAnchoredPanel';
+import { AnchoredPopover } from './AnchoredPopover';
+import { withShortcut } from './workspaceKeys';
+
+/** How the Delete key is named on this platform, for the delete button's tooltip. */
+const DELETE_KEY =
+  typeof navigator !== 'undefined' && /mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent)
+    ? '⌫'
+    : 'Delete';
 
 interface MarkPropertiesProps {
   mark: Annotation;
@@ -48,6 +55,8 @@ interface MarkPropertiesProps {
   rect: { left: number; top: number; right: number; bottom: number };
   /** Pixels at the foot of the window this strip must stay clear of — the instance navigator. */
   bottomInset?: number;
+  /** Pixels at the top of the window this strip must stay clear of — the toolbar. */
+  topInset?: number;
   settings: UserSettings;
   isDark?: boolean;
   onColorChange: (color: string, themeId: string | null) => void;
@@ -70,6 +79,7 @@ export const MarkProperties: React.FC<MarkPropertiesProps> = ({
   mark,
   rect,
   bottomInset = 0,
+  topInset = 0,
   settings,
   isDark = false,
   onColorChange,
@@ -86,13 +96,6 @@ export const MarkProperties: React.FC<MarkPropertiesProps> = ({
   onDelete,
   onDismiss
 }) => {
-  const ref = useRef<HTMLDivElement>(null);
-
-  // The strip is always "open" while a mark is selected, so dismissal here means deselecting.
-  // Presses inside the strip are ignored, which is what lets several options be tried in a row —
-  // and so are presses on the mark's own handles out on the page, which would otherwise deselect
-  // the mark at the very moment the reader grabbed it.
-  useDismiss(ref, true, onDismiss, '[data-mark-ui]');
 
   // Highlights fill rather than stroke, so they have no thickness or dash pattern to set.
   const showsStroke = isStroked(mark.kind);
@@ -100,22 +103,23 @@ export const MarkProperties: React.FC<MarkPropertiesProps> = ({
   // A reaction is just a glyph — no font, alignment or emphasis to set, only how big it reads.
   const showsSize = mark.kind === 'text' || isReaction(mark.kind);
 
-  // Measured rather than guessed: the strip's width depends on which controls its kind needs, so
-  // the kind is what re-triggers the measurement.
-  const panel = useAnchoredPanel(ref, rect, [mark.kind], bottomInset);
-
+  // The strip is always "open" while a mark is selected, so dismissal here means deselecting.
+  // Presses on the mark's own handles out on the page count as inside, or grabbing a handle would
+  // deselect the mark at the very moment the reader took hold of it. The kind decides which
+  // controls show, so it is what re-places the strip.
   return (
-    <div
-      ref={ref}
-      className={`fixed z-50 flex items-center gap-1 p-1.5 rounded-xl shadow-2xl border ${
-        isDark ? 'bg-night-3 border-stone-700' : 'bg-white border-stone-200'
-      }`}
-      style={panel}
-      // Never let this steal a text selection or start a drag on the page beneath.
-      onMouseDown={(e) => e.preventDefault()}
-      onPointerDown={(e) => e.stopPropagation()}
+    <AnchoredPopover
+      anchor={rect}
+      label={`${mark.isTerminology ? 'Terminology' : mark.kind} mark properties`}
+      isDark={isDark}
+      onDismiss={onDismiss}
+      ignoreSelector="[data-mark-ui]"
+      topInset={topInset}
+      bottomInset={bottomInset}
+      measureKey={mark.kind}
+      className="gap-1 p-1.5"
     >
-      <span className="caps caps-sm text-muted px-1 capitalize">
+      <span className="caps caps-sm text-muted dark:text-paper/70 px-1 capitalize">
         {mark.isTerminology ? 'Terminology' : mark.kind}
       </span>
 
@@ -195,7 +199,8 @@ export const MarkProperties: React.FC<MarkPropertiesProps> = ({
           type="button"
           onClick={onEdit}
           title="Write a comment on this mark"
-          className="p-1.5 rounded-lg text-muted hover:text-stone-800 dark:hover:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
+          aria-label="Write a comment on this mark"
+          className="w-7 h-7 flex items-center justify-center rounded-lg text-muted dark:text-paper/70 hover:text-stone-800 dark:hover:text-paper hover:bg-stone-100 dark:hover:bg-nav-hover cursor-pointer"
         >
           <Pencil className="w-3.5 h-3.5" />
         </button>
@@ -203,11 +208,13 @@ export const MarkProperties: React.FC<MarkPropertiesProps> = ({
       <button
         type="button"
         onClick={onDelete}
-        title="Delete this mark"
-        className="p-1.5 rounded-lg text-muted hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-950/40 cursor-pointer"
+        title={withShortcut('Delete this mark', DELETE_KEY)}
+        aria-label="Delete this mark"
+        aria-keyshortcuts="Delete Backspace"
+        className="w-7 h-7 flex items-center justify-center rounded-lg text-muted dark:text-paper/70 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 cursor-pointer"
       >
         <Trash2 className="w-3.5 h-3.5" />
       </button>
-    </div>
+    </AnchoredPopover>
   );
 };

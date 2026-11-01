@@ -8,15 +8,14 @@
  * controls unreachable.
  *
  * So the panel is measured instead of guessed. It renders once at its preferred position, is
- * measured before the browser paints, and is nudged back inside the viewport if it does not fit —
- * flipping above its anchor when there is no room below. Measuring in a layout effect rather than
- * an ordinary one is what keeps that correction from being visible as a flicker.
+ * measured before the browser paints, and placed above its anchor (below when there is no room
+ * above), clamped inside the viewport. Measuring in a layout effect rather than
+ * an ordinary one is what keeps that correction from being visible as a flicker. The maths lives in
+ * `panelPlacement.ts`, where it is tested.
  */
 
 import { RefObject, useLayoutEffect, useState } from 'react';
-
-/** Breathing room between a panel and the window edge. */
-const MARGIN = 8;
+import { placePanel } from './panelPlacement';
 
 export interface AnchorRect {
   left: number;
@@ -35,7 +34,11 @@ export function useAnchoredPanel(
    * the bottom edge landed squarely over the navigator pill, burying the controls the reader was
    * mid-way through using. Treated as if the window ended that many pixels higher.
    */
-  bottomInset = 0
+  bottomInset = 0,
+  /** The same for the top: the toolbar. A panel above a passage near it drops below instead. */
+  topInset = 0,
+  /** Elements the panel should not cover when the other side is free (the reader's note cards). */
+  avoidSelector?: string
 ): { left: number; top: number; visibility: 'hidden' | 'visible' } {
   const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
 
@@ -46,34 +49,43 @@ export function useAnchoredPanel(
       return;
     }
 
+    // Above the anchor by preference, so the panel never covers the next line being read; see
+    // `placePanel` for the fallbacks.
     const measure = () => {
       const { width, height } = el.getBoundingClientRect();
-      const floor = window.innerHeight - bottomInset;
-      const maxLeft = window.innerWidth - width - MARGIN;
-      const maxTop = floor - height - MARGIN;
-
-      // Below the anchor by preference, above it when that would overflow the bottom. The flip
-      // is what keeps a panel off a mark near the foot of the page from being pushed up over the
-      // mark it describes.
-      const below = anchor.bottom + height + MARGIN <= floor;
-      const top = below ? anchor.bottom + MARGIN : anchor.top - height - MARGIN;
-
-      setPosition({
-        left: Math.max(MARGIN, Math.min(anchor.left, Math.max(MARGIN, maxLeft))),
-        top: Math.max(MARGIN, Math.min(top, Math.max(MARGIN, maxTop)))
+      const { left, top } = placePanel({
+        anchor,
+        width,
+        height,
+        viewportWidth: window.innerWidth,
+        viewportHeight: window.innerHeight,
+        topInset,
+        bottomInset,
+        avoid: avoidSelector
+          ? Array.from(document.querySelectorAll(avoidSelector), (n) => n.getBoundingClientRect()).filter(
+              (r) => r.width > 0 && r.bottom > 0 && r.top < window.innerHeight
+            )
+          : undefined
       });
+      setPosition((prev) => (prev && prev.left === left && prev.top === top ? prev : { left, top }));
     };
 
     measure();
-    // A window resize can leave a panel hanging off an edge it used to fit inside.
+    // A window resize can leave a panel hanging off an edge it used to fit inside, and a panel
+    // that wraps to a second row on a narrow window changes height without any prop changing.
     window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => {
+      window.removeEventListener('resize', measure);
+      observer.disconnect();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ref, anchor?.left, anchor?.top, anchor?.bottom, bottomInset, ...deps]);
+  }, [ref, anchor?.left, anchor?.top, anchor?.bottom, bottomInset, topInset, avoidSelector, ...deps]);
 
   return {
     left: position?.left ?? (anchor?.left ?? 0),
-    top: position?.top ?? (anchor?.bottom ?? 0),
+    top: position?.top ?? (anchor?.top ?? 0),
     // Hidden for the single frame between mounting and being measured, so a panel is never seen
     // at the wrong place before it is corrected.
     visibility: position ? 'visible' : 'hidden'

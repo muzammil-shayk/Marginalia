@@ -59,3 +59,30 @@ test('no matches is an empty run, not a crash', () => {
     []
   );
 });
+
+// ── Text documents ──────────────────────────────────────────────────────────────────────────
+
+import type { TextMark } from '../../utils/textMarks';
+
+const tmark = (id: string, p: number, start: number, extra: Partial<TextMark> = {}): TextMark => ({
+  id, kind: 'highlight', anchor: { paragraphIndex: p, start, end: start + 3 }, themeId: 'key', ...extra
+});
+const keyFocus = { kind: 'theme' as const, themeId: 'key', label: 'Key Concepts', color: '#435c52' };
+
+test('text marks walk in reading order: paragraph, then offset', () => {
+  const marks = [tmark('c', 4, 0), tmark('b', 1, 30), tmark('a', 1, 2), tmark('x', 0, 0, { themeId: 'other' })];
+  assert.deepEqual(matchingAnnotations(marks, keyFocus).map((m) => m.id), ['a', 'b', 'c']);
+});
+
+test('a mark over several paragraphs is one stop, at its first range', () => {
+  const marks = [tmark('g2', 3, 0, { groupId: 'g' }), tmark('solo', 2, 5), tmark('g1', 1, 10, { groupId: 'g' })];
+  assert.deepEqual(matchingAnnotations(marks, keyFocus).map((m) => m.id), ['g1', 'solo']);
+});
+
+test('a terminology focus takes flagged text marks', () => {
+  const marks = [tmark('t', 2, 0, { isTerminology: true, themeId: null }), tmark('plain', 1, 0)];
+  assert.deepEqual(
+    matchingAnnotations(marks, { kind: 'terminology', label: 'Terminology', color: '#8a8578' }).map((m) => m.id),
+    ['t']
+  );
+});

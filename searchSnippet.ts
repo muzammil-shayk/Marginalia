@@ -55,3 +55,26 @@ export function markSearchText(
   const at = text.toLowerCase().indexOf(needle);
   return at === -1 ? { text } : { text, keep: [at, at + needle.length] };
 }
+
+/**
+ * Every mark that matches, with its snippet source. A text-document mark covering several
+ * paragraphs is stored as one entry per paragraph sharing a `groupId`; it is one hit, from the
+ * first of its ranges that matched.
+ */
+export function markSearchHits<T extends Record<string, unknown>>(
+  marks: T[],
+  needle: string,
+  themeNameOf: (mark: T) => string | undefined
+): { mark: T; hit: { text: string; keep?: [number, number] } }[] {
+  const seenGroups = new Set<string>();
+  const hits: { mark: T; hit: { text: string; keep?: [number, number] } }[] = [];
+  for (const mark of marks) {
+    const group = typeof mark.groupId === "string" ? mark.groupId : null;
+    if (group && seenGroups.has(group)) continue;
+    const hit = markSearchText(mark, needle, themeNameOf(mark));
+    if (!hit) continue;
+    if (group) seenGroups.add(group);
+    hits.push({ mark, hit });
+  }
+  return hits;
+}

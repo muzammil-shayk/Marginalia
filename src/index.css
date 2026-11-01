@@ -104,6 +104,16 @@
   box-shadow: inset 0 0 0 1px var(--nav-active-ring);
 }
 
+/* Text being selected in the dark reader: the default dark selection left the words near black
+   on near black, worst over a highlight. Gold at 35% over night keeps stone-200 at ~6.4:1.
+   The text colour is set, not inherited: `inherit` on ::selection takes the parent highlight's
+   colour (near black), not the paragraph's. Reader only: the PDF text layer keeps its own
+   transparent selection (pdfTextLayer.css), under LiveSelectionOverlay. */
+.dark main[data-annotation-surface] ::selection {
+  background-color: rgb(233 185 73 / 0.35);
+  color: var(--color-stone-200);
+}
+
 /* Enable native text selection handles and callouts for mobile devices */
 .select-text,
 .select-text * {
@@ -184,35 +194,70 @@
   pointer-events: none;
 }
 
-/* Custom Scrollbar for reader and notes */
+/* No visible scrollbars anywhere in the app; scrolling itself is untouched (wheel, trackpad,
+   keys, touch). Unlayered so no utility can bring a bar back. */
+* {
+  scrollbar-width: none;
+}
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  display: none;
+  width: 0;
+  height: 0;
 }
 
-::-webkit-scrollbar-track {
-  background: transparent;
+/* Horizontal strips with no bar left to say "more this way": the reader's tag strip and control
+   bar, and the PDF theme strip. An end fades while its outermost item is out of view.
+   Driven by the items' view timelines, not the strip's scroll timeline: Chromium holds a scroll
+   timeline's last value after a strip stops overflowing, which left a stale fade on the first chip. */
+.chip-strip,
+.hide-scrollbar {
+  timeline-scope: --strip-first, --strip-last;
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--fade-l),
+    #000 calc(100% - var(--fade-r)),
+    transparent
+  );
+  animation:
+    strip-fade-l linear both,
+    strip-fade-r linear both;
+  animation-timeline: --strip-first, --strip-last;
+  /* Each fade eases over the outermost item's last 32px before it is fully in view. */
+  animation-range:
+    exit 0% exit 32px,
+    entry calc(100% - 32px) entry 100%;
+}
+:is(.chip-strip, .hide-scrollbar) > :first-child {
+  /* Inset 0: the default `auto` inset takes the strip's scroll-padding, which faded ~12px at rest. */
+  view-timeline: --strip-first inline 0;
+}
+:is(.chip-strip, .hide-scrollbar) > :last-child {
+  view-timeline: --strip-last inline 0;
+}
+:is(.chip-strip, .hide-scrollbar) > :only-child {
+  view-timeline: --strip-first inline 0, --strip-last inline 0;
+}
+@keyframes strip-fade-l {
+  from {
+    --fade-l: 0px;
+  }
+  to {
+    --fade-l: 32px;
+  }
+}
+@keyframes strip-fade-r {
+  from {
+    --fade-r: 32px;
+  }
+  to {
+    --fade-r: 0px;
+  }
 }
 
-::-webkit-scrollbar-thumb {
-  background: rgba(112, 105, 89, 0.3);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(112, 105, 89, 0.5);
-}
-
-/* Horizontal chip strips (reader + PDF theme pickers). Setting `scrollbar-width` makes Chromium
-   ignore the ::-webkit-scrollbar rules above and draw its default light bar, so the colour is
-   set here too. scroll-padding keeps a chip scrolled into view off the window edge. */
+/* scroll-padding keeps a chip scrolled into view off the window edge. */
 .chip-strip {
-  scrollbar-width: thin;
-  scrollbar-color: rgb(112 105 89 / 0.35) transparent;
   scroll-padding-inline: 12px;
-}
-.dark .chip-strip {
-  scrollbar-color: rgb(255 255 255 / 0.16) transparent;
 }
 @media (min-width: 640px) {
   .chip-strip {
@@ -816,7 +861,6 @@
   padding: 2.25rem clamp(20px, 4vw, 56px) 0;
   overflow-x: auto;
   overflow-y: visible;
-  scrollbar-width: none;
   /* Snap to spines; the padding keeps a snapped spine clear of the 48px edge fade. */
   scroll-snap-type: x proximity;
   scroll-padding-inline: 48px;
@@ -843,9 +887,6 @@
   display: flex;
   flex-shrink: 0;
   scroll-snap-align: start;
-}
-.shelf-row::-webkit-scrollbar {
-  display: none;
 }
 
 .shelf-spine {

@@ -25,6 +25,7 @@ import {
   UpdateDocumentParams,
   buildMeta,
   computeThemeCounts,
+  countMarks,
   computeThemeIds,
   countTerminology,
   countWords,
@@ -33,6 +34,7 @@ import {
   safeExtension,
   summarizeAnalysis
 } from './types';
+import { migrateTextEntries } from '../../utils/textMarks';
 
 /** Writes a file and fsyncs it before returning, so a later rename never exposes unflushed bytes. */
 async function writeDurable(target: string, data: string | Uint8Array): Promise<void> {
@@ -149,6 +151,8 @@ export class LocalDocumentBackend implements DocumentBackend {
    *
    * The record being replaced is kept as `{id}.json.bak` first, so damage from outside the app
    * (a bad sync, a disk error) costs at most the last change rather than the whole document.
+   * `.bak` is rewritten on every write, so it only ever holds the previous save; the one-time
+   * copy of a record in the old text-note shape is `{id}.json.legacy` (see `keepLegacyCopy`).
    */
   private async write(doc: StoredDocument): Promise<void> {
     const target = this.docPath(doc.id);
@@ -294,7 +298,7 @@ export class LocalDocumentBackend implements DocumentBackend {
         createdAt: raw.createdAt || new Date().toISOString(),
         updatedAt: raw.updatedAt || raw.createdAt || new Date().toISOString(),
         expiresAt: raw.expiresAt ?? null,
-        annotationCount: annotations.length,
+        annotationCount: countMarks(annotations),
         // Records written before theme tagging existed have no field; an absent one is simply
         // "nothing tagged yet" rather than an error. Recomputed rather than trusted from disk in
         // case an older record's cached value has drifted from its own annotations.
@@ -391,10 +395,23 @@ export class LocalDocumentBackend implements DocumentBackend {
     const doc = await this.getDocument(id);
     if (!doc) return null;
     const updated = this.applyUpdate(doc, params);
+    await this.keepLegacyCopy(doc);
     await this.write(updated);
 
     const { text, annotations: _a, analysis, annotationsBackup: _b, pendingOriginal: _p, ...rest } = updated;
     return { ...rest, analysis: summarizeAnalysis(analysis) };
+  }
+
+  /**
+   * Keeps a record that still holds older text notes/formats as `{id}.json.legacy`, once, before
+   * the save that converts them. Never overwritten: later saves find it and leave it alone. A
+   * failed copy throws, so the save that would replace the legacy record does not happen.
+   */
+  private async keepLegacyCopy(doc: StoredDocument): Promise<void> {
+    if (!migrateTextEntries(doc.annotations).migrated) return;
+    const target = `${this.docPath(doc.id)}.legacy`;
+    if (existsSync(target)) return;
+    await writeFileAtomic(target, JSON.stringify(doc));
   }
 
   /** The record after `params` is applied, including the shrink backup. Pure; writes nothing. */
@@ -435,7 +452,7 @@ export class LocalDocumentBackend implements DocumentBackend {
       ...doc,
       title: params.title?.trim() ? params.title.trim() : doc.title,
       annotations,
-      annotationCount: annotations.length,
+      annotationCount: countMarks(annotations),
       themeIds: computeThemeIds(annotations),
       themeCounts: computeThemeCounts(annotations),
       terminologyCount: countTerminology(annotations),
@@ -463,7 +480,7 @@ export class LocalDocumentBackend implements DocumentBackend {
       }
     };
     const record = this.docPath(id);
-    for (const file of [record, `${record}.bak`]) await unlink(file);
+    for (const file of [record, `${record}.bak`, `${record}.legacy`]) await unlink(file);
     // Every quarantined copy (`.corrupt`, `.corrupt-<time>`).
     const corrupt = (await fs.readdir(this.docsDir).catch(() => [] as string[])).filter((n) => n.startsWith(`${id}.json.corrupt`));
     for (const name of corrupt) await unlink(path.join(this.docsDir, name));
@@ -490,7 +507,7 @@ export class LocalDocumentBackend implements DocumentBackend {
 
     // Remove originals whose record is entirely gone, so a delete interrupted halfway through
     // can't leave the originals directory growing invisibly. ANY file for the id in documents/
-    // (.json, .json.bak, .json.corrupt) keeps its original: a record that failed to parse is not
+    // (.json, .json.bak, .json.legacy, .json.corrupt) keeps its original: a record that failed to parse is not
     // a deleted document, and its original may be the only copy left.
     const liveIds = new Set((await fs.readdir(this.docsDir)).map((name) => name.split('.')[0]));
     try {

@@ -14,3 +14,5 @@
 - 2.3.0 (2026-10-29): bookshelf, whole-app restyle, platform update dialogs, safer config writes.
 - 2.3.1 (2026-10-29): theme-matched shelf, ~1.4 s open/close with scroll follow, sage nav pill, keyboard-only focus rings, word-boundary search snippets.
 - Updates always download the full installer: `autoUpdater.disableDifferentialDownload = true`, no blockmaps published (2026-10-29).
+- 2.3.2 (2026-10-29): zoom-to-read, Phase A data-safety fixes, full-package updates, Node 24 actions.
+- 2.4.0 (2026-11-01): TXT/EPUB/DOCX on the PDF workspace tools (pop-over, mark editing, undo, notes panel, navigator, hotkeys, notes search/filter, a11y), polish round (dark highlights, touch selection, note editor Cancel/Escape/focus trap, faster long books, "Reader Note" export). Argus PASS, jury 6.74. Next: Phase C (Find Cmd+F, Markdown/JSON export + 5 backups + Restore, focus mode, copy quote).
