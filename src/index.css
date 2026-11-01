@@ -1512,3 +1512,257 @@ main[data-annotation-surface] ::selection {
   inset: 0;
   border-radius: 3px;
 }
+
+/* ── Two-page spread (reader text and PDF) ── an open book: two pages meeting at a shaded gutter.
+   Text flows through CSS columns, one column per page (ReaderScreen); PDF shows its current pair.
+   Page turns are drawn by pageTurn.ts in `.page-turn`, above the live pages. */
+:root {
+  --spread-page: #f8f4ea;
+  --spread-edge: rgb(60 44 20 / 0.16);
+  --spread-gutter: rgb(50 32 8 / 0.2);
+}
+.dark {
+  --spread-page: #1f1d1a;
+  --spread-edge: rgb(0 0 0 / 0.5);
+  --spread-gutter: rgb(0 0 0 / 0.45);
+}
+.spread-book {
+  position: relative;
+  margin-inline: auto;
+}
+.spread-page {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  background: var(--spread-page);
+  box-shadow: 0 1px 0 var(--spread-edge), 0 14px 32px -18px var(--spread-edge);
+}
+.spread-page[data-side='left'] {
+  left: 0;
+  border-radius: 4px 0 0 4px;
+}
+.spread-page[data-side='right'] {
+  right: 0;
+  border-radius: 0 4px 4px 0;
+}
+/* Each page curves down into the binding on its gutter edge. */
+.spread-page::after,
+.spread-gutter::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.spread-page[data-side='left']::after {
+  background: linear-gradient(to left, var(--spread-gutter), transparent 9%);
+}
+.spread-page[data-side='right']::after {
+  background: linear-gradient(to right, var(--spread-gutter), transparent 9%);
+}
+/* Dark pages lose the paper's own falloff, so they read as two flat panels: give the binding a
+   longer, layered shade and the outer edge a faint warm rim, like light catching the fore-edge. */
+.dark .spread-page[data-side='left']::after {
+  background:
+    linear-gradient(to left, rgb(0 0 0 / 0.42), rgb(0 0 0 / 0.16) 4%, rgb(0 0 0 / 0.05) 12%, transparent 22%),
+    linear-gradient(to right, rgb(255 244 222 / 0.07), transparent 3%);
+}
+.dark .spread-page[data-side='right']::after {
+  background:
+    linear-gradient(to right, rgb(0 0 0 / 0.42), rgb(0 0 0 / 0.16) 4%, rgb(0 0 0 / 0.05) 12%, transparent 22%),
+    linear-gradient(to left, rgb(255 244 222 / 0.07), transparent 3%);
+}
+.dark .spread-page {
+  box-shadow:
+    inset 0 1px 0 rgb(255 244 222 / 0.05),
+    0 1px 0 var(--spread-edge),
+    0 18px 36px -16px var(--spread-edge);
+}
+/* PDF pages bring their own paper; only the binding's shade is drawn over the seam. */
+.spread-gutter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 56px;
+  margin-left: -28px;
+  pointer-events: none;
+  z-index: 2;
+}
+.spread-gutter::after {
+  background: linear-gradient(to right, transparent, var(--spread-gutter) 50%, transparent);
+  opacity: 0.6;
+}
+/* The text: one column per page, clipped to the spread. `clip`, not `hidden`: a drag-select past
+   the edge must never scroll the next pages into view. */
+.spread-window {
+  position: absolute;
+  overflow: clip;
+}
+.spread-flow {
+  column-fill: auto;
+  orphans: 1;
+  widows: 1;
+}
+.spread-folio {
+  position: absolute;
+  bottom: 14px;
+  font-family: var(--font-serif);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted, #625b4d);
+  pointer-events: none;
+}
+/* Click the outer edge of a page to turn it. Sits in the page margin, never over text. */
+.spread-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--color-muted, #625b4d);
+  opacity: 0;
+  transition: opacity 160ms var(--ease-out);
+  z-index: 3;
+}
+.spread-edge:hover,
+.spread-edge:focus-visible {
+  opacity: 1;
+}
+.spread-edge:disabled {
+  visibility: hidden;
+}
+/* Beside the PDF book rather than inside it: PDF pages have no margin of ours to hold them. */
+.spread-edge[data-inline] {
+  position: relative;
+  flex: none;
+  height: 96px;
+  border-radius: 999px;
+}
+
+/* Clipped to the book: a leaf lifting toward the viewer must never hang past the pages onto the
+   background. A long perspective keeps the leaf's text from squashing as it swings (less
+   foreshortening, and the clip trims only a few px at the peak). */
+.page-turn {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  overflow: clip;
+  pointer-events: none;
+  perspective: 7000px;
+}
+.page-turn-face {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--spread-page);
+  backface-visibility: hidden;
+}
+.page-turn-leaf {
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+.page-turn-back {
+  transform: rotateY(180deg);
+}
+.page-turn-shade {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  /* Soft, not a flat grey sheet: deepest at the hinge, fading out well before the free edge.
+     The back face is mirrored, so its hinge is on the opposite local side. */
+  --shade-dir: to right;
+  background: linear-gradient(var(--shade-dir), rgb(30 20 6 / 0.28), rgb(30 20 6 / 0.1) 45%, rgb(30 20 6 / 0.04));
+}
+.page-turn-leaf[data-hinge='right'] .page-turn-front .page-turn-shade,
+.page-turn-leaf[data-hinge='left'] .page-turn-back .page-turn-shade {
+  --shade-dir: to left;
+}
+.page-turn-cast {
+  opacity: 0;
+}
+.page-turn-cast[data-side='left'] {
+  background: linear-gradient(to right, rgb(30 20 6 / 0.22), rgb(30 20 6 / 0.08) 22%, transparent 60%);
+}
+.page-turn-cast[data-side='right'] {
+  background: linear-gradient(to left, rgb(30 20 6 / 0.22), rgb(30 20 6 / 0.08) 22%, transparent 60%);
+}
+
+/* ── Focus mode ── the bar slides in from the top edge, eased, no overshoot. Reduced motion: it
+   simply appears. */
+.focus-chrome {
+  transition:
+    transform 260ms var(--ease-out),
+    opacity 200ms var(--ease-out);
+}
+.focus-chrome[data-shown='false'] {
+  transform: translateY(-100%);
+  opacity: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .focus-chrome {
+    transition: opacity 120ms linear;
+  }
+  .focus-chrome[data-shown='false'] {
+    transform: none;
+  }
+}
+
+/* ── First-run tour (Tutorial.tsx) ── each step's picture sits on the desk's own ground, inked
+   like the shelf: ink outlines, cloth fills, one gold stroke. */
+.tutorial {
+  --tut-ink: var(--color-ink);
+  --tut-paper: var(--color-paper-2);
+  --tut-gold: #e9b949;
+}
+.tutorial[data-theme='dark'] {
+  --tut-ink: var(--color-paper);
+  --tut-paper: var(--color-night-1);
+}
+.tutorial-stage {
+  background: var(--color-stone-100);
+  border-bottom: 1.5px solid color-mix(in oklab, var(--tut-ink) 18%, transparent);
+}
+.tutorial[data-theme='dark'] .tutorial-stage {
+  background: var(--color-night-2);
+}
+.tutorial-art {
+  aspect-ratio: 9 / 5;
+  padding: 12px 20px 4px;
+}
+.tutorial-art svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.tut-hand {
+  font-family: 'Caveat Variable', Caveat, cursive;
+  font-size: 17px;
+}
+.tut-hand-lg {
+  font-size: 22px;
+}
+.tut-small {
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+}
+.tut-bold {
+  font-weight: 700;
+}
+
+/* ── Find in document (FindBar.tsx): hits painted with the CSS Custom Highlight API ── */
+::highlight(find-hit) {
+  background-color: rgb(234 179 8 / 0.32);
+}
+::highlight(find-current) {
+  background-color: rgb(234 140 8 / 0.62);
+}
+.dark ::highlight(find-hit) {
+  background-color: rgb(250 204 21 / 0.26);
+}
+.dark ::highlight(find-current) {
+  background-color: rgb(251 176 36 / 0.58);
+}

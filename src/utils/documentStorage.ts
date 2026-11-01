@@ -565,6 +565,9 @@ export interface DesktopBridge {
   /** Optional: absent on a shell older than 2.5.0. */
   getAiEnabled?(): Promise<boolean>;
   setAiEnabled?(enabled: boolean): Promise<boolean>;
+  /** Optional: absent on a shell older than 2.6.0. */
+  getTutorialSeen?(): Promise<boolean>;
+  setTutorialSeen?(seen: boolean): Promise<boolean>;
 }
 
 export function desktopBridge(): DesktopBridge | null {
@@ -588,6 +591,81 @@ export async function getAiEnabled(): Promise<boolean> {
 export async function setAiEnabled(on: boolean): Promise<boolean> {
   try {
     return (await desktopBridge()?.setAiEnabled?.(on === true)) === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether the first-run tutorial has been finished or skipped (desktop shell's config.json).
+ * True when the shell cannot answer (no shell, an older shell, an error), so a returning reader
+ * is never shown it again because of a hiccup.
+ */
+export async function getTutorialSeen(): Promise<boolean> {
+  try {
+    const bridge = desktopBridge();
+    if (!bridge?.getTutorialSeen) return true;
+    return (await bridge.getTutorialSeen()) === true;
+  } catch {
+    return true;
+  }
+}
+
+/** Records the tutorial as seen (or not). Resolves with the value actually saved (false without a shell). */
+export async function setTutorialSeen(seen: boolean): Promise<boolean> {
+  try {
+    return (await desktopBridge()?.setTutorialSeen?.(seen === true)) === true;
+  } catch {
+    return false;
+  }
+}
+
+/** One rotating backup of a document's marks (up to 5, at least 10 minutes apart, plus close checkpoints). */
+export interface MarkBackup {
+  id: string;
+  savedAt: string;
+  markCount: number;
+}
+
+/** This document's mark backups, newest first; null when they could not be read. */
+export async function fetchMarkBackups(id: string): Promise<MarkBackup[] | null> {
+  try {
+    const res = await fetch(`/api/documents/${id}/backups`);
+    if (!res.ok) return null;
+    const body = await res.json();
+    return Array.isArray(body.backups) ? body.backups : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Restores a backup; the set that was live becomes a backup first, so this can be undone the same way.
+ * Answers the restored marks (load them as the new state and reset undo history), or null on failure.
+ * Flush and pause pending autosaves first, or a debounced save could write the old set back.
+ */
+export async function restoreMarkBackup(id: string, backupId: string): Promise<Annotation[] | null> {
+  try {
+    const res = await fetch(`/api/documents/${id}/backups/${backupId}/restore`, { method: 'POST' });
+    if (!res.ok) return null;
+    const body = await res.json();
+    return Array.isArray(body.annotations) ? body.annotations : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Call when the reader closes or leaves a document, after its pending saves are flushed: the
+ * server keeps a mark backup if the marks changed since the newest one (saves inside the
+ * 10-minute window make none). `keepalive`, so it still lands while the page is going away.
+ * True when a backup was kept; never throws.
+ */
+export async function checkpointMarkBackup(id: string): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/documents/${id}/backups/checkpoint`, { method: 'POST', keepalive: true });
+    if (!res.ok) return false;
+    return (await res.json()).kept === true;
   } catch {
     return false;
   }

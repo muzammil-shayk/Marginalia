@@ -22,9 +22,78 @@ export interface ReleaseNote {
   highlights: ChangelogItem[];
 }
 
-export const CURRENT_APP_VERSION = '2.5.0';
+export const CURRENT_APP_VERSION = '2.6.0';
 
 export const CHANGELOG_RELEASES: ReleaseNote[] = [
+  {
+    version: '2.6.0',
+    title: 'Read in Spreads, Find Anything',
+    date: 'November 2026',
+    summary:
+      'A two-page spread with page turns, focus mode, Find in document, richer exports, automatic backups and a theme manager.',
+    highlights: [
+      {
+        category: 'feature',
+        title: 'Two-page spread with page turns',
+        description:
+          'Text, EPUB and DOCX books can open as a two-page spread, and pages turn like paper.'
+      },
+      {
+        category: 'feature',
+        title: 'Focus mode',
+        description:
+          'Press F to hide everything but the page, and Esc to come back.'
+      },
+      {
+        category: 'feature',
+        title: 'A picture tutorial',
+        description:
+          'First-time users get a short picture tutorial. Reopen it any time from Settings.'
+      },
+      {
+        category: 'feature',
+        title: 'Theme manager',
+        description:
+          'Create, rename, recolour and delete your own highlight themes, or tap "+ New theme" while highlighting.'
+      },
+      {
+        category: 'feature',
+        title: 'Find in document',
+        description:
+          'Press Cmd+F (Ctrl+F on Windows) to search the whole book and jump between matches.'
+      },
+      {
+        category: 'feature',
+        title: 'Export, import and commonplace book',
+        description:
+          'Export your marks to Markdown or JSON, build a commonplace book (.md, .txt or copy), and import marks back in.'
+      },
+      {
+        category: 'feature',
+        title: 'Automatic backups',
+        description:
+          'The last 5 versions of your marks are kept automatically. Use Restore marks to go back.'
+      },
+      {
+        category: 'feature',
+        title: 'Copy quote with a reference',
+        description:
+          'Copy a passage with its page or line reference attached.'
+      },
+      {
+        category: 'feature',
+        title: 'Linked marks and PDF area highlight',
+        description:
+          'Link related marks together, and press A to highlight an area of a PDF page.'
+      },
+      {
+        category: 'fix',
+        title: 'Small fixes',
+        description:
+          'A round of small fixes and polish across the library and the reader.'
+      }
+    ]
+  },
   {
     version: '2.5.0',
     title: 'Your Readings, Your Margins',

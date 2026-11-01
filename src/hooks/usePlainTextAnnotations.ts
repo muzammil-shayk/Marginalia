@@ -14,13 +14,19 @@
  */
 
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { fetchAnnotations, saveAnnotations, type Annotation as StoredEntry } from '../utils/documentStorage';
+import { checkpointMarkBackup, fetchAnnotations, saveAnnotations, type Annotation as StoredEntry } from '../utils/documentStorage';
 import type { ParagraphRange } from '../utils/textFormatting';
 import type { NewTextMark, TextMark, TextMarkPatch } from '../utils/textMarks';
 import { createTextAnnotationSession, TextAnnotationSession, TextAnnotationState } from './textAnnotationSession';
 import { registerUnloadFlush } from './unloadFlush';
+import type { DebouncedSaver } from './debouncedSaver';
 
 const SAVE_DEBOUNCE_MS = 700;
+
+/** Leaving a document: write the pending edit, then keep a mark backup of this visit (like the PDF workspace). */
+export async function closeTextSession(session: TextAnnotationSession, checkpoint?: () => Promise<boolean>): Promise<void> {
+  if ((await session.dispose()) && checkpoint) await checkpoint();
+}
 
 export interface PlainTextAnnotations extends TextAnnotationState {
   /** Undo/redo through the shared 100-step history. Every mark edit below is one step. */
@@ -36,6 +42,14 @@ export interface PlainTextAnnotations extends TextAnnotationState {
   /** Selects whole groups; `additive` adds to the current selection (shift/cmd-click). */
   select: (ids: Iterable<string>, opts?: { additive?: boolean }) => void;
   clearSelection: () => void;
+  /** One undoable edit over the whole list (links between marks). */
+  commit: (fn: (prev: TextMark[]) => TextMark[]) => void;
+  /** Loads a set the server just wrote (restore, import) and resets the undo history. */
+  reset: (entries: StoredEntry[]) => void;
+  /** Everything the document stores right now, PDF entries included. */
+  entries: () => StoredEntry[];
+  /** The autosave, to flush and pause around a restore or import. Null without a document. */
+  saver: DebouncedSaver<StoredEntry[]> | null;
 }
 
 /** Marks of unsaved documents, for the rest of this run. */
@@ -86,8 +100,8 @@ export function usePlainTextAnnotations(
       : noop;
     return () => {
       unregister();
-      // Writes a still-pending edit, so navigating away never loses it.
-      void session.dispose();
+      // Writes a still-pending edit, so navigating away never loses it, then backs up the visit.
+      void closeTextSession(session, docId ? () => checkpointMarkBackup(docId) : undefined);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
@@ -105,6 +119,10 @@ export function usePlainTextAnnotations(
     retag: session ? session.retag : noop,
     deleteMarks: session ? session.deleteMarks : noop,
     select: session ? session.select : noop,
-    clearSelection: session ? session.clearSelection : noop
+    clearSelection: session ? session.clearSelection : noop,
+    commit: session ? session.commit : noop,
+    reset: session ? session.reset : noop,
+    entries: session ? session.entries : () => [],
+    saver: session ? session.saver : null
   };
 }

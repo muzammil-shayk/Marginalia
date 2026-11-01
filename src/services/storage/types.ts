@@ -198,6 +198,13 @@ export interface UpdateDocumentParams {
   restoreAnnotationsBackup?: true;
 }
 
+/** One rotating backup of a document's marks: `id` is its timestamp (ms) as a string. */
+export interface MarkBackupInfo {
+  id: string;
+  savedAt: string;
+  markCount: number;
+}
+
 export interface DocumentBackend {
   /** Human-readable name of this backend, surfaced in startup logs. */
   readonly name: string;
@@ -216,6 +223,14 @@ export interface DocumentBackend {
    * or its original is missing. Keeps the previous PDF as `originals/{id}.prev`.
    */
   editPdfPages<T>(id: string, edit: (input: PdfPageEditInput) => Promise<PdfPageEditOutput<T>>): Promise<T | null>;
+  /** Up to 5 time-spaced mark backups, newest first. `[]` for an unknown id. */
+  listMarkBackups(id: string): Promise<MarkBackupInfo[]>;
+  /** Puts a backup back (the live set becomes a backup first). Null if document or backup is missing. */
+  restoreMarkBackup(id: string, backupId: string): Promise<DocumentMeta | null>;
+  /** Document closed/left: back up its live marks if changed since the newest backup. */
+  checkpointMarkBackup(id: string): Promise<boolean>;
+  /** App quit: checkpoint every document whose changes the 10-minute window skipped. */
+  checkpointPendingMarkBackups(): Promise<number>;
   /** Deletes every document past its retention window; returns how many were removed. */
   sweepExpiredDocuments(): Promise<number>;
   /**

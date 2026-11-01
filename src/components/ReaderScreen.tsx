@@ -15,8 +15,20 @@ import {
   Redo2,
   PanelRightOpen,
   X,
-  Download
+  Download,
+  BookOpen,
+  Maximize2,
+  Minimize2,
+  Search
 } from './icons';
+import { TextSpread, MIN_SPREAD_WIDTH, type TextSpreadHandle } from './TextSpread';
+import { ArchivePanel, archiveRows, copyText, excerpt, useMarksArchive } from './MarksArchive';
+import { FindBar, FIND_SHORTCUT, useDocumentFind } from './FindBar';
+import type { MarkLinks } from './pdf/MarkProperties';
+import { formatQuoteRef, markLocation } from '../utils/quoteRef';
+import { linkMarks, linkedIds, unlinkMarks } from '../utils/markLinks';
+import { FocusChrome, FocusExit, FOCUS_HOTKEY } from './FocusMode';
+import type { ThemeStore } from './themeStore';
 import { AnnotationFocus, Screen, TransitionType, UserSettings } from '../types';
 import { HoverTooltip } from './HoverTooltip';
 import { ParagraphRange, rangesFromSelectionParts, selectionParagraphParts, selectionState } from '../utils/textFormatting';
@@ -38,7 +50,7 @@ import { MarkProperties } from './pdf/MarkProperties';
 import type { PanelContext } from './pdf/useAnchoredPanel';
 import { NotesList } from './pdf/NotesList';
 import { InstanceNavigator } from './pdf/InstanceNavigator';
-import { isTypingTarget, resolveWorkspaceKey, TOOL_HOTKEYS, withShortcut } from './pdf/workspaceKeys';
+import { escapeConsumes, isTypingTarget, resolveWorkspaceKey, TOOL_HOTKEYS, withShortcut } from './pdf/workspaceKeys';
 
 import {
   exportToPDF,
@@ -61,6 +73,15 @@ interface ReaderScreenProps {
   docId?: string;
   /** The document's marks, lifted to App so they survive navigating away and back. */
   annotations: PlainTextAnnotations;
+  /** Focus mode: chrome hidden, the page alone (App owns it; F and Escape). */
+  focusMode?: boolean;
+  onToggleFocus?: () => void;
+  /** Themes, for the selection menu's "+ New theme". */
+  themeStore?: ThemeStore;
+  /** Saves the two-page spread choice with the settings (on disk). */
+  onSpreadChange?: (on: boolean) => void;
+  /** Adds the themes a marks import brought with it. */
+  onAddThemes?: (themes: UserSettings['activeThemes']) => void;
   /** Opened from the library to step through one theme's (or terminology's) marks. */
   focus?: AnnotationFocus;
 }
@@ -468,7 +489,12 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
   documentTitle,
   docId,
   annotations,
-  focus
+  focus,
+  focusMode = false,
+  onToggleFocus,
+  themeStore,
+  onSpreadChange,
+  onAddThemes
 }) => {
   const { marks, selectedIds, canUndo, canRedo, addMarks, updateMarks, deleteMarks, select, clearSelection, undo, redo } =
     annotations;
@@ -834,6 +860,8 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
    */
   useEffect(() => {
     const sync = (applyArmedTool: boolean) => {
+      // Typing a new theme's name in the selection menu moves the browser's selection; the passage stays.
+      if ((document.activeElement as HTMLElement | null)?.closest('[data-keep-selection]')) return;
       const sel = window.getSelection();
       const state =
         sel && !sel.isCollapsed && textRef.current
@@ -913,6 +941,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
       const hasSelection = Boolean(selectionAnchor && pendingSelection?.length);
       switch (action.type) {
         case 'escape':
+          if (escapeConsumes({ tool, markSelected: selectedIds.length > 0, textSelected: hasSelection })) e.preventDefault();
           setTool('select');
           clearSelection();
           setSelectionAnchor(null);
@@ -957,6 +986,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     return () => document.removeEventListener('keydown', onKey);
   }, [
     editorOpen,
+    tool,
     selectionAnchor,
     pendingSelection,
     selectedIds,
@@ -1055,6 +1085,10 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
         root?.querySelector<HTMLElement>(`[data-note-card="${id}"]`) ??
         null;
       if (!el) return false;
+      if (spreadHandle.current) {
+        spreadHandle.current.showElement(el);
+        return true;
+      }
       el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
       return true;
     },
@@ -1092,6 +1126,8 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     let frame = 0;
     const measure = () => {
       frame = 0;
+      // In the spread, pages after the open pair sit to the right of its window.
+      const spreadRight = document.querySelector('.spread-window')?.getBoundingClientRect().right ?? Infinity;
       // Binary search: paragraphs run top to bottom, so find the last one whose top is on screen.
       let lo = 0;
       let hi = paragraphs.length - 1;
@@ -1100,7 +1136,8 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
         const mid = (lo + hi) >> 1;
         const el = document.getElementById(`reader-para-${mid}`);
         if (!el) return;
-        if (el.getBoundingClientRect().top < window.innerHeight) {
+        const box = el.getBoundingClientRect();
+        if (box.top < window.innerHeight && box.left < spreadRight) {
           last = mid;
           lo = mid + 1;
         } else hi = mid - 1;
@@ -1135,8 +1172,40 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     return () => observer.disconnect();
   }, []);
   const docked = isPanelOpen && typeof window !== 'undefined' && window.innerWidth >= 768 ? 320 : 0;
+  /**
+   * Two-page spread: the reader's choice, shown only on the reading tab and only while the body
+   * has room for two readable pages; narrower, the same text falls back to one scrolling page.
+   */
+  const spreadPref = settings.readerSpread === true;
+  const spreadFits = bodyWidth - docked >= MIN_SPREAD_WIDTH;
+  const spreadOn = spreadPref && spreadFits && activeControlTab === 'notes';
+  const spreadHandle = useRef<TextSpreadHandle>(null);
+  /** Where to open (entering) or return to (leaving) the spread: a paragraph's element id. */
+  const spreadStartId = useRef<string | null>(null);
+  const toggleSpread = () => {
+    if (!spreadPref) {
+      // The first paragraph still on screen below the bars is the page the book opens at.
+      const top = controlBarRef.current?.getBoundingClientRect().bottom ?? 0;
+      const first = Array.from(document.querySelectorAll<HTMLElement>('[id^="reader-para-"]:not([id^="reader-para-text-"])')).find(
+        (el) => el.getBoundingClientRect().bottom > top + 8
+      );
+      spreadStartId.current = first?.id ?? null;
+    }
+    onSpreadChange?.(!spreadPref);
+  };
+  // Back in the scrolling view: land on the paragraph the spread was showing.
+  const wasSpread = useRef(false);
+  useLayoutEffect(() => {
+    if (wasSpread.current && !spreadOn) {
+      const el = spreadStartId.current ? document.getElementById(spreadStartId.current) : null;
+      const top = controlBarRef.current?.getBoundingClientRect().bottom ?? 0;
+      window.scrollTo({ top: el ? el.getBoundingClientRect().top + window.scrollY - top - 16 : 0 });
+    }
+    if (spreadOn) window.scrollTo({ top: 0 });
+    wasSpread.current = spreadOn;
+  }, [spreadOn]);
   // 40: the text column's own side padding.
-  const marginMode: MarginMode = !showInlineNotes
+  const marginMode: MarginMode = !showInlineNotes || spreadOn
     ? 'off'
     : bodyWidth - docked >= MIN_TEXT_PX + MARGIN_CARDS_PX + 40
       ? 'cards'
@@ -1150,7 +1219,11 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     const onDown = (e: PointerEvent) => {
       if (!(e.target instanceof Element) || !e.target.closest(`[data-margin-item="${openPin}"]`)) setOpenPin(null);
     };
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpenPin(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      setOpenPin(null);
+    };
     document.addEventListener('pointerdown', onDown, true);
     document.addEventListener('keydown', onKey);
     return () => {
@@ -1263,8 +1336,86 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     else downloadTextFile(generatePlainText(exportable, opts), `${displayTitle}-annotations.txt`, 'text/plain');
   };
 
+  // ── Find in document (Cmd+F) ──
+  const paraEl = (i: number) => document.getElementById(`${PARA_TEXT_ID_PREFIX}${i}`);
+  const find = useDocumentFind({
+    enabled: activeControlTab === 'notes' && !editorOpen && paragraphs.length > 0,
+    units: paragraphs,
+    unitElement: paraEl,
+    root: () => textRef.current,
+    startUnit: () => {
+      // The first paragraph whose foot is below the control bar (binary search: they run down the page).
+      const top = controlBarRef.current?.getBoundingClientRect().bottom ?? 0;
+      let lo = 0;
+      let hi = paragraphs.length - 1;
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1;
+        const r = paraEl(mid)?.getBoundingClientRect();
+        if (r && r.bottom < top) lo = mid + 1;
+        else hi = mid;
+      }
+      return spreadOn ? 0 : lo;
+    },
+    reveal: (i, range) => {
+      const el = paraEl(i);
+      if (!el) return;
+      if (spreadHandle.current) return spreadHandle.current.showElement(range ?? el);
+      const box = (range ?? el).getBoundingClientRect();
+      const top = (controlBarRef.current?.getBoundingClientRect().bottom ?? 0) + 24;
+      const bottom = window.innerHeight - bottomInset - 48;
+      if (box.top >= top && box.bottom <= bottom) return;
+      window.scrollBy({ top: box.top - (top + bottom) / 2, behavior: reduceMotion ? 'auto' : 'smooth' });
+    }
+  });
+
+  // ── Copy quote and linked marks ──
+  const cite = (quote: string, anchor: { paragraphIndex: number; start: number; end: number }) =>
+    formatQuoteRef(quote, displayTitle, markLocation({ id: '', anchor }, { paragraphs, layout: content?.layout }));
+  const copyQuoteOf = (id: string, quote: string) => {
+    const m = markById.get(id);
+    return copyText(m ? cite(quote, m.anchor) : formatQuoteRef(quote, displayTitle, null));
+  };
+  const copySelectionQuote = (ranges: ParagraphRange[]) => {
+    const quote = ranges.map((r) => (paragraphs[r.paraIdx] ?? '').slice(r.start, r.end)).join('\n');
+    const first = ranges[0];
+    return copyText(cite(quote, { paragraphIndex: first.paraIdx, start: first.start, end: first.end }));
+  };
+  const linkOption = (v: (typeof views)[number]) => ({
+    id: v.id,
+    label: excerpt(v.quote || v.text || 'Mark'),
+    where: `para. ${v.page}`
+  });
+  const markLinksFor = (id: string): MarkLinks => {
+    const linked = new Set(linkedIds(marks, id));
+    return {
+      linked: views.filter((v) => linked.has(v.id)).map(linkOption),
+      candidates: views.filter((v) => v.id !== id).map(linkOption),
+      onLink: (other) => annotations.commit((prev) => linkMarks(prev, id, other)),
+      onUnlink: (other) => annotations.commit((prev) => unlinkMarks(prev, id, other)),
+      onJump: (other) => {
+        select([other]);
+        scrollToMark(other);
+      }
+    };
+  };
+
+  // Every mark, for keeping: full Markdown/JSON, the commonplace book, import and restore.
+  const archive = useMarksArchive({
+    docId,
+    doc: { id: docId, title: displayTitle, layout: content?.layout, paragraphs },
+    entries: annotations.entries,
+    themes: settings.activeThemes,
+    saver: annotations.saver,
+    reset: annotations.reset,
+    onAddThemes: (t) => onAddThemes?.(t),
+    isDark
+  });
+
   // Popovers stay below the sticky header and control bar.
-  const popoverTopInset = controlBarRef.current?.getBoundingClientRect().bottom ?? headerRef.current?.getBoundingClientRect().bottom ?? 0;
+  // In focus mode the bar slides over the page when called, so menus keep clear of where it lands.
+  const popoverTopInset = focusMode
+    ? (controlBarRef.current?.offsetHeight ?? 0)
+    : (controlBarRef.current?.getBoundingClientRect().bottom ?? headerRef.current?.getBoundingClientRect().bottom ?? 0);
   const bottomInset = activeFocus ? NAVIGATOR_HEIGHT : 0;
   // A passage scrolled wholly out from under the control bar takes its menu with it (it comes
   // back on scrolling back); a menu pinned to the edge would act on words the reader can't see.
@@ -1279,10 +1430,67 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
   const iconBtn =
     'p-2 rounded-lg text-muted hover:bg-black/5 dark:hover:bg-white/5 hover:text-stone-800 dark:hover:text-stone-200 disabled:opacity-30 cursor-pointer disabled:cursor-default shrink-0';
 
+  const titleBlock = (
+    <div
+      id="reader-title-block"
+      className={`text-center flex flex-col items-center justify-center space-y-2 ${
+        paragraphs.length === 0 ? 'min-h-[60vh]' : 'border-b pb-6 border-stone-200 dark:border-stone-800'
+      }`}
+    >
+      <div className="flex items-center justify-center gap-2 flex-wrap text-[11px]">
+        <span className="caps text-gold">DOCUMENT</span>
+        <span className="text-stone-300 dark:text-stone-700">•</span>
+        <span className="text-muted italic">Select text to mark it, or write a note</span>
+      </div>
+      <h2 className="title-hand text-balance text-[36px] sm:text-[44px] text-stone-900 dark:text-paper">
+        {displayTitle}
+      </h2>
+      {loadFailed && !content && (
+        <div role="alert" className="pt-4 flex flex-col items-center gap-3">
+          <p className="text-[14px] text-muted">This document could not be loaded, so it can’t be marked yet.</p>
+          <button
+            type="button"
+            onClick={() => setLoadAttempt((n) => n + 1)}
+            className="rounded-full caps px-5 py-2.5 text-[12px] bg-accent hover:bg-accent-hover text-on-accent transition-colors cursor-pointer"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+    </div>
+  );
+  const paragraphNodes = paragraphs.map((text, idx) => {
+    const notes = paraData.notes.get(idx) ?? EMPTY_NOTES;
+    return (
+      <Paragraph
+        key={idx}
+        idx={idx}
+        text={text}
+        marks={paraData.marks.get(idx) ?? EMPTY_MARKS}
+        glyphHeads={paraData.glyphs.get(idx) ?? ''}
+        notes={notes}
+        selKey={selByPara.get(idx) ?? ''}
+        hovKey={hovByPara.get(idx) ?? ''}
+        isActive={activeParagraphIndex === idx}
+        isDark={isDark}
+        margin={marginMode}
+        verbatim={verbatim}
+        styles={stylesByPara.get(idx) ?? EMPTY_STYLES}
+        openPin={openPin && notes.some((n) => n.mark.id === openPin) ? openPin : ''}
+        terminologyColor={settings.terminologyColor}
+        fontFamily={paragraphFont}
+        fontSize={settings.fontSize}
+        clock={notes.length ? clock : 0}
+        actions={paragraphActions}
+      />
+    );
+  });
+
   return (
     <div className={`min-h-screen flex flex-col transition-colors ${isDark ? 'bg-night text-stone-100' : 'bg-paper text-ink'}`}>
       {/* Theme picker — which theme new marks are filed under, and so their colour. */}
       <div
+        hidden={focusMode}
         className={`pl-3 sm:pl-6 py-2 border-b flex items-center gap-1.5 text-[11px] w-full max-w-full ${
           isDark ? 'bg-night-2 border-stone-800/80' : 'bg-stone-100 border-stone-200'
         }`}
@@ -1317,6 +1525,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
       {/* Top Reader Navigation Bar */}
       <header
         ref={headerRef}
+        hidden={focusMode}
         className={`app-drag sticky top-0 z-40 px-3 sm:px-6 h-18 border-b flex items-center justify-between gap-2 backdrop-blur-md transition-colors w-full max-w-full overflow-hidden ${
           isDark ? 'bg-night/90 border-stone-800' : 'bg-paper/90 border-stone-200/80'
         }`}
@@ -1355,6 +1564,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
           notes panel on the right. Sticks under the header, so the tools stay in reach while
           reading down a long document, and wraps to two rows on a phone rather than scrolling
           undo and the notes panel out of sight. */}
+      <FocusChrome focus={focusMode} selecting={Boolean(pendingSelection?.length || selectedIds.length)}>
       <div
         ref={controlBarRef}
         className={`sticky top-18 z-30 px-3 sm:px-6 py-2 border-b flex flex-wrap items-center justify-between gap-2 text-[12px] w-full max-w-full ${
@@ -1377,7 +1587,9 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
             <StickyNoteIcon className="w-4 h-4" />
             {activeControlTab === 'notes' && (
               <span className="whitespace-nowrap animate-in fade-in duration-150">
-                {plural(noteHeads.length, 'note')}
+                {/* Counts what it names, like the panel: marks always, notes only when there are some. */}
+                {plural(views.length, 'mark')}
+                {noteHeads.length > 0 && ` · ${plural(noteHeads.length, 'note')}`}
               </span>
             )}
           </button>
@@ -1442,6 +1654,38 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
             </button>
           </HoverTooltip>
           <span aria-hidden className={`w-px h-6 mx-1 ${isDark ? 'bg-stone-700' : 'bg-stone-300'}`} />
+          <HoverTooltip label={`Find in document (${FIND_SHORTCUT})`}>
+            <button
+              type="button"
+              onClick={find.open ? find.close : find.openFind}
+              aria-label="Find in document"
+              aria-keyshortcuts={IS_APPLE ? 'Meta+F' : 'Control+F'}
+              aria-pressed={find.open}
+              disabled={activeControlTab !== 'notes'}
+              className={`${iconBtn} ${find.open ? 'text-gold dark:text-gold' : ''}`}
+            >
+              <Search className="w-4 h-4" />
+            </button>
+          </HoverTooltip>
+          <HoverTooltip
+            label={
+              spreadPref && !spreadFits
+                ? 'Two-page spread (window too narrow, showing one page)'
+                : spreadPref
+                  ? 'Single page (scroll)'
+                  : 'Two-page spread (← → turn pages)'
+            }
+          >
+            <button
+              type="button"
+              onClick={toggleSpread}
+              aria-label="Two-page spread"
+              aria-pressed={spreadPref}
+              className={`${iconBtn} max-md:hidden ${spreadPref ? 'text-gold dark:text-gold' : ''}`}
+            >
+              <BookOpen className="w-4 h-4" weight={spreadOn ? 'fill' : 'regular'} />
+            </button>
+          </HoverTooltip>
           <HoverTooltip label={isPanelOpen ? 'Hide marks panel' : 'Show marks panel'}>
             <button
               type="button"
@@ -1453,8 +1697,25 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
               <PanelRightOpen className="w-4 h-4" weight={isPanelOpen ? 'fill' : 'regular'} />
             </button>
           </HoverTooltip>
+          {onToggleFocus && (
+            <HoverTooltip label={focusMode ? `Leave focus mode (${FOCUS_HOTKEY} or Esc)` : `Focus mode (${FOCUS_HOTKEY})`}>
+              <button
+                type="button"
+                onClick={onToggleFocus}
+                aria-label={focusMode ? `Leave focus mode (${FOCUS_HOTKEY})` : `Focus mode (${FOCUS_HOTKEY})`}
+                aria-keyshortcuts={FOCUS_HOTKEY}
+                aria-pressed={focusMode}
+                className={`${iconBtn} ${focusMode ? 'text-gold dark:text-gold' : ''}`}
+              >
+                {focusMode ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              </button>
+            </HoverTooltip>
+          )}
         </div>
+        <FindBar find={find} isDark={isDark} className="basis-full w-full" />
       </div>
+      </FocusChrome>
+      {focusMode && onToggleFocus && <FocusExit onExit={onToggleFocus} isDark={isDark} />}
 
       {/* Body: the text column, and the notes panel beside it (an overlay on a narrow window). */}
       <div ref={bodyRef} className="flex-1 flex max-w-6xl mx-auto w-full overflow-x-clip">
@@ -1464,8 +1725,10 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
           data-zoom-target
           data-annotation-surface
           tabIndex={-1}
-          className="flex-1 min-w-0 mx-auto w-full px-5 py-6 space-y-6 pb-8"
-          style={{ maxWidth: `calc(42rem + ${marginMode === 'cards' ? MARGIN_CARDS_PX : marginMode === 'pins' ? MARGIN_PINS_PX : 0}px)` }}
+          className={`flex-1 min-w-0 mx-auto w-full px-5 space-y-6 ${spreadOn ? 'pt-5 pb-0' : 'py-6 pb-8'}`}
+          style={{
+            maxWidth: spreadOn ? undefined : `calc(42rem + ${marginMode === 'cards' ? MARGIN_CARDS_PX : marginMode === 'pins' ? MARGIN_PINS_PX : 0}px)`
+          }}
           onClick={(e) => {
             if (e.target === e.currentTarget) clearSelection();
           }}
@@ -1482,65 +1745,35 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                 transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
                 className="space-y-6"
               >
-                <div
-                  className={`text-center flex flex-col items-center justify-center space-y-2 ${
-                    paragraphs.length === 0 ? 'min-h-[60vh]' : 'border-b pb-6 border-stone-200 dark:border-stone-800'
-                  }`}
-                >
-                  <div className="flex items-center justify-center gap-2 flex-wrap text-[11px]">
-                    <span className="caps text-gold">DOCUMENT</span>
-                    <span className="text-stone-300 dark:text-stone-700">•</span>
-                    <span className="text-muted italic">Select text to mark it, or write a note</span>
-                  </div>
-                  <h2 className="title-hand text-balance text-[36px] sm:text-[44px] text-stone-900 dark:text-paper">
-                    {displayTitle}
-                  </h2>
-                  {loadFailed && !content && (
-                    <div role="alert" className="pt-4 flex flex-col items-center gap-3">
-                      <p className="text-[14px] text-muted">This document could not be loaded, so it can’t be marked yet.</p>
-                      <button
-                        type="button"
-                        onClick={() => setLoadAttempt((n) => n + 1)}
-                        className="rounded-full caps px-5 py-2.5 text-[12px] bg-accent hover:bg-accent-hover text-on-accent transition-colors cursor-pointer"
-                      >
-                        Retry
-                      </button>
+                {spreadOn ? (
+                  <TextSpread
+                    ref={spreadHandle}
+                    flowRef={setFlow}
+                    reduced={Boolean(reduceMotion)}
+                    initialElement={() => (spreadStartId.current ? document.getElementById(spreadStartId.current) : null)}
+                    onTurn={() => {
+                      clearSelection();
+                      setSelectionAnchor(null);
+                    }}
+                    onSettle={(el) => {
+                      spreadStartId.current = el?.id || null;
+                    }}
+                  >
+                    {titleBlock}
+                    {paragraphNodes}
+                  </TextSpread>
+                ) : (
+                  <>
+                    {titleBlock}
+                    <div
+                      ref={setFlow}
+                      className="relative space-y-6"
+                      style={{ marginRight: marginMode === 'cards' ? MARGIN_CARDS_PX : marginMode === 'pins' ? MARGIN_PINS_PX : 0 }}
+                    >
+                      {paragraphNodes}
                     </div>
-                  )}
-                </div>
-
-                <div
-                  ref={setFlow}
-                  className="relative space-y-6"
-                  style={{ marginRight: marginMode === 'cards' ? MARGIN_CARDS_PX : marginMode === 'pins' ? MARGIN_PINS_PX : 0 }}
-                >
-                {paragraphs.map((text, idx) => {
-                  const notes = paraData.notes.get(idx) ?? EMPTY_NOTES;
-                  return (
-                    <Paragraph
-                      key={idx}
-                      idx={idx}
-                      text={text}
-                      marks={paraData.marks.get(idx) ?? EMPTY_MARKS}
-                      glyphHeads={paraData.glyphs.get(idx) ?? ''}
-                      notes={notes}
-                      selKey={selByPara.get(idx) ?? ''}
-                      hovKey={hovByPara.get(idx) ?? ''}
-                      isActive={activeParagraphIndex === idx}
-                      isDark={isDark}
-                      margin={marginMode}
-                      verbatim={verbatim}
-                      styles={stylesByPara.get(idx) ?? EMPTY_STYLES}
-                      openPin={openPin && notes.some((n) => n.mark.id === openPin) ? openPin : ''}
-                      terminologyColor={settings.terminologyColor}
-                      fontFamily={paragraphFont}
-                      fontSize={settings.fontSize}
-                      clock={notes.length ? clock : 0}
-                      actions={paragraphActions}
-                    />
-                  );
-                })}
-                </div>
+                  </>
+                )}
               </motion.div>
             )}
 
@@ -1624,6 +1857,11 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                       </button>
                     ))}
                   </div>
+
+                  <div className="space-y-2 pt-2">
+                    <h4 className="caps caps-sm text-muted">Every mark, for keeping</h4>
+                    <ArchivePanel rows={archiveRows(archive, marks.length)} />
+                  </div>
                 </div>
               </motion.div>
             )}
@@ -1706,8 +1944,12 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
           onEdit={() => startEditing(selectedView.id)}
           onDelete={() => deleteMark(selectedView.id)}
           onDismiss={clearSelection}
+          onCopyQuote={selectedView.quote ? () => copyQuoteOf(selectedView.id, selectedView.quote!) : undefined}
+          links={markLinksFor(selectedView.id)}
         />
       )}
+
+      {archive.ui}
 
       {/* The selection menu — mark the passage, or write a note about it. */}
       {!editorOpen && activeControlTab === 'notes' && (
@@ -1720,6 +1962,8 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
           themes={settings.activeThemes}
           activeThemeId={activeThemeId}
           onThemeChange={setActiveThemeId}
+          onCreateTheme={themeStore?.create}
+          onCopyQuote={pendingSelection?.length ? () => copySelectionQuote(pendingSelection) : undefined}
           onMark={(kind) => {
             if (isReactionKind(kind as TextMarkKind)) createReactionForSelection(kind as TextMarkKind);
             else {

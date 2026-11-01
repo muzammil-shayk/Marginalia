@@ -54,6 +54,11 @@ export {
   CloudArrowDown as DownloadCloud,
   Trash as Trash2,
   Copy,
+  ClockCounterClockwise as History,
+  Quotes as Quote,
+  LinkSimple as Link2,
+  LinkSimpleBreak as Unlink,
+  BoundingBox as AreaSelect,
   Clock,
   SquaresFour as LayoutGrid,
   ListBullets as List,
@@ -86,6 +91,7 @@ export {
   MagnifyingGlassPlus as ZoomIn,
   MagnifyingGlassMinus as ZoomOut,
   CornersOut as Maximize2,
+  CornersIn as Minimize2,
   // Phosphor has no left/right panel pair, so the sidebar glyph carries all four. Which side it
   // belongs to is already obvious from where the button sits.
   SidebarSimple as PanelLeftOpen,

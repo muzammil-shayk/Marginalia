@@ -13,6 +13,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Lock, Unlock } from '../icons';
+import { createAreaHighlight } from '../../utils/areaMark';
 import {
   Annotation,
   BOX_KINDS,
@@ -199,7 +200,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
    * tools would mean nothing could be drawn.
    */
   const capturesDrag =
-    tool === 'ink' || tool === 'mask' || tool === 'note' || BOX_KINDS.includes(tool as never) || LINE_KINDS.includes(tool as never);
+    tool === 'ink' || tool === 'mask' || tool === 'note' || tool === 'area' || BOX_KINDS.includes(tool as never) || LINE_KINDS.includes(tool as never);
 
   // Marks stay clickable whatever the tool, so Select can pick one and Erase can remove one. The
   // exception is mid-drag, when a mark under the pointer must not steal the gesture.
@@ -251,7 +252,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       return;
     }
 
-    if (tool === 'ink' || tool === 'mask' || BOX_KINDS.includes(tool as never) || LINE_KINDS.includes(tool as never)) {
+    if (tool === 'ink' || tool === 'mask' || tool === 'area' || BOX_KINDS.includes(tool as never) || LINE_KINDS.includes(tool as never)) {
       drawingRef.current = true;
       // Capture keeps the drag following the pointer when it leaves the page box, which would
       // otherwise truncate the mark at the edge.
@@ -321,6 +322,21 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
         }
         return null;
       });
+      return;
+    }
+
+    if (tool === 'area' && draftStart) {
+      // A figure, a table, a scan: stored as an ordinary highlight with one rect (see areaMark).
+      // The release point is the corner, even when no move event came between press and release.
+      const box = pageBox();
+      const to = box ? pointToFraction(e.clientX, e.clientY, box) : draftEnd ?? draftStart;
+      const mark = createAreaHighlight(
+        { page: pageNumber, from: draftStart, to, color: activeColor, themeId: activeThemeId },
+        { now: new Date().toISOString(), newId: newAnnotationId }
+      );
+      if (mark) onCreate(mark);
+      setDraftStart(null);
+      setDraftEnd(null);
       return;
     }
 
@@ -735,6 +751,20 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
             strokeWidth={draftWidth}
             strokeDasharray={dashArray(toolStrokeStyle, draftWidth)}
             strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
+        {draftBox && tool === 'area' && (
+          <rect
+            x={draftBox.x * 100}
+            y={draftBox.y * 100}
+            width={draftBox.w * 100}
+            height={draftBox.h * 100}
+            fill={activeColor}
+            fillOpacity={0.28}
+            stroke={activeColor}
+            strokeDasharray="4 4"
+            strokeWidth={1}
             vectorEffect="non-scaling-stroke"
           />
         )}

@@ -63,6 +63,12 @@ contextBridge.exposeInMainWorld('marginaliaDesktop', {
   /** Turns AI features on or off; resolves with the value actually saved. */
   setAiEnabled: (enabled) => ipcRenderer.invoke('marginalia:ai-set', enabled === true),
 
+  // ── First-run tutorial (kept in config.json) ──────────────────────────────
+  /** Whether the reader has finished or skipped the tutorial. */
+  getTutorialSeen: () => ipcRenderer.invoke('marginalia:tutorial-get'),
+  /** Records it; resolves with the value actually saved. */
+  setTutorialSeen: (seen) => ipcRenderer.invoke('marginalia:tutorial-set', seen === true),
+
   /**
    * Registers the renderer's "save everything pending now" handler. Main calls it before a window
    * closes or the app quits (see electron/flushOnExit.cjs) and waits up to 3 s for the answer.

@@ -15,6 +15,7 @@ import {
   getSettings,
   saveClientSettings,
   editPdfPages,
+  checkpointPendingMarkBackups,
   RETENTION_DAYS
 } from "./src/services/documentStore";
 import { insertBlankPages, removePdfPage, PageEditError } from "./src/services/pdfPages";
@@ -22,6 +23,7 @@ import { sanitizeImportHtml } from "./src/services/htmlSanitize";
 import { publicSettings, nextReadingProgress, cleanTitle } from "./src/services/storage/types";
 import { documentParamsFromBody } from "./src/services/documentInput";
 import geminiConfigRouter from "./src/services/geminiConfig";
+import markBackupRouter from "./src/services/markBackupRoutes";
 import { setAiEnabled } from "./src/services/aiGate";
 import { wordWindow, markSearchHits } from "./searchSnippet";
 
@@ -31,6 +33,9 @@ import { wordWindow, markSearchHits } from "./searchSnippet";
  * module's surface and the change-folder action fails at runtime.
  */
 export { setStoreDirectory };
+
+/** The desktop shell calls this after the exit flush: mark backups for changes the 10-minute window skipped. */
+export { checkpointPendingMarkBackups };
 
 /** The desktop shell passes the saved AI opt-in here (electron/aiSetting.cjs). Off until it does. */
 export { setAiEnabled };
@@ -105,6 +110,7 @@ app.use(express.json({ limit: "200mb" }));
 // Health check endpoint
 /** Gemini key settings, refused while the AI opt-in is off. See `src/services/geminiConfig.ts`. */
 app.use("/api", geminiConfigRouter);
+app.use("/api", markBackupRouter);
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });

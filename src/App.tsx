@@ -3,11 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { AnnotationFocus, Screen, TransitionType, UserSettings, StickyNote } from './types';
 import { initialSettings } from './data/mockData';
-import { fetchDocumentText, fetchRemoteSettings, saveRemoteSettings, StoredDocumentMeta, desktopBridge } from './utils/documentStorage';
+import { fetchDocumentText, fetchRemoteSettings, saveRemoteSettings, StoredDocumentMeta, desktopBridge, getTutorialSeen, setTutorialSeen } from './utils/documentStorage';
 import { CustomFormat } from './utils/documentExporter';
 import { usePlainTextAnnotations } from './hooks/usePlainTextAnnotations';
 import { Header } from './components/Header';
@@ -27,6 +27,11 @@ import { UpdatePrompt } from './components/UpdatePrompt';
 import { CURRENT_APP_VERSION } from './data/changelog';
 import { ErrorDialog } from './components/ErrorDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { FOCUS_HOTKEY } from './components/FocusMode';
+import { Tutorial } from './components/Tutorial';
+import { localThemeStore } from './components/themeStore';
+import { themesToAdd } from './utils/marksExport';
+import { isTypingTarget } from './components/pdf/workspaceKeys';
 import { withoutSecrets } from './hooks/settingsCache';
 import { flushAllPending, handleBeforeUnload } from './hooks/unloadFlush';
 
@@ -126,6 +131,14 @@ function saveSession(s: SessionState) {
 export default function App() {
   // ── Hydrate state ──
   const [settings, setSettings] = useState<UserSettings>(() => loadSettings());
+  // shortcut: themes live in settings for now; the dedicated theme storage API replaces this adapter.
+  const themeStore = useMemo(() => localThemeStore(settings.activeThemes, setSettings), [settings.activeThemes]);
+  /** Themes a marks import brought along, kept with their ids so the imported marks find them. */
+  const addImportedThemes = useCallback(
+    (themes: UserSettings['activeThemes']) =>
+      setSettings((prev) => ({ ...prev, activeThemes: [...prev.activeThemes, ...themesToAdd(prev.activeThemes, themes)] })),
+    []
+  );
 
   /**
    * The saved session, read ONCE.
@@ -143,6 +156,43 @@ export default function App() {
     savedSession?.currentScreen || 'home'
   );
   const [transitionType, setTransitionType] = useState<TransitionType>('push');
+  /**
+   * The first-run picture tour, shown on Home until it is finished or skipped, and again from
+   * Settings. "Seen" is on disk (desktop config.json); it starts true so a returning reader never
+   * sees it flash while the flag is read.
+   */
+  const [tutorialSeen, setTutorialSeenState] = useState(true);
+  const [tutorialRequested, setTutorialRequested] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    void getTutorialSeen().then((seen) => {
+      if (!cancelled) setTutorialSeenState(seen);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  /** Focus mode: the page alone (reader and PDF workspace only). See `FocusMode.tsx`. */
+  const [focusMode, setFocusMode] = useState(false);
+  const readingScreen = currentScreen === 'reader' || currentScreen === 'workspace';
+  const focusOn = focusMode && readingScreen;
+  useEffect(() => {
+    if (!readingScreen) setFocusMode(false);
+  }, [readingScreen]);
+  // F toggles focus mode and Escape leaves it; never while typing, in a dialog, or with a modifier.
+  useEffect(() => {
+    if (!readingScreen) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;
+      if (isTypingTarget(e.target) || document.querySelector('[aria-modal="true"]')) return;
+      if (e.key === 'Escape') setFocusMode(false);
+      else if (!e.shiftKey && e.key.toLowerCase() === FOCUS_HOTKEY.toLowerCase()) setFocusMode((on) => !on);
+    };
+    // On window, so it runs after every document-level handler (popovers, the workspace) has had
+    // its say and marked a used Escape with preventDefault, whatever order they registered in.
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [readingScreen]);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   /**
    * Whether the workspace should pick up where the reader left off, or open at page one.
@@ -577,8 +627,8 @@ export default function App() {
         isDark ? 'bg-night text-paper dark' : 'bg-paper text-ink'
       }`}
     >
-      {/* Desktop Sidebar Navigation (hidden on mobile) */}
-      <DesktopNav
+      {/* Desktop Sidebar Navigation (hidden on mobile, and in focus mode) */}
+      {!focusOn && <DesktopNav
         currentScreen={currentScreen}
         onNavigate={navigate}
         isDark={isDark}
@@ -586,7 +636,7 @@ export default function App() {
         collapsed={Boolean(settings.sidebarCollapsed)}
         onToggleCollapsed={() => setSettings((prev) => ({ ...prev, sidebarCollapsed: !prev.sidebarCollapsed }))}
         onOpenSearch={() => setIsSearchOpen(true)}
-      />
+      />}
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-h-screen min-w-0">
@@ -618,6 +668,16 @@ export default function App() {
 
         <UpdatePrompt isDark={isDark} onOpenChangelog={handleOpenChangelog} changelogOpen={isChangelogOpen} />
 
+        <Tutorial
+          open={!isChangelogOpen && (tutorialRequested || (!tutorialSeen && currentScreen === 'home'))}
+          onClose={() => {
+            if (!tutorialSeen) void setTutorialSeen(true);
+            setTutorialSeenState(true);
+            setTutorialRequested(false);
+          }}
+          isDark={isDark}
+        />
+
         {/* Screen Rendering */}
         {currentScreen === 'workspace' && analysisDoc.docId ? (
           <ErrorBoundary onGoHome={() => navigate('home', 'push_back')}>
@@ -636,6 +696,10 @@ export default function App() {
               settings={settings}
               isDark={isDark}
               onNavigate={navigate}
+              focusMode={focusOn}
+              onToggleFocus={() => setFocusMode((on) => !on)}
+              themeStore={themeStore}
+              onAddThemes={addImportedThemes}
             />
           </ErrorBoundary>
         ) : currentScreen === 'reader' ? (
@@ -651,6 +715,11 @@ export default function App() {
             docId={analysisDoc.docId}
             annotations={plainTextAnnotations}
             focus={annotationFocus ?? undefined}
+            focusMode={focusOn}
+            onToggleFocus={() => setFocusMode((on) => !on)}
+            themeStore={themeStore}
+            onSpreadChange={(on) => setSettings((prev) => ({ ...prev, readerSpread: on }))}
+            onAddThemes={addImportedThemes}
           />
         ) : (
           <div className="relative flex-1 flex flex-col min-h-screen">
@@ -731,6 +800,7 @@ export default function App() {
                         isDark={isDark}
                         onStorageChanged={() => setLibraryRefreshToken((n) => n + 1)}
                         onOpenChangelog={handleOpenChangelog}
+                        onShowTutorial={() => setTutorialRequested(true)}
                       />
                     )}
 
@@ -753,12 +823,14 @@ export default function App() {
         )}
 
         {/* Persistent Bottom Navigation (mobile only via md:hidden in component) */}
-        <BottomNav
-          currentScreen={currentScreen}
-          onNavigate={navigate}
-          isDark={isDark}
-          hasActiveDocument={hasActiveDocument}
-        />
+        {!focusOn && (
+          <BottomNav
+            currentScreen={currentScreen}
+            onNavigate={navigate}
+            isDark={isDark}
+            hasActiveDocument={hasActiveDocument}
+          />
+        )}
       </div>
 
       {/* Library tab — everything stored on this device, with rename and permanent delete. */}

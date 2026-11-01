@@ -21,8 +21,9 @@ const path = require('path');
 const fs = require('fs');
 const { tryMigrateLibrary } = require('./storage.cjs');
 const { RENDER_PARTITION, guardRenderWindow } = require('./renderGuard.cjs');
-const { requestFlush, createExitGuard } = require('./flushOnExit.cjs');
+const { requestFlush, createExitGuard, flushThenCheckpoint } = require('./flushOnExit.cjs');
 const { aiEnabledIn, registerAiSetting } = require('./aiSetting.cjs');
+const { registerTutorialSetting } = require('./tutorialSetting.cjs');
 
 /**
  * Where the app remembers the user's chosen library folder.
@@ -289,8 +290,9 @@ function createWindow() {
   // Pending debounced saves (marks, notes, reading position) are flushed before the window goes.
   // A quit has already flushed by the time it closes windows, so that close skips the wait.
   const win = mainWindow;
+  // Then the time-spaced mark backups get their "document closed" checkpoint.
   const closeGuard = createExitGuard(
-    () => requestFlush(win.webContents, ipcMain, FLUSH_TIMEOUT_MS),
+    () => flushThenCheckpoint(() => requestFlush(win.webContents, ipcMain, FLUSH_TIMEOUT_MS), checkpointMarkBackups),
     () => quitFlushed
   );
   win.on('close', (event) =>
@@ -443,6 +445,11 @@ ipcMain.handle('marginalia:reset-storage-dir', async () => {
   return { changed: true, path: storeDir, ...(saveError && { error: saveError }) };
 });
 
+// ── Mark backups: checkpoint documents whose changes the 10-minute window skipped ──
+function checkpointMarkBackups() {
+  return serverModule && serverModule.checkpointPendingMarkBackups ? serverModule.checkpointPendingMarkBackups() : null;
+}
+
 // ── AI opt-in: config.json `aiEnabled`, off by default ───────────────────────
 registerAiSetting({
   ipcMain,
@@ -450,6 +457,9 @@ registerAiSetting({
   updateConfig,
   apply: (on) => serverModule && serverModule.setAiEnabled(on)
 });
+
+// ── First-run tutorial: config.json `tutorialSeen` (see electron/tutorialSetting.cjs) ──
+registerTutorialSetting({ ipcMain, readConfig, updateConfig });
 
 // ── App info, for the About section in Settings ───────────────────────────────
 ipcMain.handle('marginalia:app-info', () => ({
@@ -578,7 +588,10 @@ if (!app.requestSingleInstanceLock()) {
 
   // The first quit waits (at most FLUSH_TIMEOUT_MS) for pending saves, then quits for real.
   const quitGuard = createExitGuard(() =>
-    requestFlush(mainWindow && mainWindow.webContents, ipcMain, FLUSH_TIMEOUT_MS).finally(() => {
+    flushThenCheckpoint(
+      () => requestFlush(mainWindow && mainWindow.webContents, ipcMain, FLUSH_TIMEOUT_MS),
+      checkpointMarkBackups
+    ).finally(() => {
       quitFlushed = true;
     })
   );

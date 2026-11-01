@@ -11,6 +11,7 @@ import type { PdfTool } from './annotationModel';
 export const TOOL_HOTKEYS: Partial<Record<PdfTool, string>> = {
   select: 'V',
   highlight: 'H',
+  area: 'A',
   underline: 'U',
   strikeout: 'S',
   note: 'N',
@@ -58,6 +59,11 @@ export function resolveWorkspaceKey(e: KeyLike): WorkspaceKeyAction | null {
   if (/^[1-9]$/.test(e.key)) return { type: 'theme', index: Number(e.key) - 1 };
   const tool = TOOL_BY_LETTER[key];
   return tool ? { type: 'tool', tool } : null;
+}
+
+/** Whether the workspace's Escape did something, so nothing else (focus mode) should act on it. */
+export function escapeConsumes(s: { tool: string; markSelected: boolean; textSelected: boolean }): boolean {
+  return s.tool !== 'select' || s.markSelected || s.textSelected;
 }
 
 /** True when keys typed here are text, so no shortcut may act on them. */

@@ -83,6 +83,8 @@ export interface UserSettings {
   collapsedHomeSections?: Record<string, boolean>;
   /** Whether the desktop sidebar is collapsed to icons-only. */
   sidebarCollapsed?: boolean;
+  /** The text reader's two-page spread (on wide windows), kept across launches. */
+  readerSpread?: boolean;
   /**
    * The app version whose changelog this reader has already seen.
    *

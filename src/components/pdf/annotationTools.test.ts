@@ -6,7 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveWorkspaceKey, isTypingTarget, withShortcut, themeShortcut, popoverTakesTab } from './workspaceKeys';
+import { resolveWorkspaceKey, isTypingTarget, withShortcut, themeShortcut, popoverTakesTab, escapeConsumes } from './workspaceKeys';
 import { placePanel } from './panelPlacement';
 import { visibleNotes, presentKinds, compareReadingOrder, matchesNoteQuery } from './notesFilter';
 import type { Annotation } from './annotationModel';
@@ -21,6 +21,7 @@ test('tool letters map to tools, case-insensitive, without modifiers', () => {
   assert.deepEqual(tools.E, { type: 'tool', tool: 'erase' });
   assert.deepEqual(tools.V, { type: 'tool', tool: 'select' });
   assert.deepEqual(resolveWorkspaceKey({ key: 'H' }), { type: 'tool', tool: 'highlight' });
+  assert.deepEqual(resolveWorkspaceKey({ key: 'a' }), { type: 'tool', tool: 'area' });
   assert.equal(resolveWorkspaceKey({ key: 'h', shiftKey: true }), null);
   assert.equal(resolveWorkspaceKey({ key: 'h', altKey: true }), null);
   assert.equal(resolveWorkspaceKey({ key: 'h', metaKey: true }), null);
@@ -195,4 +196,20 @@ test('placePanel with glyphs: the first line of a paragraph keeps the panel just
   const p = placePanel({ ...glyphView, anchor: { left: 120, top: 400, bottom: 422 }, obstacles: text });
   assert.equal(p.side, 'above');
   assert.equal(p.top, 400 - 8 - 44);
+});
+
+test('in dense text (a two-page spread) it moves sideways to the nearest clear spot rather than cover words', () => {
+  // A full page of lines from x 0 to 700, one every 30px; to the right of it nothing.
+  const lines = Array.from({ length: 28 }, (_, i) => ({ left: 0, right: 700, top: 20 + i * 30, bottom: 40 + i * 30 }));
+  const p = placePanel({ ...view, width: 300, height: 80, anchor: { left: 200, top: 400, bottom: 420 }, obstacles: lines });
+  assert.equal(p.side, 'gap');
+  assert.ok(p.left >= 702, `left ${p.left}`);
+  assert.ok(!lines.some((r) => r.left < p.left + 300 && r.right > p.left && r.top < p.top + 80 && r.bottom > p.top));
+});
+
+test('Escape is consumed only when it puts a tool down or clears a selection (else focus mode may take it)', () => {
+  assert.equal(escapeConsumes({ tool: 'select', markSelected: false, textSelected: false }), false);
+  assert.equal(escapeConsumes({ tool: 'highlight', markSelected: false, textSelected: false }), true);
+  assert.equal(escapeConsumes({ tool: 'select', markSelected: true, textSelected: false }), true);
+  assert.equal(escapeConsumes({ tool: 'select', markSelected: false, textSelected: true }), true);
 });

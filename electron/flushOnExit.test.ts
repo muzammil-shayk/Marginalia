@@ -135,3 +135,21 @@ test('a window close before any quit is still held for the flush', () => {
   closeGuard(event, () => {});
   assert.equal(event.prevented, true);
 });
+
+// ── Mark backup checkpoint after the exit flush ───────────────────────────────
+
+test('flushThenCheckpoint runs the checkpoint after the flush, even when the flush failed', async () => {
+  const { flushThenCheckpoint } = require('./flushOnExit.cjs');
+  const order: string[] = [];
+  await flushThenCheckpoint(async () => { order.push('flush'); return true; }, async () => { order.push('checkpoint'); });
+  await flushThenCheckpoint(async () => { order.push('flush'); throw new Error('x'); }, async () => { order.push('checkpoint'); });
+  assert.deepEqual(order, ['flush', 'checkpoint', 'flush', 'checkpoint']);
+});
+
+test('flushThenCheckpoint answers the flush result; a throwing or stuck checkpoint cannot block exit', async () => {
+  const { flushThenCheckpoint } = require('./flushOnExit.cjs');
+  assert.equal(await flushThenCheckpoint(async () => true, () => { throw new Error('x'); }), true);
+  const t0 = Date.now();
+  assert.equal(await flushThenCheckpoint(async () => false, () => new Promise(() => {}), 50), false);
+  assert.ok(Date.now() - t0 < 1000);
+});

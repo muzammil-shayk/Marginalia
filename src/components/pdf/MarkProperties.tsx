@@ -14,8 +14,8 @@
  * worse than no strip. Delete or Backspace removes the mark (handled by the workspace).
  */
 
-import React from 'react';
-import { Trash2, Pencil } from '../icons';
+import React, { useEffect, useRef, useState } from 'react';
+import { Trash2, Pencil, Quote, Check, Link2, Unlink, ArrowRight } from '../icons';
 import {
   Annotation,
   BracketSide,
@@ -75,6 +75,28 @@ interface MarkPropertiesProps {
   onDelete: () => void;
   /** Clears the selection, which is what takes this strip off the screen. */
   onDismiss: () => void;
+  /** Copies `"quote" (Title, p. N)`; absent for marks without words. Resolves false on failure. */
+  onCopyQuote?: () => Promise<boolean>;
+  /** Linked marks ("see also"): absent where links are not offered. */
+  links?: MarkLinks;
+}
+
+/** One mark as the link menu lists it. */
+export interface LinkOption {
+  id: string;
+  /** The marked words (or the note) shortened. */
+  label: string;
+  /** Where it is: "p. 4", "para. 12". */
+  where: string;
+}
+
+export interface MarkLinks {
+  linked: LinkOption[];
+  /** Every other mark it could be linked to, in reading order. */
+  candidates: LinkOption[];
+  onLink: (id: string) => void;
+  onUnlink: (id: string) => void;
+  onJump: (id: string) => void;
 }
 
 export const MarkProperties: React.FC<MarkPropertiesProps> = ({
@@ -97,8 +119,16 @@ export const MarkProperties: React.FC<MarkPropertiesProps> = ({
   onTextItalicChange,
   onEdit,
   onDelete,
-  onDismiss
+  onDismiss,
+  onCopyQuote,
+  links
 }) => {
+  const [copied, setCopied] = useState<null | boolean>(null);
+  useEffect(() => {
+    if (copied === null) return;
+    const t = window.setTimeout(() => setCopied(null), 1400);
+    return () => window.clearTimeout(t);
+  }, [copied]);
 
   // Highlights fill rather than stroke, so they have no thickness or dash pattern to set.
   const showsStroke = isStroked(mark.kind);
@@ -207,6 +237,23 @@ export const MarkProperties: React.FC<MarkPropertiesProps> = ({
 
       <Divider isDark={isDark} />
 
+      {onCopyQuote && (
+        <button
+          type="button"
+          onClick={() => void onCopyQuote().then(setCopied)}
+          title={copied ? 'Copied with its reference' : copied === false ? 'Could not reach the clipboard' : 'Copy quote with its reference'}
+          aria-label="Copy quote with its reference"
+          className={ICON_BTN}
+        >
+          {copied ? <Check className="w-3.5 h-3.5 text-gold" weight="bold" /> : <Quote className="w-3.5 h-3.5" />}
+        </button>
+      )}
+      {copied && (
+        <span role="status" className="sr-only">
+          Quote copied
+        </span>
+      )}
+      {links && <LinkMenu links={links} isDark={isDark} />}
       {showsText && (
         <button
           type="button"
@@ -229,5 +276,115 @@ export const MarkProperties: React.FC<MarkPropertiesProps> = ({
         <Trash2 className="w-3.5 h-3.5" />
       </button>
     </AnchoredPopover>
+  );
+};
+
+const ICON_BTN =
+  'relative w-7 h-7 flex items-center justify-center rounded-lg text-muted dark:text-paper/70 hover:text-stone-800 dark:hover:text-paper hover:bg-stone-100 dark:hover:bg-nav-hover cursor-pointer';
+
+/**
+ * "Link to…": the marks this one is linked to (jump, unlink), then a filterable list of the
+ * others to link it to. Opens under the strip (above it when the strip sits low).
+ */
+const LinkMenu: React.FC<{ links: MarkLinks; isDark: boolean }> = ({ links, isDark }) => {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [up, setUp] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    setUp((ref.current?.getBoundingClientRect().top ?? 0) > window.innerHeight * 0.55);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      // Closes the menu only; the strip stays.
+      e.stopPropagation();
+      setOpen(false);
+    };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [open]);
+  const q = query.trim().toLowerCase();
+  const linkedIds = new Set(links.linked.map((l) => l.id));
+  const shown = links.candidates.filter((c) => !linkedIds.has(c.id) && (!q || c.label.toLowerCase().includes(q) || c.where.toLowerCase().includes(q)));
+  const row = 'w-full flex items-baseline gap-2 px-2.5 py-1.5 rounded-lg text-left text-[12px] cursor-pointer hover:bg-stone-100 dark:hover:bg-nav-hover';
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        title={links.linked.length ? `Linked marks (${links.linked.length})` : 'Link to another mark'}
+        aria-label={links.linked.length ? `Linked marks (${links.linked.length})` : 'Link to another mark'}
+        className={ICON_BTN}
+      >
+        <Link2 className="w-3.5 h-3.5" />
+        {links.linked.length > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 min-w-3.5 h-3.5 px-0.5 rounded-full bg-gold text-[9px] font-bold leading-[14px] text-white dark:text-night-1 text-center">
+            {links.linked.length}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div
+          role="group"
+          aria-label="Linked marks"
+          className={`absolute right-0 z-10 w-[min(20rem,calc(100vw-24px))] rounded-xl shadow-2xl border p-1.5 ${up ? 'bottom-full mb-2' : 'top-full mt-2'} ${
+            isDark ? 'bg-night-3 border-stone-700 text-paper' : 'bg-white border-stone-200 text-stone-800'
+          }`}
+        >
+          {links.linked.length > 0 && (
+            <>
+              <div className="caps caps-sm text-muted px-2.5 pt-1 pb-0.5">Linked</div>
+              <ul className="mb-1">
+                {links.linked.map((l) => (
+                  <li key={l.id} className="flex items-center gap-1">
+                    <button type="button" onClick={() => links.onJump(l.id)} className={`${row} flex-1 min-w-0`} title="Go to this mark">
+                      <ArrowRight className="w-3 h-3 shrink-0 text-gold self-center" />
+                      <span className="truncate flex-1">{l.label}</span>
+                      <span className="shrink-0 text-[11px] text-muted">{l.where}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => links.onUnlink(l.id)}
+                      aria-label={`Unlink ${l.label}`}
+                      title="Unlink"
+                      className="w-7 h-7 shrink-0 flex items-center justify-center rounded-lg text-muted hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 cursor-pointer"
+                    >
+                      <Unlink className="w-3.5 h-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          <div className="caps caps-sm text-muted px-2.5 pt-1 pb-1">Link to…</div>
+          <input
+            type="text"
+            autoFocus
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Find a mark"
+            aria-label="Find a mark to link"
+            className={`w-full mb-1 px-2.5 py-1.5 rounded-lg text-[12px] border outline-none focus:border-gold ${
+              isDark ? 'bg-night-2 border-stone-700 placeholder:text-paper/50' : 'bg-stone-50 border-stone-200 placeholder:text-stone-500'
+            }`}
+          />
+          <ul className="max-h-52 overflow-y-auto">
+            {shown.length === 0 ? (
+              <li className="px-2.5 py-2 text-[12px] text-muted">{links.candidates.length ? 'No other mark matches.' : 'No other marks yet.'}</li>
+            ) : (
+              shown.map((c) => (
+                <li key={c.id}>
+                  <button type="button" onClick={() => links.onLink(c.id)} className={row}>
+                    <span className="truncate flex-1">{c.label}</span>
+                    <span className="shrink-0 text-[11px] text-muted">{c.where}</span>
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 };

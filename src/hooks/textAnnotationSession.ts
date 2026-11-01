@@ -102,6 +102,22 @@ export function createTextAnnotationSession(deps: {
       publish({ marks, isLoaded: true, canUndo: false, canRedo: false, selectedIds: [] });
     },
 
+    /**
+     * Replaces every mark with a set the server just wrote (a restored backup, an import) and
+     * starts a fresh undo history, as page edits do: Undo must not bring back the set it replaced.
+     * Writes nothing; the caller already saved it.
+     */
+    reset(entries: StoredEntry[]) {
+      if (disposed) return;
+      const { marks, others: rest } = migrateTextEntries(entries);
+      others = rest;
+      history = emptyHistory(marks);
+      publish({ marks, isLoaded: true, canUndo: false, canRedo: false, selectedIds: [] });
+    },
+
+    /** Everything this document stores right now: other entries plus the text marks. */
+    entries: (): StoredEntry[] => [...others, ...(history.present as unknown as StoredEntry[])],
+
     /** Stops taking edits and writes anything pending. Resolves true when nothing is left unsaved. */
     dispose() {
       disposed = true;

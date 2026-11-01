@@ -107,7 +107,8 @@ export function fontStack(font: TextFont | undefined): string {
  *   unlike a highlight's translucent tint — just with its own much thicker default weight and a
  *   default black colour, so a drag actually blots a line out rather than tinting it.
  */
-export type PdfTool = AnnotationKind | 'select' | 'erase' | 'terminology' | 'mask';
+/** `area` drags a rectangle that is stored as a highlight (`utils/areaMark`). */
+export type PdfTool = AnnotationKind | 'select' | 'erase' | 'terminology' | 'mask' | 'area';
 
 export interface FractionPoint {
   x: number;

@@ -64,6 +64,8 @@ export interface Placement {
 
 /** How far the gap search may move a panel from its anchor before giving up. */
 const GAP_REACH = 240;
+/** Horizontal step of the sideways search for a clear spot. */
+const SWEEP_STEP = 24;
 /** Clearance kept between the panel and any glyph. */
 const GLYPH_PAD = 2;
 
@@ -137,6 +139,18 @@ export function placePanel({
     const t =
       up === null ? down : down === null ? up : anchor.top - (up + height) <= down - anchor.bottom ? up : down;
     if (t !== null) return { left, top: t, side: 'gap' };
+    // Dense text straight above and below (a two-page spread): the nearest clear spot to either
+    // side instead, by distance from where the panel wanted to be.
+    let best: { left: number; top: number; d: number } | null = null;
+    for (let l = margin; l <= maxLeft; l += SWEEP_STEP) {
+      for (const ideal of [aboveTop, belowTop]) {
+        const at = nearest(l, ideal, GAP_REACH);
+        if (at === null) continue;
+        const d = Math.abs(l - left) + Math.abs(at - ideal);
+        if (!best || d < best.d) best = { left: l, top: at, d };
+      }
+    }
+    if (best) return { left: best.left, top: best.top, side: 'gap' };
   }
 
   const clearAbove = fitsAbove && !covers(aboveTop);

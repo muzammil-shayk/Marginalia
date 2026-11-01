@@ -63,6 +63,12 @@ export const updateDocument: DocumentBackend['updateDocument'] = (id, params) =>
 export const deleteDocument: DocumentBackend['deleteDocument'] = (id) => getBackend().deleteDocument(id);
 export const sweepExpiredDocuments: DocumentBackend['sweepExpiredDocuments'] = () =>
   getBackend().sweepExpiredDocuments();
+export const listMarkBackups: DocumentBackend['listMarkBackups'] = (id) => getBackend().listMarkBackups(id);
+export const restoreMarkBackup: DocumentBackend['restoreMarkBackup'] = (id, backupId) =>
+  getBackend().restoreMarkBackup(id, backupId);
+export const checkpointMarkBackup: DocumentBackend['checkpointMarkBackup'] = (id) => getBackend().checkpointMarkBackup(id);
+export const checkpointPendingMarkBackups: DocumentBackend['checkpointPendingMarkBackups'] = () =>
+  getBackend().checkpointPendingMarkBackups();
 export const editPdfPages: DocumentBackend['editPdfPages'] = (id, edit) => getBackend().editPdfPages(id, edit);
 export const saveClientSettings: DocumentBackend['saveClientSettings'] = (incoming) =>
   getBackend().saveClientSettings(incoming);

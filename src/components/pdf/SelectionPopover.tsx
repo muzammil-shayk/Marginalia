@@ -11,8 +11,9 @@
  * one (themes on the first, actions on the second). Every action names its shortcut.
  */
 
-import React from 'react';
-import { Highlighter, Underline, Strikethrough, StickyNote, Tag, X } from '../icons';
+import React, { useEffect, useRef, useState } from 'react';
+import { Highlighter, Underline, Strikethrough, StickyNote, Tag, X, Plus, Check, Quote } from '../icons';
+import { THEME_COLOR_PALETTES, nextFreeColor, type ThemeResult } from '../themeStore';
 import { AnnotationKind, REACTION_KINDS, reactionChar } from './annotationModel';
 import { UserSettings } from '../../types';
 import { HoverTooltip } from '../HoverTooltip';
@@ -60,6 +61,10 @@ export interface SelectionPopoverProps {
    * see the selection was never cleared and pop the menu right back open.
    */
   onClose: () => void;
+  /** "+ New theme": files the passage under a theme made right here. Absent, the button is not shown. */
+  onCreateTheme?: (name: string, color: string) => ThemeResult;
+  /** Copies the selection as `"quote" (Title, p. N)`. Resolves false when the clipboard failed. */
+  onCopyQuote?: () => Promise<boolean>;
 }
 
 const ACTIONS: { kind: AnnotationKind; label: string; icon: React.ElementType }[] = [
@@ -115,6 +120,103 @@ export const ThemeDots: React.FC<{
   </>
 );
 
+/**
+ * "+ New theme" inside the pop-over: a name and a colour, then the new theme becomes the active
+ * one. Typing moves the browser's selection into the field, so the passage is kept (the reader
+ * ignores selection changes inside `[data-keep-selection]`) and put back when the field closes.
+ */
+export const ThemeQuickCreate: React.FC<{
+  themes: UserSettings['activeThemes'];
+  isDark: boolean;
+  /** The passage, to put back as the selection when the field closes. */
+  selection: Range | null;
+  onCreate: (name: string, color: string) => ThemeResult;
+  /** Closes the field; `id` is the theme just made, if one was. */
+  onDone: (id?: string) => void;
+}> = ({ themes, isDark, selection, onCreate, onDone }) => {
+  const [name, setName] = useState('');
+  const [color, setColor] = useState(() => nextFreeColor(themes));
+  const [error, setError] = useState<string | null>(null);
+  const saved = useRef(selection);
+  useEffect(
+    () => () => {
+      const range = saved.current;
+      if (!range) return;
+      const now = window.getSelection();
+      now?.removeAllRanges();
+      now?.addRange(range);
+    },
+    []
+  );
+  const submit = () => {
+    const r = onCreate(name, color);
+    if ('error' in r) return setError(r.error);
+    onDone(r.theme.id);
+  };
+
+  return (
+    // One row, in place of the tools while it is open, so the menu stays small enough to sit
+    // clear of the text.
+    <div data-keep-selection className="flex flex-wrap items-center gap-x-1 gap-y-0.5 max-w-[calc(100vw-32px)]">
+        <span className="w-3 h-3 ml-1.5 rounded-full shrink-0 border border-black/10" style={{ backgroundColor: color }} aria-hidden />
+        <input
+          autoFocus
+          value={name}
+          aria-label="New theme name"
+          aria-invalid={Boolean(error)}
+          placeholder="New theme name"
+          onChange={(e) => {
+            setName(e.target.value);
+            setError(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') submit();
+            if (e.key === 'Escape') onDone();
+            // Typing here is text: no shortcut, and Escape closes only this field.
+            e.stopPropagation();
+          }}
+          className={`w-40 min-w-0 h-8 px-2.5 rounded-lg border text-[13px] outline-none focus-visible:ring-1 focus-visible:ring-gold ${
+            isDark ? 'bg-night-1 border-stone-600 text-paper placeholder:text-stone-400' : 'bg-white border-stone-300 text-ink placeholder:text-stone-500'
+          }`}
+        />
+      <div role="radiogroup" aria-label="New theme colour" className="flex items-center">
+        {THEME_COLOR_PALETTES.mindful.map((c) => (
+          <button
+            key={c.hex}
+            type="button"
+            role="radio"
+            aria-checked={color === c.hex}
+            aria-label={c.name}
+            title={c.name}
+            onClick={() => setColor(c.hex)}
+            className="w-7 h-7 flex items-center justify-center rounded-full cursor-pointer"
+          >
+            <span
+              className={`w-4.5 h-4.5 rounded-full border-2 ${color === c.hex ? 'border-stone-800 dark:border-white' : 'border-transparent'}`}
+              style={{ backgroundColor: c.hex }}
+            />
+          </button>
+        ))}
+      </div>
+        <HoverTooltip label="Create theme (Enter)">
+          <button type="button" onClick={submit} aria-label="Create theme" className={`${iconAction} text-gold`}>
+            <Check className="w-4 h-4" weight="bold" />
+          </button>
+        </HoverTooltip>
+        <HoverTooltip label="Cancel (Esc)">
+          <button type="button" onClick={() => onDone()} aria-label="Cancel new theme" className={`${iconAction} text-muted`}>
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </HoverTooltip>
+      {error && (
+        <p role="alert" className="basis-full text-[12px] text-red-700 dark:text-red-300 px-1.5 pb-0.5">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+};
+
 /** A square icon-only action: 32px, the popover's tap target. */
 const iconAction =
   'flex items-center justify-center w-8 h-8 rounded-lg hover:bg-stone-100 dark:hover:bg-nav-hover cursor-pointer';
@@ -135,8 +237,23 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
   onDismiss,
   avoidSelector,
   placementContext,
-  onClose
+  onClose,
+  onCreateTheme,
+  onCopyQuote
 }) => {
+  const [creating, setCreating] = useState(false);
+  const [copied, setCopied] = useState<null | boolean>(null);
+  useEffect(() => {
+    if (copied === null) return;
+    const t = window.setTimeout(() => setCopied(null), 1400);
+    return () => window.clearTimeout(t);
+  }, [copied]);
+  const savedRange = useRef<Range | null>(null);
+  // A menu that closed takes its half-made theme with it.
+  const closed = !anchor;
+  useEffect(() => {
+    if (closed) setCreating(false);
+  }, [closed]);
   // A near-black tool colour would vanish on the dark pill, so its icon turns cream there.
   const glyph = (color: string) => (isDark && isInkOnDark(color) ? 'var(--color-paper)' : color);
 
@@ -148,17 +265,49 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
       onDismiss={onDismiss}
       topInset={topInset}
       bottomInset={bottomInset}
-      measureKey={themes.length}
+      measureKey={`${themes.length}${creating}`}
       avoidSelector={avoidSelector}
       placementContext={placementContext}
       className="gap-x-0.5 gap-y-1 p-1"
     >
+      {onCreateTheme && creating ? (
+        <ThemeQuickCreate
+          themes={themes}
+          isDark={isDark}
+          selection={savedRange.current}
+          onCreate={onCreateTheme}
+          onDone={(id) => {
+            setCreating(false);
+            if (id) onThemeChange(id);
+          }}
+        />
+      ) : (
+        <>
       {themes.length > 0 && (
         // Below 640px the dots and the close button take the first row and the actions the
         // second, so nothing runs off the edge. Row two: 4 tools 128 + reactions 106 + Sticky
         // note 110 = 344 of 366 at 390px; under 360px the note drops its label (266 of 296 at 320).
-        <PopoverGroup className="max-sm:basis-[calc(100%-2.25rem)]">
+        <PopoverGroup className={onCopyQuote ? 'max-sm:basis-[calc(100%-4.5rem)]' : 'max-sm:basis-[calc(100%-2.25rem)]'}>
           <ThemeDots themes={themes} activeThemeId={activeThemeId} onThemeChange={onThemeChange} />
+          {onCreateTheme && (
+            <HoverTooltip label="New theme">
+              <button
+                type="button"
+                onClick={() => {
+                  // Kept now: the name field takes the browser's selection as soon as it mounts.
+                  const sel = window.getSelection();
+                  savedRange.current = sel && sel.rangeCount && !sel.isCollapsed ? sel.getRangeAt(0).cloneRange() : null;
+                  setCreating(true);
+                }}
+                aria-label="New theme"
+                                className="w-7 h-7 shrink-0 flex items-center justify-center rounded-full cursor-pointer text-muted hover:text-ink dark:hover:text-paper hover:bg-stone-100 dark:hover:bg-nav-hover"
+              >
+                <span className="w-5 h-5 rounded-full border border-dashed border-current flex items-center justify-center">
+                  <Plus className="w-3 h-3" weight="bold" />
+                </span>
+              </button>
+            </HoverTooltip>
+          )}
           <PopoverDivider isDark={isDark} className="max-sm:hidden" />
         </PopoverGroup>
       )}
@@ -224,6 +373,28 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
         </HoverTooltip>
       </PopoverGroup>
 
+      {onCopyQuote && (
+        // On a phone it rides on the first row, beside the close button (row two is full).
+        <PopoverGroup className="max-sm:order-1">
+          <PopoverDivider isDark={isDark} className="max-sm:hidden" />
+          <HoverTooltip label={copied ? 'Copied with its reference' : copied === false ? 'Could not reach the clipboard' : 'Copy quote with its reference'}>
+            <button
+              type="button"
+              onClick={() => void onCopyQuote().then(setCopied)}
+              aria-label="Copy quote with its reference"
+              className={iconAction}
+            >
+              {copied ? <Check className="w-4 h-4 text-gold" weight="bold" /> : <Quote className="w-4 h-4" />}
+            </button>
+          </HoverTooltip>
+          {copied && (
+            <span role="status" className="sr-only">
+              Quote copied
+            </span>
+          )}
+        </PopoverGroup>
+      )}
+
       <PopoverGroup className="max-sm:order-1">
         <button
           type="button"
@@ -235,6 +406,8 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
           <X className="w-3.5 h-3.5" />
         </button>
       </PopoverGroup>
+        </>
+      )}
     </AnchoredPopover>
   );
 };

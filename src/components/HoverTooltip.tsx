@@ -52,6 +52,10 @@ export const HoverTooltip: React.FC<{ label: string; children: React.ReactNode; 
       className={`relative inline-flex ${className}`}
       onMouseEnter={() => setTrigger(ref.current?.getBoundingClientRect() ?? null)}
       onMouseLeave={() => setTrigger(null)}
+      // A press answers the question the tooltip asked: close it. The click often re-renders the
+      // bar under a still pointer, so no mouseleave would ever come to close it otherwise.
+      onPointerDownCapture={() => setTrigger(null)}
+      onKeyDownCapture={() => setTrigger(null)}
     >
       {children}
       {trigger &&

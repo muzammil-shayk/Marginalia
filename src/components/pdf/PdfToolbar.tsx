@@ -12,6 +12,7 @@
  */
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
   MousePointer2,
   Highlighter,
@@ -35,6 +36,7 @@ import {
   Maximize2,
   ChevronUp,
   ChevronDown,
+  AreaSelect,
   Download,
   Loader2,
   BookOpen,
@@ -67,11 +69,107 @@ import {
   WeightPicker
 } from './StyleControls';
 import { useDismiss } from './useDismiss';
+import { ArchivePanel, type ArchiveRow } from '../MarksArchive';
 import { UserSettings } from '../../types';
 import { HoverTooltip } from '../HoverTooltip';
 import { TOOL_HOTKEYS, themeShortcut, withShortcut } from './workspaceKeys';
 
 export { NEUTRAL_COLORS, WEIGHT_STEPS } from './StyleControls';
+
+/**
+ * Export: the annotated PDF first, then the marks archive. A fixed panel measured from its
+ * button (the toolbar row scrolls sideways on a phone and would clip an absolute one).
+ */
+const ExportMenu: React.FC<{ onExport: () => void; isExporting: boolean; rows?: ArchiveRow[]; isDark: boolean }> = ({
+  onExport,
+  isExporting,
+  rows,
+  isDark
+}) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  // Portalled: the tools row is masked for its edge fade, and a mask clips even fixed children.
+  useDismiss(ref, open, () => setOpen(false), '[data-export-menu]');
+  useLayoutEffect(() => {
+    if (!open) return setPos(null);
+    const measure = () => {
+      const a = ref.current?.getBoundingClientRect();
+      const m = menuRef.current?.getBoundingClientRect();
+      if (!a || !m) return;
+      const left = Math.max(8, Math.min(a.right - m.width, window.innerWidth - m.width - 8));
+      setPos({ left, top: Math.min(a.bottom + 6, Math.max(8, window.innerHeight - m.height - 8)) });
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [open]);
+  if (!rows) {
+    return (
+      <HoverTooltip label="Export a PDF with your marks embedded as real PDF annotations">
+        <button type="button" onClick={onExport} disabled={isExporting} className={EXPORT_BTN}>
+          {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+          <span className="hidden lg:inline">Export PDF</span>
+        </button>
+      </HoverTooltip>
+    );
+  }
+  return (
+    <div ref={ref} className="relative">
+      <HoverTooltip label="Export the annotated PDF, your marks or a commonplace book">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-haspopup="true"
+          aria-expanded={open}
+          aria-label="Export"
+          className={EXPORT_BTN}
+        >
+          {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+          <span className="hidden lg:inline">Export</span>
+          <ChevronDown className="w-3 h-3 opacity-70" />
+        </button>
+      </HoverTooltip>
+      {open && createPortal(
+        <div
+          ref={menuRef}
+          data-export-menu
+          role="group"
+          aria-label="Export options"
+          className={`fixed z-50 w-[min(26rem,calc(100vw-16px))] max-h-[calc(100vh-16px)] overflow-y-auto rounded-2xl shadow-2xl border ${
+            isDark ? 'bg-night-3 border-stone-700' : 'bg-white border-stone-200'
+          }`}
+          style={{ left: pos?.left ?? 0, top: pos?.top ?? 0, visibility: pos ? 'visible' : 'hidden' }}
+        >
+          <div className="px-3 py-2.5 flex items-center justify-between gap-3 border-b border-stone-200 dark:border-stone-700/70">
+            <div className="min-w-0">
+              <div className="font-bold text-[13px] text-stone-900 dark:text-paper">Annotated PDF</div>
+              <div className="text-[11.5px] text-muted leading-snug">Your marks embedded as real PDF annotations.</div>
+            </div>
+            <button
+              type="button"
+              disabled={isExporting}
+              onClick={() => {
+                onExport();
+                setOpen(false);
+              }}
+              className="shrink-0 rounded-full caps caps-sm px-3 py-1.5 bg-accent text-on-accent hover:bg-accent-hover cursor-pointer disabled:opacity-50"
+            >
+              Save PDF
+            </button>
+          </div>
+          <ArchivePanel rows={rows} compact onAction={() => setOpen(false)} />
+        </div>,
+        // Inside the app container, so the `.dark` theme and its tokens still apply.
+        document.getElementById('app-container') ?? document.body
+      )}
+    </div>
+  );
+};
+
+const EXPORT_BTN =
+  'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold text-stone-700 dark:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer disabled:opacity-50';
 
 interface PdfToolbarProps {
   tool: PdfTool;
@@ -128,6 +226,8 @@ interface PdfToolbarProps {
   markCount: number;
   onExport: () => void;
   isExporting: boolean;
+  /** Markdown, JSON, commonplace book, import and restore (see `MarksArchive`), under Export. */
+  archiveRows?: ArchiveRow[];
   /**
    * The side-panel toggles, rendered at the end of this row.
    *
@@ -147,6 +247,7 @@ const TOOL_GROUPS: { id: PdfTool; label: string; icon: React.ElementType; hint: 
     // drawn. Returning to it is how you stop a drawing tool being armed.
     { id: 'select', label: 'Select', icon: MousePointer2, hint: 'Select text and marks, and drag marks around' },
     { id: 'highlight', label: 'Highlight', icon: Highlighter, hint: 'Select text to highlight it' },
+    { id: 'area', label: 'Area highlight', icon: AreaSelect, hint: 'Drag a box over a figure, table or image to highlight that area' },
     { id: 'underline', label: 'Underline', icon: Underline, hint: 'Select text to underline it' },
     { id: 'strikeout', label: 'Strikeout', icon: Strikethrough, hint: 'Select text to strike it out' },
     {
@@ -306,7 +407,9 @@ const ToolChip: React.FC<{
 
   // Closing on any press outside, and on Escape, is shared with every other floating surface in
   // the workspace — see `useDismiss` for why it listens for pointerdown rather than click.
-  useDismiss(ref, open, () => setOpen(false));
+  // The menu is portalled out of the tools row (its edge-fade mask clips even fixed children),
+  // so presses inside it are declared inside here.
+  useDismiss(ref, open, () => setOpen(false), '[data-chip-menu]');
 
   return (
     // The menu closes only on a press outside or on Escape — never on picking an option, so
@@ -326,9 +429,10 @@ const ToolChip: React.FC<{
         />
       </HoverTooltip>
 
-      {open && (
+      {open && createPortal(
         <div
           ref={menuRef}
+          data-chip-menu
           className={`fixed z-50 p-2 rounded-xl shadow-xl border flex items-center gap-1.5 ${
             isDark ? 'bg-night-3 border-stone-700' : 'bg-white border-stone-200'
           }`}
@@ -387,7 +491,8 @@ const ToolChip: React.FC<{
               <AlignPicker value={textAlign} color={color} onChange={onTextAlignChange} />
             </>
           )}
-        </div>
+        </div>,
+        document.getElementById('app-container') ?? document.body
       )}
     </div>
   );
@@ -453,6 +558,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
   markCount,
   onExport,
   isExporting,
+  archiveRows,
   panelControls,
   compact = false,
   isDark = false
@@ -676,10 +782,11 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
 
         <div className={`w-px h-6 mx-0.5 ${isDark ? 'bg-stone-800' : 'bg-stone-200'}`} />
 
-        <HoverTooltip label={viewMode === 'spread' ? 'Switch to single-page view' : 'Switch to two-page spread view'}>
+        <HoverTooltip label={viewMode === 'spread' ? 'Switch to single-page view' : 'Two-page spread (← → turn pages)'}>
           <button
             type="button"
             onClick={() => onViewModeChange(viewMode === 'spread' ? 'single' : 'spread')}
+            aria-label="Two-page spread"
             aria-pressed={viewMode === 'spread'}
             className={`p-1.5 rounded-lg cursor-pointer ${
               viewMode === 'spread'
@@ -705,17 +812,7 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
 
         <div className={`w-px h-6 mx-0.5 ${isDark ? 'bg-stone-800' : 'bg-stone-200'}`} />
 
-        <HoverTooltip label="Export a PDF with your marks embedded as real PDF annotations">
-          <button
-            type="button"
-            onClick={onExport}
-            disabled={isExporting}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12px] font-semibold text-stone-700 dark:text-stone-200 hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer disabled:opacity-50"
-          >
-            {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            <span className="hidden lg:inline">Export PDF</span>
-          </button>
-        </HoverTooltip>
+        <ExportMenu onExport={onExport} isExporting={isExporting} rows={archiveRows} isDark={isDark} />
 
         {markCount > 0 && (
           <HoverTooltip label="Marks saved on this computer">

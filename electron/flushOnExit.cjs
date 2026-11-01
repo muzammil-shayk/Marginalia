@@ -63,4 +63,30 @@ function createExitGuard(flush, skip = () => false) {
   };
 }
 
-module.exports = { requestFlush, createExitGuard };
+/**
+ * Runs the exit flush, then `checkpoint` (keep a mark backup of every document whose changes the
+ * 10-minute backup window skipped), whatever the flush answered. The checkpoint is bounded by
+ * `timeoutMs` and its errors are swallowed, so it can never block a close or quit. Answers the
+ * flush result.
+ */
+async function flushThenCheckpoint(flush, checkpoint, timeoutMs = 2000) {
+  let ok = false;
+  try {
+    ok = await flush();
+  } catch {
+    ok = false;
+  }
+  let timer;
+  try {
+    await Promise.race([
+      Promise.resolve().then(checkpoint),
+      new Promise((resolve) => (timer = setTimeout(resolve, timeoutMs)))
+    ]);
+  } catch {
+    /* a failed checkpoint must not stop the exit */
+  } finally {
+    clearTimeout(timer);
+  }
+  return ok;
+}
+module.exports = { requestFlush, createExitGuard, flushThenCheckpoint };

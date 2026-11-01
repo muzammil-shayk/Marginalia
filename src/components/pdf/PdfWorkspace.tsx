@@ -10,7 +10,14 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useReadingProgress } from '../../hooks/useReadingProgress';
 import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy } from 'pdfjs-dist';
-import { Loader2, FileWarning, ArrowLeft, PanelRightClose, PanelRightOpen, Check, StickyNote, X, PanelTop, PanelBottom, FileStack } from '../icons';
+import { Loader2, FileWarning, ArrowLeft, PanelRightClose, PanelRightOpen, Check, StickyNote, X, PanelTop, PanelBottom, FileStack, ChevronLeft, ChevronRight } from '../icons';
+import { useReducedMotion } from 'motion/react';
+import { playTurn, snapshotPage, turnDirection, type PageBox } from '../pageTurn';
+import { FocusChrome, FocusExit, FOCUS_HOTKEY } from '../FocusMode';
+import type { ThemeStore } from '../themeStore';
+import { HoverTooltip } from '../HoverTooltip';
+import { Maximize2, Minimize2, Search } from '../icons';
+import { FindBar, FIND_SHORTCUT, useDocumentFind } from '../FindBar';
 import { AnnotationFocus, Screen, TransitionType, UserSettings } from '../../types';
 import {
   Annotation,
@@ -41,13 +48,19 @@ import { NotesList } from './NotesList';
 import { InstanceNavigator } from './InstanceNavigator';
 import { ErrorDialog } from '../ErrorDialog';
 import { SelectionPopover, SelectionAnchor } from './SelectionPopover';
-import { isTypingTarget, resolveWorkspaceKey } from './workspaceKeys';
+import { escapeConsumes, isTypingTarget, resolveWorkspaceKey } from './workspaceKeys';
 import { LiveSelectionOverlay } from './LiveSelectionOverlay';
 import { MarkProperties } from './MarkProperties';
 import { ScrollPageIndicator } from './ScrollPageIndicator';
 import { exportAnnotatedPdf, downloadBlob } from './exportAnnotatedPdf';
+import { archiveRows, copyText, excerpt, useMarksArchive } from '../MarksArchive';
+import type { LinkOption, MarkLinks } from './MarkProperties';
+import { formatQuoteRef } from '../../utils/quoteRef';
+import { linkMarks, linkedIds, unlinkMarks } from '../../utils/markLinks';
+import { isAreaHighlight } from '../../utils/areaMark';
 import {
   deletePage,
+  checkpointMarkBackup,
   fetchAnnotations,
   fetchReadingState,
   insertPage,
@@ -76,6 +89,9 @@ const PDF_WASM_URL = '/pdf-wasm/';
 
 /** How long to wait after the last change before writing to disk. */
 const SAVE_DEBOUNCE_MS = 700;
+
+/** Narrower than this, spread view scrolls its pairs instead of showing one open book. */
+const MIN_BOOK_WIDTH = 700;
 
 /** The zoom a document opens at when nothing was remembered about it yet. */
 const DEFAULT_ZOOM = 1.25;
@@ -145,6 +161,13 @@ interface PdfWorkspaceProps {
   settings: UserSettings;
   isDark?: boolean;
   onNavigate: (screen: Screen, transition?: TransitionType) => void;
+  /** Focus mode: header and toolbar step away (App owns it; F and Escape). */
+  focusMode?: boolean;
+  onToggleFocus?: () => void;
+  /** Themes, for the selection menu's "+ New theme". */
+  themeStore?: ThemeStore;
+  /** Adds the themes a marks import brought with it. */
+  onAddThemes?: (themes: UserSettings['activeThemes']) => void;
 }
 
 export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
@@ -154,7 +177,11 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   resumeReading = false,
   settings,
   isDark = false,
-  onNavigate
+  onNavigate,
+  focusMode = false,
+  onToggleFocus,
+  themeStore,
+  onAddThemes
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
@@ -189,6 +216,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     const pick = (index: number) => themes[index % Math.max(themes.length, 1)]?.color ?? NEUTRAL_COLORS[0];
     return {
       highlight: pick(0),
+      area: pick(0),
       underline: pick(1),
       strikeout: pick(2),
       question: pick(3),
@@ -445,7 +473,8 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   // before navigating away are not lost with the timer. Every load schedules a save and so does
   // every edit (erasing the last mark included), so "pending" covers what the old unconditional
   // write did; a paused saver (marks left pre-renumbering) writes nothing.
-  useEffect(() => () => void saver.flush(), [saver]);
+  // Then keep a mark backup of this visit (the server skips it when nothing changed).
+  useEffect(() => () => void saver.flush().then((ok) => ok && checkpointMarkBackup(docId)), [saver, docId]);
 
   useEffect(() => {
     if (saveState !== 'saved') return;
@@ -828,6 +857,8 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   useEffect(() => {
     /** Reads the live selection into state; `byPointer` is false for a keyboard selection. */
     const sync = (byPointer: boolean) => {
+      // Typing a new theme's name in the selection menu moves the browser's selection; the passage stays.
+      if ((document.activeElement as HTMLElement | null)?.closest('[data-keep-selection]')) return;
       const groups = readSelection();
       if (!groups) {
         // A click that collapses the selection clears it, so a later tool tap does not apply to
@@ -1060,10 +1091,21 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
    * the theme's colour, not just whichever one the reader presses next — the menu has no single
    * "current tool" the way the toolbar has one. Shared by the menu's dots and the number keys.
    */
+  /** A theme made in the selection menu, until settings carry it (the same tick picks it). */
+  const justCreatedTheme = useRef<{ id: string; name: string; color: string } | null>(null);
+  const createSelectionTheme = useCallback(
+    (name: string, color: string) => {
+      const r = themeStore!.create(name, color);
+      if ('theme' in r) justCreatedTheme.current = r.theme;
+      return r;
+    },
+    [themeStore]
+  );
   const chooseSelectionTheme = useCallback(
     (id: string) => {
       setActiveThemeId(id);
-      const theme = settings.activeThemes.find((t) => t.id === id);
+      const theme =
+        settings.activeThemes.find((t) => t.id === id) ?? (justCreatedTheme.current?.id === id ? justCreatedTheme.current : undefined);
       if (theme) {
         (['highlight', 'underline', 'strikeout', 'question', 'star', 'exclamation', 'note'] as const).forEach(
           (kind) => setToolColor(kind, theme.color)
@@ -1098,6 +1140,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       const hasSelection = Boolean(selectionAnchor && pendingSelection?.length);
       switch (action.type) {
         case 'escape':
+          if (escapeConsumes({ tool, markSelected: Boolean(selectedId), textSelected: hasSelection })) e.preventDefault();
           setTool('select');
           setSelectedId(null);
           setSelectionAnchor(null);
@@ -1162,7 +1205,82 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   ]);
 
   // ── Navigation & zoom ──
-  const goToPage = useCallback((page: number) => {
+  /**
+   * The spread as a book: only the open pair is drawn, and moving to another pair turns a leaf
+   * (`pageTurn.ts`). Narrower than two readable pages, spread view keeps its old scrolling pairs.
+   */
+  const reduceMotion = useReducedMotion();
+  const [areaWidth, setAreaWidth] = useState(0);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setAreaWidth(el.clientWidth));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [pdf]);
+  const bookOn = viewMode === 'spread' && areaWidth >= MIN_BOOK_WIDTH;
+  const bookRef = useRef<HTMLDivElement>(null);
+  const turnRef = useRef<{ finish: () => void } | null>(null);
+  useEffect(() => () => turnRef.current?.finish(), []);
+  const pageRef = useRef(currentPage);
+  pageRef.current = currentPage;
+  const turnToPage = (page: number, animate: boolean) => {
+    const from = Math.floor((pageRef.current - 1) / 2);
+    const to = Math.floor((page - 1) / 2);
+    const dir = turnDirection(from, to);
+    pageRef.current = page;
+    setCurrentPage(page);
+    const book = bookRef.current;
+    if (!dir || !book || !animate) return;
+    turnRef.current?.finish();
+    const origin = book.getBoundingClientRect();
+    const pageEl = (n: number) => book.querySelector<HTMLElement>(`[data-page-number="${n}"]`);
+    const boxOf = (el: HTMLElement): PageBox => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left - origin.left, top: r.top - origin.top, width: r.width, height: r.height };
+    };
+    const L = pageEl(2 * from + 1);
+    const R = pageEl(2 * from + 2);
+    if (!L) return;
+    const left = boxOf(L);
+    const right = R ? boxOf(R) : { ...left, left: left.left + left.width };
+    const t = playTurn({
+      layer: book,
+      left,
+      right,
+      dir,
+      front: (dir === 1 ? R : L) ? snapshotPage((dir === 1 ? R : L)!) : null,
+      cover: (dir === 1 ? L : R) ? snapshotPage((dir === 1 ? L : R)!) : null,
+      back: () => {
+        const el = pageEl(dir === 1 ? 2 * to + 1 : 2 * to + 2);
+        return el ? snapshotPage(el) : null;
+      },
+      reduced: Boolean(reduceMotion)
+    });
+    turnRef.current = t;
+  };
+  const bookTurnRef = useRef<((page: number, animate: boolean) => void) | null>(null);
+  bookTurnRef.current = bookOn ? turnToPage : null;
+
+  // Arrow keys and Page Up / Down turn the book; never while typing or in a dialog.
+  useEffect(() => {
+    if (!bookOn) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+      if (isTypingTarget(e.target) || document.querySelector('[aria-modal="true"]')) return;
+      const step = e.key === 'ArrowRight' || e.key === 'PageDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'PageUp' ? -1 : 0;
+      if (!step) return;
+      e.preventDefault();
+      const pair = Math.floor((pageRef.current - 1) / 2) + step;
+      const page = Math.min(pageCount, Math.max(1, pair * 2 + 1));
+      if (page !== pageRef.current) bookTurnRef.current?.(page, true);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [bookOn, pageCount]);
+
+  const goToPage = useCallback((page: number, animate = true) => {
+    if (bookTurnRef.current) return bookTurnRef.current(page, animate);
     scrollRef.current
       ?.querySelector(`[data-page-number="${page}"]`)
       ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1219,7 +1337,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     if (stored && stored.page > 1 && stored.page <= pageCount) {
       // The page elements render synchronously off `pageCount`, but a frame gives layout a
       // moment to settle before `scrollIntoView` measures it.
-      requestAnimationFrame(() => goToPage(stored.page));
+      requestAnimationFrame(() => goToPage(stored.page, false));
     }
   }, [pdf, pageCount, docId, goToPage, resumeReading]);
 
@@ -1252,7 +1370,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     }
     setLayoutSettled(true);
     if (resumeReading && remoteReadingState.page > 1 && remoteReadingState.page <= pageCount) {
-      requestAnimationFrame(() => goToPage(remoteReadingState.page));
+      requestAnimationFrame(() => goToPage(remoteReadingState.page, false));
     }
     // The stored position is left as it is on a fresh open — the reader has not moved yet, and
     // overwriting page 1 over it here would destroy the very position Continue annotating needs.
@@ -1295,6 +1413,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   /** The row gap between two pages in a spread — matches the `gap-5` (1.25rem) the layout below uses. */
   const SPREAD_GAP_PX = 20;
 
+
   /**
    * Switching to spread view without also shrinking the zoom left two full-width pages competing
    * for the window's width — they simply wrapped onto separate lines via `flex-wrap`, so the
@@ -1314,7 +1433,11 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         // one — without that the document stayed at the shrunken spread zoom, half the size of
         // the window, and the reader had to zoom back by hand.
         const usable = container.clientWidth - 48;
-        const fit = mode === 'spread' ? (usable - SPREAD_GAP_PX) / (2 * unscaled.width) : usable / unscaled.width;
+        // The book shows one pair at a time, so the pair fits the height too (40: the area's padding).
+        const fit =
+          mode === 'spread'
+            ? Math.min((usable - SPREAD_GAP_PX) / (2 * unscaled.width), (container.clientHeight - 40) / unscaled.height)
+            : usable / unscaled.width;
         setScale(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, fit)));
       });
     },
@@ -1407,6 +1530,11 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
    * silently is what lets the caller try again on the next frame.
    */
   const scrollToAnnotation = useCallback((a: Annotation): boolean => {
+    // In the book, a mark on another pair turns there first; the caller retries once it is drawn.
+    if (bookTurnRef.current && Math.floor((a.page - 1) / 2) !== Math.floor((pageRef.current - 1) / 2)) {
+      bookTurnRef.current(a.page, true);
+      return false;
+    }
     const container = scrollRef.current;
     const pageEl = container?.querySelector<HTMLElement>(`[data-page-number="${a.page}"]`);
     // A page that has not been measured yet still has a height — `PdfPage` gives it a 60vh
@@ -1489,6 +1617,85 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       setIsExporting(false);
     }
   }, [fileUrl, annotations, documentTitle, settings.terminologyColor]);
+
+  // ── Find in document (Cmd+F) ──
+  /** Each page's text-layer string, read from pdf.js the first time find opens on this file. */
+  const [pageTexts, setPageTexts] = useState<string[] | null>(null);
+  useEffect(() => setPageTexts(null), [pdf]);
+  const pageTextLayer = (i: number) =>
+    scrollRef.current?.querySelector(`[data-page-number="${i + 1}"] .marginalia-text-layer`) ?? null;
+  const find = useDocumentFind({
+    enabled: Boolean(pdf) && !editingId,
+    units: pageTexts,
+    unitElement: pageTextLayer,
+    root: () => scrollRef.current,
+    startUnit: () => currentPage - 1,
+    reveal: (i, range) => {
+      const box = scrollRef.current?.getBoundingClientRect();
+      if (!range || !box) return goToPage(i + 1);
+      const r = range.getBoundingClientRect();
+      if (r.top >= box.top + 24 && r.bottom <= box.bottom - 72 && r.left >= box.left && r.right <= box.right) return;
+      scrollRef.current!.scrollBy({
+        top: r.top - (box.top + box.bottom) / 2,
+        left: r.right > box.right || r.left < box.left ? r.left - (box.left + box.right) / 2 : 0,
+        behavior: reduceMotion ? 'auto' : 'smooth'
+      });
+    }
+  });
+  useEffect(() => {
+    if (!find.open || pageTexts || !pdf) return;
+    let cancelled = false;
+    void Promise.all(
+      Array.from({ length: pdf.numPages }, (_, i) =>
+        pdf
+          .getPage(i + 1)
+          .then((page) => page.getTextContent())
+          // A line end is a space, as the text layer's <br> is read back (findHighlight.ts).
+          .then((tc) => tc.items.map((it) => ('str' in it ? it.str + (it.hasEOL ? ' ' : '') : '')).join(''))
+          .catch(() => '')
+      )
+    ).then((texts) => !cancelled && setPageTexts(texts));
+    return () => {
+      cancelled = true;
+    };
+  }, [find.open, pageTexts, pdf]);
+
+  // ── Linked marks ──
+  const linkOption = (a: Annotation): LinkOption => ({
+    id: a.id,
+    label: excerpt(a.quote || a.text || (isAreaHighlight(a) ? 'Area highlight' : a.kind)),
+    where: `p. ${a.page}`
+  });
+  const markLinksFor = (id: string): MarkLinks => {
+    const linked = new Set(linkedIds(annotations, id));
+    const ordered = [...annotations].sort((x, y) => x.page - y.page);
+    return {
+      linked: ordered.filter((a) => linked.has(a.id)).map(linkOption),
+      candidates: ordered.filter((a) => a.id !== id).map(linkOption),
+      onLink: (other) => setAnnotations((prev) => linkMarks(prev, id, other)),
+      onUnlink: (other) => setAnnotations((prev) => unlinkMarks(prev, id, other)),
+      onJump: (other) => {
+        const target = annotations.find((a) => a.id === other);
+        if (!target) return;
+        setSelectedId(other);
+        scrollToAnnotation(target);
+      }
+    };
+  };
+
+  // ── Marks archive (Markdown/JSON, commonplace book, import, restore) ──
+  const annotationsRef = useRef(annotations);
+  annotationsRef.current = annotations;
+  const archive = useMarksArchive({
+    docId,
+    doc: { id: docId, title: documentTitle || 'document', format: 'PDF' },
+    entries: () => annotationsRef.current as never,
+    themes: settings.activeThemes,
+    saver,
+    reset: (entries) => resetAnnotations(entries as unknown as Annotation[]),
+    onAddThemes: (t) => onAddThemes?.(t),
+    isDark
+  });
 
   // ── Insert page ──
   const [insertPageMenuOpen, setInsertPageMenuOpen] = useState(false);
@@ -1632,7 +1839,10 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   const editing = editingId ? annotations.find((a) => a.id === editingId) : undefined;
   // The viewer's top edge: popovers above a passage must not climb over the toolbar. Read at
   // render, which every popover move already causes (anchor and mark rect are state).
-  const popoverTopInset = scrollRef.current?.getBoundingClientRect().top ?? 0;
+  // In focus mode the toolbar slides over the page when called, so menus keep clear of where it lands.
+  const popoverTopInset = focusMode
+    ? (document.querySelector<HTMLElement>('.focus-chrome')?.offsetHeight ?? 0)
+    : (scrollRef.current?.getBoundingClientRect().top ?? 0);
 
   return (
     <div
@@ -1641,6 +1851,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       }`}
     >
       <header
+        hidden={focusMode}
         // `app-drag`: the desktop build has no system title bar, so this header is what the
         // window is moved by. Its own buttons opt out — see `.app-drag` in index.css.
         className={`app-drag flex items-center gap-3 px-4 py-2.5 border-b shrink-0 ${
@@ -1674,6 +1885,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         </span>
       </header>
 
+      <FocusChrome focus={focusMode} selecting={Boolean(pendingSelection?.length || selectedId)}>
       <PdfToolbar
         // The expanded sidebar takes 220px off this row, which is what forced the tools together.
         // With it collapsed there is room to breathe, so the tools get their ordinary spacing back
@@ -1681,6 +1893,16 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         compact={!settings.sidebarCollapsed}
         panelControls={
           <>
+            <button
+              type="button"
+              onClick={find.open ? find.close : find.openFind}
+              title={`Find in document (${FIND_SHORTCUT})`}
+              aria-label="Find in document"
+              aria-pressed={find.open}
+              className={`p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer ${find.open ? 'text-gold dark:text-gold' : 'text-muted'}`}
+            >
+              <Search className="w-4 h-4" />
+            </button>
             <button
               type="button"
               onClick={() => setIsPanelOpen(!isPanelOpen)}
@@ -1699,6 +1921,20 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
                 weight={isPanelOpen ? 'fill' : 'regular'}
               />
             </button>
+            {onToggleFocus && (
+              <HoverTooltip label={focusMode ? `Leave focus mode (${FOCUS_HOTKEY} or Esc)` : `Focus mode (${FOCUS_HOTKEY})`}>
+                <button
+                  type="button"
+                  onClick={onToggleFocus}
+                  aria-label={focusMode ? `Leave focus mode (${FOCUS_HOTKEY})` : `Focus mode (${FOCUS_HOTKEY})`}
+                  aria-keyshortcuts={FOCUS_HOTKEY}
+                  aria-pressed={focusMode}
+                  className={`p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer ${focusMode ? 'text-gold dark:text-gold' : 'text-muted'}`}
+                >
+                  {focusMode ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                </button>
+              </HoverTooltip>
+            )}
           </>
         }
         tool={tool}
@@ -1751,8 +1987,16 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         markCount={annotations.length}
         onExport={() => void handleExport()}
         isExporting={isExporting}
+        archiveRows={archiveRows(archive, annotations.length)}
         isDark={isDark}
       />
+      {find.open && (
+        <div className={`shrink-0 px-3 py-1.5 border-b ${isDark ? 'bg-night-2 border-stone-800' : 'bg-white border-stone-200'}`}>
+          <FindBar find={find} isDark={isDark} />
+        </div>
+      )}
+      </FocusChrome>
+      {focusMode && onToggleFocus && <FocusExit onExit={onToggleFocus} isDark={isDark} />}
 
       <div className="flex-1 flex min-h-0 min-w-0">
         <div
@@ -1812,6 +2056,41 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
             // Spread groups pages two to a row, like an open book — everything else about a page
             // (its own AnnotationLayer, its own coordinate space) is unaffected by how it's laid
             // out among its neighbours, so this is purely a container change.
+            if (bookOn) {
+              const first = Math.floor((currentPage - 1) / 2) * 2 + 1;
+              const pair = [first, first + 1].filter((n) => n <= pageCount);
+              return (
+                <div className="flex items-center justify-center gap-1 min-h-full">
+                  <button
+                    type="button"
+                    data-inline
+                    className="spread-edge"
+                    onClick={() => goToPage(first - 2)}
+                    disabled={first <= 1}
+                    aria-label="Previous pages (Left arrow)"
+                    title="Previous pages (←)"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+                  <div ref={bookRef} className="spread-book flex items-start" style={{ marginInline: 0 }}>
+                    {pair.map(renderPage)}
+                    {pair.length === 2 && <div className="spread-gutter" aria-hidden />}
+                  </div>
+                  <button
+                    type="button"
+                    data-inline
+                    className="spread-edge"
+                    onClick={() => goToPage(first + 2)}
+                    disabled={first + 2 > pageCount}
+                    aria-label="Next pages (Right arrow)"
+                    title="Next pages (→)"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </div>
+              );
+            }
+
             if (viewMode === 'spread') {
               const pairs: number[][] = [];
               for (let i = 0; i < pageNumbers.length; i += 2) pairs.push(pageNumbers.slice(i, i + 2));
@@ -1861,6 +2140,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       </div>
 
       <ErrorDialog open={Boolean(failure)} message={failure ?? ''} onClose={() => setFailure(null)} />
+      {archive.ui}
 
       {/* Stepping through the marks the reader came here to find. Reads from live annotation
           state, so marking or erasing while it is open changes the run under it. */}
@@ -1912,6 +2192,8 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
           // mark selected — and its strip floating over the page — after the reader had visibly
           // moved on was the single most persistent annoyance in the editor.
           onDismiss={() => setSelectedId(null)}
+          onCopyQuote={selectedMark.quote ? () => copyText(formatQuoteRef(selectedMark.quote!, documentTitle, { kind: 'page', page: selectedMark.page })) : undefined}
+          links={markLinksFor(selectedMark.id)}
         />
       )}
 
@@ -1928,6 +2210,15 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
           themes={settings.activeThemes}
           activeThemeId={activeThemeId}
           onThemeChange={chooseSelectionTheme}
+          onCreateTheme={themeStore ? createSelectionTheme : undefined}
+          onCopyQuote={
+            pendingSelection?.length
+              ? () =>
+                  copyText(
+                    formatQuoteRef(pendingSelection.map((g) => g.quote).join(' '), documentTitle, { kind: 'page', page: pendingSelection[0].page })
+                  )
+              : undefined
+          }
           onMark={(kind) => {
             if (isReaction(kind)) {
               createReactionForSelection(kind);

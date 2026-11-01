@@ -8,12 +8,14 @@
  * where on their own disk the documents live.
  */
 
-import React, { useCallback, useEffect, useState } from 'react';
-import { ChevronDown, Plus, Sparkles, X, Check, Palette, Droplet, HardDrive, FolderOpen, Loader2, Info, RotateCcw, DownloadCloud, AlertTriangle, Scale, ExternalLink, Tag } from './icons';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { ChevronDown, Plus, Sparkles, X, Check, Droplet, HardDrive, FolderOpen, Loader2, Info, RotateCcw, DownloadCloud, AlertTriangle, Scale, ExternalLink, Tag } from './icons';
 import { Screen, TransitionType, UserSettings } from '../types';
 import privacyText from '../../PRIVACY.md?raw';
 import termsText from '../../TERMS.md?raw';
 import { markManualUpdateCheck } from './UpdatePrompt';
+import { ThemeManager } from './ThemeManager';
+import { localThemeStore } from './themeStore';
 import {
   AppInfo,
   StorageInfo,
@@ -38,41 +40,9 @@ interface SettingsScreenProps {
   onStorageChanged?: () => void;
   /** Opens the What's New changelog modal. */
   onOpenChangelog?: () => void;
+  /** Opens the first-run picture tour again. */
+  onShowTutorial?: () => void;
 }
-
-// Curated harmonious color palettes for active themes
-export const THEME_COLOR_PALETTES = {
-  mindful: [
-    { name: 'Warm Terracotta', hex: '#e06d53' },
-    { name: 'Golden Ochre', hex: '#d97706' },
-    { name: 'Sage Leaf', hex: '#52796f' },
-    { name: 'Deep Spruce', hex: '#2d6a4f' },
-    { name: 'Oxford Slate', hex: '#3b5a70' },
-    { name: 'Plum Velvet', hex: '#7209b7' },
-    { name: 'Cedar Red', hex: '#bc4749' },
-    { name: 'Dusty Indigo', hex: '#5e60ce' },
-  ],
-  vibrant: [
-    { name: 'Rose Blossom', hex: '#f43f5e' },
-    { name: 'Sky Azure', hex: '#0284c7' },
-    { name: 'Emerald Forest', hex: '#059669' },
-    { name: 'Royal Violet', hex: '#7c3aed' },
-    { name: 'Amber Sun', hex: '#d97706' },
-    { name: 'Teal Ocean', hex: '#0d9488' },
-    { name: 'Crimson Wine', hex: '#be123c' },
-    { name: 'Iris Blue', hex: '#4f46e5' },
-  ],
-  soft: [
-    { name: 'Soft Coral', hex: '#f87171' },
-    { name: 'Mint Herb', hex: '#4ade80' },
-    { name: 'Sky Blue', hex: '#38bdf8' },
-    { name: 'Lilac Bloom', hex: '#c084fc' },
-    { name: 'Buttercup', hex: '#fbbf24' },
-    { name: 'Peach Blush', hex: '#fb923c' },
-    { name: 'Seafoam Teal', hex: '#2dd4bf' },
-    { name: 'Lavender', hex: '#a78bfa' },
-  ]
-};
 
 /** Shown when the folder switched but main could not write it to config.json. */
 const SAVE_FAILED_NOTICE =
@@ -90,7 +60,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   onNavigate,
   isDark = false,
   onStorageChanged,
-  onOpenChangelog
+  onOpenChangelog,
+  onShowTutorial
 }) => {
   const bridge = desktopBridge();
   const [storage, setStorage] = useState<StorageInfo | null>(null);
@@ -229,82 +200,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
   const [expandedLegalDoc, setExpandedLegalDoc] = useState<'privacy' | 'terms' | null>(null);
 
-  const [isAddingTheme, setIsAddingTheme] = useState(false);
-  const [editingThemeId, setEditingThemeId] = useState<string | null>(null);
-  const [newThemeName, setNewThemeName] = useState('');
-  const [newThemeColor, setNewThemeColor] = useState('#52796f');
-  const [selectedPaletteTab, setSelectedPaletteTab] = useState<'mindful' | 'vibrant' | 'soft'>('mindful');
-  /** A theme being renamed inline, and the draft text for it — separate from `editingThemeId`
-   *  (the colour editor), since the two can't sensibly be open at once but are triggered
-   *  independently. */
-  const [renamingThemeId, setRenamingThemeId] = useState<string | null>(null);
-  const [draftThemeName, setDraftThemeName] = useState('');
-
-  const handleAddTheme = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newThemeName.trim()) return;
-    onUpdateSettings((prev) => ({
-      ...prev,
-      activeThemes: [
-        ...prev.activeThemes,
-        {
-          id: Date.now().toString(),
-          name: newThemeName.trim(),
-          color: newThemeColor
-        }
-      ]
-    }));
-    setNewThemeName('');
-    setIsAddingTheme(false);
-  };
-
-  const handleUpdateThemeColor = (id: string, color: string) => {
-    onUpdateSettings((prev) => ({
-      ...prev,
-      activeThemes: prev.activeThemes.map((t) =>
-        t.id === id ? { ...t, color } : t
-      )
-    }));
-    setEditingThemeId(null);
-  };
-
-  /**
-   * A theme the reader has asked twice to remove.
-   *
-   * Removing one used to happen on a single click of a small X, and marks reference a theme by
-   * id — so every mark filed under it silently stopped being counted anywhere while still sitting
-   * on the page. Worth a confirmation, and worth saying how much is filed under it first.
-   */
-  const [confirmingRemoveTheme, setConfirmingRemoveTheme] = useState<string | null>(null);
-
-  const handleRemoveTheme = (id: string) => {
-    onUpdateSettings((prev) => ({
-      ...prev,
-      activeThemes: prev.activeThemes.filter((t) => t.id !== id)
-    }));
-    if (editingThemeId === id) setEditingThemeId(null);
-    setConfirmingRemoveTheme(null);
-  };
-
-  const startRenamingTheme = (id: string, currentName: string) => {
-    setRenamingThemeId(id);
-    setDraftThemeName(currentName);
-  };
-
-  /**
-   * Only ever touches `name` — every mark now references a theme by `id`, never by name, so
-   * renaming here can never orphan a tag the way it would have before that migration.
-   */
-  const commitThemeRename = () => {
-    const id = renamingThemeId;
-    const name = draftThemeName.trim();
-    setRenamingThemeId(null);
-    if (!id || !name) return;
-    onUpdateSettings((prev) => ({
-      ...prev,
-      activeThemes: prev.activeThemes.map((t) => (t.id === id ? { ...t, name } : t))
-    }));
-  };
+  const themeStore = useMemo(() => localThemeStore(settings.activeThemes, onUpdateSettings), [settings.activeThemes, onUpdateSettings]);
 
   /**
    * The reader's own ink colours.
@@ -807,320 +703,8 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
       </section>
 
-      {/* ACTIVE THEMES Section */}
-      <section
-        id="settings-active-themes-section"
-        className={`p-5 rounded-2xl border transition-all ${
-          isDark
-            ? 'bg-night-3 border-stone-800 text-stone-100'
-            : 'bg-white border-stone-200/80 text-stone-900 shadow-xs'
-        }`}
-      >
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-muted" />
-            <span className="caps text-muted">
-              ACTIVE THEMES
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsAddingTheme(true)}
-            className="text-[12px] font-semibold text-gold dark:text-stone-300 hover:text-stone-900 dark:hover:text-white flex items-center gap-1 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>New</span>
-          </button>
-        </div>
-
-        {/* Theme Pills / List */}
-        <div className="space-y-2.5">
-          {settings.activeThemes.map((theme) => {
-            const isEditingThis = editingThemeId === theme.id;
-            return (
-              <div
-                key={theme.id}
-                className={`p-2.5 rounded-xl border transition-all ${
-                  isEditingThis
-                    ? isDark
-                      ? 'bg-night-4 border-gold'
-                      : 'bg-paper-2 border-gold'
-                    : isDark
-                      ? 'bg-night-1 border-stone-800/80 hover:border-stone-700'
-                      : 'bg-stone-50 border-stone-200/80 hover:bg-stone-100/70'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    {/* Clickable color dot to change color */}
-                    <button
-                      type="button"
-                      onClick={() => setEditingThemeId(isEditingThis ? null : theme.id)}
-                      className="group relative cursor-pointer"
-                      title="Click to choose a new color"
-                    >
-                      <span
-                        className="w-4 h-4 rounded-full shrink-0 block border border-black/10 transition-transform group-hover:scale-125 shadow-xs"
-                        style={{ backgroundColor: theme.color }}
-                      />
-                    </button>
-                    <div>
-                      {renamingThemeId === theme.id ? (
-                        <input
-                          type="text"
-                          autoFocus
-                          value={draftThemeName}
-                          onChange={(e) => setDraftThemeName(e.target.value)}
-                          onBlur={commitThemeRename}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') { e.preventDefault(); commitThemeRename(); }
-                            if (e.key === 'Escape') setRenamingThemeId(null);
-                          }}
-                          className={`text-[14px] font-medium px-1.5 py-0.5 -mx-1.5 rounded-md border outline-none focus-visible:ring-1 focus-visible:ring-gold ${
-                            isDark
-                              ? 'bg-night-3 border-stone-600 text-stone-100'
-                              : 'bg-white border-stone-300 text-stone-900'
-                          }`}
-                        />
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => startRenamingTheme(theme.id, theme.name)}
-                          title="Click to rename"
-                          className="text-[14px] text-stone-800 dark:text-stone-200 font-medium block text-left cursor-pointer hover:underline decoration-dotted underline-offset-2"
-                        >
-                          {theme.name}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setEditingThemeId(isEditingThis ? null : theme.id)}
-                      className="p-1 rounded-lg text-muted hover:text-stone-700 dark:hover:text-stone-200 transition-colors"
-                      title="Change theme color"
-                    >
-                      <Palette className="w-3.5 h-3.5" />
-                    </button>
-                    {confirmingRemoveTheme === theme.id ? (
-                      <span className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveTheme(theme.id)}
-                          className="px-2 py-0.5 rounded-lg text-[11px] font-semibold text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/40 cursor-pointer"
-                        >
-                          Remove
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setConfirmingRemoveTheme(null)}
-                          className="px-2 py-0.5 rounded-lg text-[11px] text-muted hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
-                        >
-                          Keep
-                        </button>
-                      </span>
-                    ) : (
-                      <button
-                        type="button"
-                        // The last theme cannot go: `mergeSettings` restores the three defaults
-                        // for an empty list on the next launch, so removing it only looks like it
-                        // worked until the app restarts.
-                        disabled={settings.activeThemes.length <= 1}
-                        onClick={() => setConfirmingRemoveTheme(theme.id)}
-                        className="p-1 rounded-lg text-muted hover:text-red-500 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-default disabled:hover:text-stone-400"
-                        aria-label={`Remove ${theme.name}`}
-                        title={
-                          settings.activeThemes.length <= 1
-                            ? 'At least one theme is needed'
-                            : `Remove ${theme.name}`
-                        }
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
-                </div>
-
-                {/* Inline Color Palette Picker for existing theme */}
-                {isEditingThis && (
-                  <div className="mt-3 pt-3 border-t border-stone-200 dark:border-stone-700/60 space-y-2.5 animate-in fade-in duration-150">
-                    <div className="flex items-center justify-between text-[11px] text-muted">
-                      <span className="caps">Choose Theme Color</span>
-                      <button
-                        type="button"
-                        onClick={() => setEditingThemeId(null)}
-                        className="text-muted hover:text-stone-700 dark:hover:text-white"
-                      >
-                        Done
-                      </button>
-                    </div>
-
-                    {/* Palette category tabs */}
-                    <div className="flex items-center gap-1 p-0.5 bg-black/5 dark:bg-white/5 rounded-lg text-[11px]">
-                      {(['mindful', 'vibrant', 'soft'] as const).map((tab) => (
-                        <button
-                          key={tab}
-                          type="button"
-                          onClick={() => setSelectedPaletteTab(tab)}
-                          className={`flex-1 py-1 rounded-md capitalize font-medium transition-all ${
-                            selectedPaletteTab === tab
-                              ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-paper shadow-2xs font-semibold'
-                              : 'text-muted hover:text-stone-800 dark:hover:text-stone-300'
-                          }`}
-                        >
-                          {tab}
-                        </button>
-                      ))}
-                    </div>
-
-                    {/* Swatches grid */}
-                    <div className="grid grid-cols-4 gap-2 pt-1">
-                      {THEME_COLOR_PALETTES[selectedPaletteTab].map((c) => {
-                        const isCurrent = theme.color.toLowerCase() === c.hex.toLowerCase();
-                        return (
-                          <button
-                            key={c.hex}
-                            type="button"
-                            onClick={() => handleUpdateThemeColor(theme.id, c.hex)}
-                            className={`flex flex-col items-center gap-1 p-1.5 rounded-lg border transition-all cursor-pointer ${
-                              isCurrent
-                                ? 'border-gold bg-gold/10 ring-1 ring-gold'
-                                : 'border-transparent hover:bg-black/5 dark:hover:bg-white/5'
-                            }`}
-                          >
-                            <span
-                              className="w-5 h-5 rounded-full shadow-xs flex items-center justify-center border border-black/10"
-                              style={{ backgroundColor: c.hex }}
-                            >
-                              {isCurrent && <Check className="w-3 h-3 text-white drop-shadow-xs" />}
-                            </span>
-                            <span className="text-[9px] text-stone-600 dark:text-stone-300 truncate max-w-full font-medium">
-                              {c.name}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        {/* Add Theme Form with Palette Selection */}
-        {isAddingTheme && (
-          <form onSubmit={handleAddTheme} className="mt-4 pt-4 border-t border-stone-200 dark:border-stone-700/60 space-y-3.5 animate-in fade-in duration-150">
-            <div>
-              <label className="caps text-muted block mb-1">
-                New Theme Name
-              </label>
-              <input
-                type="text"
-                placeholder="e.g., Epistemological Models, Ethics..."
-                value={newThemeName}
-                onChange={(e) => setNewThemeName(e.target.value)}
-                className={`w-full border rounded-xl px-3.5 py-2 text-[13px] focus:outline-none focus:ring-1 focus:ring-gold ${
-                  isDark
-                    ? 'bg-night-5 border-stone-700 text-paper placeholder-stone-500'
-                    : 'bg-stone-50 border-stone-300 text-stone-900 placeholder-stone-400'
-                }`}
-                autoFocus
-                required
-              />
-            </div>
-
-            {/* Choose from Color Palettes */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="caps text-muted">
-                  Select Theme Palette Color
-                </label>
-                <div className="flex items-center gap-1.5">
-                  <span
-                    className="w-3.5 h-3.5 rounded-full border border-black/10 shrink-0"
-                    style={{ backgroundColor: newThemeColor }}
-                  />
-                  <input
-                    type="color"
-                    value={newThemeColor}
-                    onChange={(e) => setNewThemeColor(e.target.value)}
-                    className="w-5 h-5 rounded cursor-pointer border-0 bg-transparent p-0"
-                    title="Custom color picker"
-                  />
-                </div>
-              </div>
-
-              {/* Palette category tabs */}
-              <div className="flex items-center gap-1 p-0.5 bg-black/5 dark:bg-white/5 rounded-lg text-[11px]">
-                {(['mindful', 'vibrant', 'soft'] as const).map((tab) => (
-                  <button
-                    key={tab}
-                    type="button"
-                    onClick={() => setSelectedPaletteTab(tab)}
-                    className={`flex-1 py-1 rounded-md capitalize font-medium transition-all ${
-                      selectedPaletteTab === tab
-                        ? 'bg-white dark:bg-stone-700 text-stone-900 dark:text-paper shadow-2xs font-semibold'
-                        : 'text-muted hover:text-stone-800 dark:hover:text-stone-300'
-                    }`}
-                  >
-                    {tab}
-                  </button>
-                ))}
-              </div>
-
-              {/* Color Swatches Grid */}
-              <div className="grid grid-cols-4 gap-1.5">
-                {THEME_COLOR_PALETTES[selectedPaletteTab].map((c) => {
-                  const isSelected = newThemeColor.toLowerCase() === c.hex.toLowerCase();
-                  return (
-                    <button
-                      key={c.hex}
-                      type="button"
-                      onClick={() => setNewThemeColor(c.hex)}
-                      className={`flex flex-col items-center gap-1 p-1.5 rounded-xl border transition-all cursor-pointer ${
-                        isSelected
-                          ? 'border-gold bg-gold/10 ring-1 ring-gold'
-                          : 'border-stone-200/60 dark:border-stone-800 bg-white/60 dark:bg-stone-800/40 hover:bg-stone-100 dark:hover:bg-stone-800'
-                      }`}
-                    >
-                      <span
-                        className="w-5 h-5 rounded-full shadow-xs flex items-center justify-center border border-black/10"
-                        style={{ backgroundColor: c.hex }}
-                      >
-                        {isSelected && <Check className="w-3 h-3 text-white drop-shadow-xs" />}
-                      </span>
-                      <span className="text-[9px] text-stone-700 dark:text-stone-300 truncate max-w-full font-medium">
-                        {c.name}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-200 dark:border-stone-700/60">
-              <button
-                type="button"
-                onClick={() => setIsAddingTheme(false)}
-                className="px-3 py-1.5 text-[12px] font-medium text-muted hover:text-stone-800 dark:hover:text-white transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-1.5 bg-accent caps hover:bg-accent-hover text-on-accent font-semibold text-[12px] rounded-full shadow-xs transition-colors flex items-center gap-1"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Save Theme</span>
-              </button>
-            </div>
-          </form>
-        )}
-      </section>
+      {/* THEMES: list, create, rename, recolour, delete (ThemeManager). */}
+      <ThemeManager store={themeStore} isDark={isDark} />
 
       {/* UPDATES — checks a GitHub release feed and installs in place; the library and every
           setting live outside the app's install directory, so a new build never touches them. */}
@@ -1277,8 +861,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   What's New
                 </button>
               )}
+
             </div>
           </div>
+          {onShowTutorial && (
+            <div className="flex items-center justify-between">
+              <span className="text-stone-600 dark:text-stone-400">Picture tour</span>
+              <button
+                type="button"
+                onClick={onShowTutorial}
+                className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-stone-100 hover:bg-stone-200 dark:bg-stone-800 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 transition-colors cursor-pointer active:scale-95"
+              >
+                Show tutorial
+              </button>
+            </div>
+          )}
           {appInfo && (
             <div className="flex items-center justify-between">
               <span className="text-stone-600 dark:text-stone-400">Platform</span>

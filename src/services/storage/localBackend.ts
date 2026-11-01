@@ -9,6 +9,7 @@
  * Layout:
  *   {STORE_ROOT}/documents/{id}.json   metadata + extracted text + annotations
  *   {STORE_ROOT}/originals/{id}{ext}   the raw uploaded file
+ *   {STORE_ROOT}/backups/{id}/{ms}.json up to 5 time-spaced mark backups (see keepMarkBackup)
  */
 
 import fs from 'fs/promises';
@@ -18,9 +19,11 @@ import crypto from 'crypto';
 import {
   DocumentBackend,
   DocumentMeta,
+  MarkBackupInfo,
   PdfPageEditInput,
   PdfPageEditOutput,
   SaveDocumentParams,
+  StoredAnnotation,
   StoredDocument,
   UpdateDocumentParams,
   buildMeta,
@@ -36,6 +39,7 @@ import {
   safeExtension
 } from './types';
 import { migrateTextEntries } from '../../utils/textMarks';
+import { pruneLinks } from '../../utils/markLinks';
 
 /** Writes a file and fsyncs it before returning, so a later rename never exposes unflushed bytes. */
 async function writeDurable(target: string, data: string | Uint8Array): Promise<void> {
@@ -72,6 +76,13 @@ function parseRecord(raw: string): Partial<StoredDocument> {
 /** Page-edit leftovers and temp files that sit beside an original but are never the original. */
 const AUXILIARY_ORIGINAL = /\.(prev|next|tmp)$/;
 
+/** How many rotating mark backups each document keeps. */
+const MARK_BACKUPS = 5;
+/** A save makes a new backup only when the newest one is at least this old. */
+const BACKUP_SPACING_MS = 10 * 60 * 1000;
+const BACKUP_ID = /^\d{13,}$/;
+const BACKUP_FILE = /^\d{13,}\.json$/;
+
 /** Lock key for settings.json; ids are 32 hex chars, so this can never collide with one. */
 const SETTINGS_LOCK = 'settings';
 
@@ -82,13 +93,19 @@ export class LocalDocumentBackend implements DocumentBackend {
   private originalsDir: string;
 
   private settingsPath: string;
+  private backupsDir: string;
 
-  constructor(storeRoot?: string) {
+  /** Documents whose marks changed inside the backup window and are not backed up yet. */
+  private pendingBackups = new Set<string>();
+
+  /** `clock` is injectable so tests can step past the backup window. */
+  constructor(storeRoot?: string, private clock: () => number = Date.now) {
     const root = storeRoot ? path.resolve(storeRoot) : path.join(process.cwd(), '.marginalia-store');
     this.location = root;
     this.docsDir = path.join(root, 'documents');
     this.originalsDir = path.join(root, 'originals');
     this.settingsPath = path.join(root, 'settings.json');
+    this.backupsDir = path.join(root, 'backups');
     this.name = `local disk (${root})`;
   }
 
@@ -404,6 +421,15 @@ export class LocalDocumentBackend implements DocumentBackend {
     const updated = this.applyUpdate(doc, params);
     await this.keepLegacyCopy(doc);
     await this.write(updated);
+    // After the write: a failed save never rotates a backup in. A failed backup does not fail the
+    // save that already landed; it is logged, and the document stays pending for a checkpoint.
+    if (JSON.stringify(updated.annotations) !== JSON.stringify(doc.annotations)) {
+      const outcome = await this.keepMarkBackup(id, doc.annotations, false).catch((err) => {
+        console.error(`[Marginalia] could not keep a mark backup for ${id}`, err);
+        return 'failed' as const;
+      });
+      if (outcome === 'too-soon' || outcome === 'failed') this.pendingBackups.add(id);
+    }
 
     const { text, annotations: _a, analysis, annotationsBackup: _b, pendingOriginal: _p, textStyles: _s, ...rest } = updated;
     return rest;
@@ -423,9 +449,12 @@ export class LocalDocumentBackend implements DocumentBackend {
 
   /** The record after `params` is applied, including the shrink backup. Pure; writes nothing. */
   private applyUpdate(doc: StoredDocument, params: UpdateDocumentParams): StoredDocument {
+    // A link to a mark that is gone is dropped, so a survivor never points at nothing.
     const annotations = params.restoreAnnotationsBackup
       ? doc.annotationsBackup?.annotations ?? doc.annotations
-      : params.annotations ?? doc.annotations;
+      : params.annotations
+        ? pruneLinks(params.annotations as (StoredAnnotation & { links?: string[] })[])
+        : doc.annotations;
 
     /**
      * Keep the set we are about to replace, whenever the replacement is smaller.
@@ -495,6 +524,7 @@ export class LocalDocumentBackend implements DocumentBackend {
     const original = await this.findOriginalPath(id);
     if (original) await unlink(original);
     for (const suffix of ['prev', 'next']) await unlink(path.join(this.originalsDir, `${id}.${suffix}`));
+    await fs.rm(this.backupDir(id), { recursive: true, force: true });
     return deleted;
   }
 
@@ -529,6 +559,112 @@ export class LocalDocumentBackend implements DocumentBackend {
     }
 
     return removed;
+  }
+
+  // ── Rotating mark backups: backups/{id}/{ms}.json = { savedAt, annotations } ──
+
+  private backupDir(id: string): string {
+    return path.join(this.backupsDir, id);
+  }
+
+  /** Backup file names, newest first. */
+  private async backupNames(id: string): Promise<string[]> {
+    const names = await fs.readdir(this.backupDir(id)).catch(() => [] as string[]);
+    return names.filter((n) => BACKUP_FILE.test(n)).sort((a, b) => Number.parseInt(b) - Number.parseInt(a));
+  }
+
+  /**
+   * Keeps `annotations` as the newest backup and drops all but the newest MARK_BACKUPS. Never an
+   * empty set or one equal to the newest backup. Unless `force`, only when the newest backup is
+   * at least BACKUP_SPACING_MS old, so 5 backups span a session rather than the last 5 autosaves.
+   * Inside the document's lock; after a successful record write (or before a restore).
+   */
+  private async keepMarkBackup(
+    id: string,
+    annotations: StoredAnnotation[],
+    force: boolean
+  ): Promise<'kept' | 'unchanged' | 'too-soon'> {
+    if (annotations.length === 0) return 'unchanged';
+    const [newest] = await this.backupNames(id);
+    if (newest) {
+      const newestId = newest.replace(/\.json$/, '');
+      const previous = await this.readMarkBackup(id, newestId);
+      if (previous && JSON.stringify(previous.annotations) === JSON.stringify(annotations)) return 'unchanged';
+      if (!force && this.clock() - Number(newestId) < BACKUP_SPACING_MS) return 'too-soon';
+    }
+    const dir = this.backupDir(id);
+    await fs.mkdir(dir, { recursive: true });
+    let ms = this.clock();
+    while (existsSync(path.join(dir, `${ms}.json`))) ms++;
+    await writeFileAtomic(path.join(dir, `${ms}.json`), JSON.stringify({ savedAt: new Date(ms).toISOString(), annotations }));
+    for (const old of (await this.backupNames(id)).slice(MARK_BACKUPS)) await fs.rm(path.join(dir, old), { force: true });
+    return 'kept';
+  }
+
+  /**
+   * The document was closed or left: keep its live marks as a backup if they changed since the
+   * newest one (the window is ignored). True when a backup was written.
+   */
+  checkpointMarkBackup(id: string): Promise<boolean> {
+    if (!isValidId(id)) return Promise.resolve(false);
+    return this.withLock(id, async () => {
+      const doc = await this.getDocument(id);
+      if (!doc) return false;
+      const kept = (await this.keepMarkBackup(id, doc.annotations, true)) === 'kept';
+      this.pendingBackups.delete(id);
+      return kept;
+    });
+  }
+
+  /** Checkpoints every document whose changes the window skipped (app quit). Returns how many were kept. */
+  async checkpointPendingMarkBackups(): Promise<number> {
+    let kept = 0;
+    for (const id of [...this.pendingBackups]) {
+      try {
+        if (await this.checkpointMarkBackup(id)) kept++;
+      } catch (err) {
+        console.error(`[Marginalia] could not checkpoint marks of ${id}`, err);
+      }
+    }
+    return kept;
+  }
+
+  private async readMarkBackup(id: string, backupId: string): Promise<{ savedAt: string; annotations: StoredAnnotation[] } | null> {
+    try {
+      const parsed = JSON.parse(await fs.readFile(path.join(this.backupDir(id), `${backupId}.json`), 'utf-8'));
+      if (!parsed || !Array.isArray(parsed.annotations)) return null;
+      return { savedAt: String(parsed.savedAt ?? new Date(Number(backupId)).toISOString()), annotations: parsed.annotations };
+    } catch {
+      return null;
+    }
+  }
+
+  /** This document's mark backups, newest first. */
+  async listMarkBackups(id: string): Promise<MarkBackupInfo[]> {
+    if (!isValidId(id)) return [];
+    const list: MarkBackupInfo[] = [];
+    for (const name of await this.backupNames(id)) {
+      const backupId = name.replace(/\.json$/, '');
+      const backup = await this.readMarkBackup(id, backupId);
+      if (backup) list.push({ id: backupId, savedAt: backup.savedAt, markCount: countMarks(backup.annotations) });
+    }
+    return list;
+  }
+
+  /**
+   * Puts a backup's marks back as the live set. The set that was live is backed up first, window
+   * or not, so the restore can be undone the same way; if that backup cannot be written, nothing
+   * is restored (it throws). Null when the document or the backup is missing.
+   */
+  restoreMarkBackup(id: string, backupId: string): Promise<DocumentMeta | null> {
+    if (!isValidId(id) || !BACKUP_ID.test(backupId)) return Promise.resolve(null);
+    return this.withLock(id, async () => {
+      const backup = await this.readMarkBackup(id, backupId);
+      const doc = await this.getDocument(id);
+      if (!backup || !doc) return null;
+      await this.keepMarkBackup(id, doc.annotations, true);
+      return this.updateDocumentLocked(id, { annotations: backup.annotations });
+    });
   }
 
   async getSettings(): Promise<Record<string, unknown> | null> {
