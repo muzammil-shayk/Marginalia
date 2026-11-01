@@ -129,3 +129,70 @@ test('Tab enters a popover only from the page or from nowhere, never from the to
   assert.equal(popoverTakesTab({ ...base, inSurface: true, typing: true }), false);
   assert.equal(popoverTakesTab({ ...base, inSurface: true, inPopover: true }), false);
 });
+
+test('a tooltip centred on a control at the window edge is clamped inside it', () => {
+  // "Hide marks panel" at the right edge of a 1440 window, and a swatch at the left of a 320 one.
+  const right = placePanel({ anchor: { left: 1440 - 20 - 45, top: 120, bottom: 150 }, width: 90, height: 18, viewportWidth: 1440, viewportHeight: 900, gap: 6 });
+  assert.equal(right.left, 1440 - 8 - 90);
+  assert.equal(right.side, 'above');
+  const left = placePanel({ anchor: { left: 12 - 40, top: 300, bottom: 320 }, width: 80, height: 18, viewportWidth: 320, viewportHeight: 640, gap: 6 });
+  assert.equal(left.left, 8);
+  // No room above the window's top row: it drops below the control instead.
+  const top = placePanel({ anchor: { left: 100, top: 4, bottom: 28 }, width: 80, height: 18, viewportWidth: 320, viewportHeight: 640, gap: 6 });
+  assert.equal(top.side, 'below');
+  assert.equal(top.top, 34);
+});
+
+// Glyph-aware placement: lines of text 31.5px apart, glyphs 22px tall (the reader at 18px/1.75).
+const lines = (from: number, n: number, left = 100, right = 700) =>
+  Array.from({ length: n }, (_, i) => ({ left, right, top: from + i * 31.5, bottom: from + i * 31.5 + 22 }));
+const glyphView = { width: 400, height: 44, viewportWidth: 1440, viewportHeight: 900 };
+const hits = (p: { left: number; top: number }, rects: { left: number; right: number; top: number; bottom: number }[]) =>
+  rects.some((r) => r.left < p.left + 400 && r.right > p.left && r.top < p.top + 44 && r.bottom > p.top);
+
+test('placePanel with glyphs: the margin lane wins, level with the line, and covers no text', () => {
+  const text = lines(300, 10);
+  const anchor = { left: 120, top: 363, bottom: 385 };
+  const p = placePanel({ ...glyphView, anchor, obstacles: text, lane: { left: 724, right: 1424 } });
+  assert.equal(p.side, 'lane');
+  assert.equal(p.left, 724);
+  assert.equal(p.top, 357);
+});
+
+test('placePanel with glyphs: a note card in the lane pushes the panel to the nearest clear spot', () => {
+  const card = { left: 724, right: 964, top: 330, bottom: 420 };
+  const p = placePanel({
+    ...glyphView,
+    anchor: { left: 120, top: 363, bottom: 385 },
+    obstacles: lines(300, 10),
+    lane: { left: 724, right: 1424 },
+    avoid: [card]
+  });
+  assert.equal(p.side, 'lane');
+  assert.ok(p.top + 44 <= card.top || p.top >= card.bottom);
+});
+
+test('placePanel with glyphs: inside a block of text it never lands on a line', () => {
+  // Two stanzas with a 90px gap between them; the selection is mid-stanza two.
+  const text = [...lines(200, 4), ...lines(200 + 3 * 31.5 + 22 + 90, 4)];
+  const anchor = { left: 120, top: text[5].top, bottom: text[5].bottom };
+  const p = placePanel({ ...glyphView, anchor, obstacles: text });
+  assert.equal(p.side, 'gap');
+  assert.ok(!hits(p, text));
+});
+
+test('placePanel with glyphs: on a phone it docks on the bottom nav before hunting for a gap', () => {
+  const view = { width: 374, height: 76, viewportWidth: 390, viewportHeight: 844 };
+  const text = lines(150, 20, 20, 370);
+  const dock = { left: 0, right: 390, top: 765, bottom: 844 };
+  const p = placePanel({ ...view, anchor: { left: 20, top: text[6].top, bottom: text[6].bottom }, obstacles: text, dock });
+  assert.equal(p.side, 'dock');
+  assert.ok(p.top >= dock.top && p.top + 76 <= dock.bottom);
+});
+
+test('placePanel with glyphs: the first line of a paragraph keeps the panel just above it', () => {
+  const text = lines(400, 3);
+  const p = placePanel({ ...glyphView, anchor: { left: 120, top: 400, bottom: 422 }, obstacles: text });
+  assert.equal(p.side, 'above');
+  assert.equal(p.top, 400 - 8 - 44);
+});

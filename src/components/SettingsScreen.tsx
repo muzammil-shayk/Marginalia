@@ -20,11 +20,14 @@ import {
   UpdateStatus,
   desktopBridge,
   fetchGeminiConfig,
+  getAiEnabled,
+  setAiEnabled,
   saveGeminiConfig,
   type GeminiConfig,
   fetchStorageInfo,
   listStoredDocuments
 } from '../utils/documentStorage';
+import { plural } from '../utils/plural';
 
 interface SettingsScreenProps {
   settings: UserSettings;
@@ -109,9 +112,21 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
   const [geminiSaving, setGeminiSaving] = useState(false);
   const [geminiSaved, setGeminiSaved] = useState(false);
 
+  /** AI features are opt-in, off by default (kept in the desktop shell's config). */
+  const [aiOn, setAiOn] = useState(false);
+  const [aiSaving, setAiSaving] = useState(false);
   useEffect(() => {
-    void fetchGeminiConfig().then(setGeminiConfig);
+    void getAiEnabled().then(setAiOn);
   }, []);
+  // Nothing about the key is asked for while AI is off.
+  useEffect(() => {
+    if (aiOn) void fetchGeminiConfig().then(setGeminiConfig);
+  }, [aiOn]);
+  const toggleAi = async () => {
+    setAiSaving(true);
+    setAiOn(await setAiEnabled(!aiOn));
+    setAiSaving(false);
+  };
 
   const persistGeminiConfig = useCallback(
     async (options?: { clear?: boolean }) => {
@@ -184,7 +199,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           result.error === 'config-save-failed'
             ? SAVE_FAILED_NOTICE
             : result.moved
-            ? `Moved ${result.moved} file${result.moved === 1 ? '' : 's'} to the new folder.`
+            ? `Moved ${plural(result.moved, 'file')} to the new folder.`
             : 'Storage folder changed.'
         );
       }
@@ -367,7 +382,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
       </section>
 
-      {/* AI ANALYSIS — the one feature that needs a key, and the only place to put one. */}
+      {/* AI FEATURES — optional and off by default; the key is asked for only once they are on. */}
       <section
         id="settings-ai-section"
         className={`p-5 rounded-2xl border transition-all ${
@@ -379,14 +394,41 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         <div className="flex items-center gap-1.5 mb-4">
           <Sparkles className="w-3.5 h-3.5 text-muted" />
           <span className="caps text-muted">
-            AI ANALYSIS
+            AI FEATURES (OPTIONAL)
           </span>
         </div>
 
-        <div className="space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <div className="max-w-prose">
+            <h4 className="text-[13px] font-medium text-stone-900 dark:text-paper">AI features</h4>
+            <p className="text-[12px] text-muted leading-snug">
+              Off by default. Marginalia works fully without them, and nothing is sent anywhere.
+            </p>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={aiOn}
+            aria-label="AI features"
+            disabled={aiSaving}
+            onClick={() => void toggleAi()}
+            className={`w-11 h-6 shrink-0 rounded-full transition-colors relative cursor-pointer disabled:opacity-60 ${
+              aiOn ? 'bg-gold' : 'bg-stone-300 dark:bg-stone-700'
+            }`}
+          >
+            <span
+              className={`w-5 h-5 rounded-full shadow-xs absolute top-0.5 transition-transform ${
+                aiOn ? 'right-0.5 bg-paper dark:bg-night' : 'left-0.5 bg-white dark:bg-stone-300'
+              }`}
+            />
+          </button>
+        </div>
+
+        {aiOn && (
+        <div className="space-y-3 pt-4 mt-4 border-t border-stone-200 dark:border-stone-700/50">
           <p className="text-[12.5px] text-stone-600 dark:text-stone-400 leading-relaxed max-w-prose">
-            Thematic analysis needs a Google Gemini key. It is stored on this computer, beside your
-            library, and is sent to Google only when you press the analyse button.{' '}
+            AI features need a Google Gemini key. It is stored on this computer, beside your
+            library, and is sent to Google only when you press an AI button.{' '}
             Create a free one at{' '}
             <span className="font-mono text-[12px] text-stone-800 dark:text-stone-200">
               aistudio.google.com/apikey
@@ -405,7 +447,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                   ? geminiConfig.source === 'environment'
                     ? 'A key is set in this machine’s environment.'
                     : 'A key is saved on this computer.'
-                  : 'No key set — analysis is unavailable.'}
+                  : 'No key set.'}
             </span>
           </div>
 
@@ -471,6 +513,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
             {geminiSaved && <span className="text-[12px] text-gold dark:text-gold">Saved</span>}
           </div>
         </div>
+        )}
       </section>
 
       {/* STORAGE — where documents actually live on disk. */}
@@ -506,7 +549,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
 
           {libraryStats && (
             <p className="text-[12px] text-muted">
-              {libraryStats.count} document{libraryStats.count === 1 ? '' : 's'} ·{' '}
+              {plural(libraryStats.count, 'document')} ·{' '}
               {formatBytes(libraryStats.bytes)} of original files
             </p>
           )}
@@ -833,7 +876,7 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
                             if (e.key === 'Enter') { e.preventDefault(); commitThemeRename(); }
                             if (e.key === 'Escape') setRenamingThemeId(null);
                           }}
-                          className={`text-[14px] font-medium px-1.5 py-0.5 -mx-1.5 rounded-md border outline-none ${
+                          className={`text-[14px] font-medium px-1.5 py-0.5 -mx-1.5 rounded-md border outline-none focus-visible:ring-1 focus-visible:ring-gold ${
                             isDark
                               ? 'bg-night-3 border-stone-600 text-stone-100'
                               : 'bg-white border-stone-300 text-stone-900'

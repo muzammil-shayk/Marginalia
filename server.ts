@@ -19,8 +19,10 @@ import {
 } from "./src/services/documentStore";
 import { insertBlankPages, removePdfPage, PageEditError } from "./src/services/pdfPages";
 import { sanitizeImportHtml } from "./src/services/htmlSanitize";
-import { publicSettings } from "./src/services/storage/types";
-import analyzerRouter from "./src/services/analyzer";
+import { publicSettings, nextReadingProgress, cleanTitle } from "./src/services/storage/types";
+import { documentParamsFromBody } from "./src/services/documentInput";
+import geminiConfigRouter from "./src/services/geminiConfig";
+import { setAiEnabled } from "./src/services/aiGate";
 import { wordWindow, markSearchHits } from "./searchSnippet";
 
 /**
@@ -29,6 +31,9 @@ import { wordWindow, markSearchHits } from "./searchSnippet";
  * module's surface and the change-folder action fails at runtime.
  */
 export { setStoreDirectory };
+
+/** The desktop shell passes the saved AI opt-in here (electron/aiSetting.cjs). Off until it does. */
+export { setAiEnabled };
 
 const app = express();
 
@@ -98,8 +103,8 @@ app.use("/api", (req, res, next) => {
 app.use(express.json({ limit: "200mb" }));
 
 // Health check endpoint
-/** Gemini-backed thematic analysis of a stored PDF. See `src/services/analyzer.ts`. */
-app.use("/api", analyzerRouter);
+/** Gemini key settings, refused while the AI opt-in is off. See `src/services/geminiConfig.ts`. */
+app.use("/api", geminiConfigRouter);
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
@@ -168,17 +173,13 @@ app.put(
  */
 app.post("/api/documents", express.json({ limit: "50mb" }), async (req, res) => {
   try {
-    const { title, text, format, filename } = req.body || {};
-    if (!text || typeof text !== "string" || !text.trim()) {
-      res.status(400).json({ error: "Document text is required." });
+    // Pasted custom text arrives with `layout: 'verbatim'` (and optional clipboard `html`).
+    const params = documentParamsFromBody(req.body);
+    if ("error" in params) {
+      res.status(400).json({ error: params.error });
       return;
     }
-    const meta = await saveDocument({
-      title: title || "Untitled Document",
-      text,
-      format: format || "TXT",
-      filename
-    });
+    const meta = await saveDocument(params);
     res.json({ ...meta, retentionDays: RETENTION_DAYS });
   } catch (error: any) {
     console.error("Document save failed:", error);
@@ -379,7 +380,9 @@ app.get("/api/documents/:id", async (req, res) => {
     res.status(404).json({ error: "Document not found. It may have passed its retention window." });
     return;
   }
-  res.json(doc);
+  // A thematic analysis saved before 2.5.0 stays on disk but is no longer sent.
+  const { analysis: _analysis, ...sent } = doc;
+  res.json(sent);
 });
 
 /** Content types for the formats the workspace can render in place rather than download. */
@@ -421,14 +424,14 @@ app.get("/api/documents/:id/original", async (req, res) => {
   res.send(original.buffer);
 });
 
-/** Renames a stored document. Used by the library panel's edit action. */
+/** Renames a stored document (any document, pasted custom text included). Used by the library's edit action. */
 app.patch("/api/documents/:id", async (req, res) => {
-  const { title } = req.body || {};
-  if (typeof title !== "string" || !title.trim()) {
+  const title = cleanTitle(req.body?.title);
+  if (!title) {
     res.status(400).json({ error: "A non-empty title is required." });
     return;
   }
-  const meta = await updateDocument(req.params.id, { title: title.slice(0, 300) });
+  const meta = await updateDocument(req.params.id, { title });
   if (!meta) {
     res.status(404).json({ error: "Document not found." });
     return;
@@ -533,6 +536,25 @@ app.put("/api/documents/:id/reading-state", async (req, res) => {
     return;
   }
   res.json({ saved: true });
+});
+
+/**
+ * How far the reader has got: `{ position, total }` in the reader's own unit (PDF page of pages,
+ * text paragraph of paragraphs). The store keeps the furthest point; the library list shows it as
+ * `progressPercent`. Not library activity, so `updatedAt` is unchanged.
+ */
+app.put("/api/documents/:id/progress", async (req, res) => {
+  const report = { position: req.body?.position, total: req.body?.total };
+  if (!nextReadingProgress(null, report)) {
+    res.status(400).json({ error: "position and total must be numbers, total > 0, position >= 0." });
+    return;
+  }
+  const meta = await updateDocument(req.params.id, { readingProgress: report });
+  if (!meta) {
+    res.status(404).json({ error: "Document not found." });
+    return;
+  }
+  res.json({ progressPercent: meta.progressPercent });
 });
 
 /**

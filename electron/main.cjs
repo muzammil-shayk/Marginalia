@@ -22,6 +22,7 @@ const fs = require('fs');
 const { tryMigrateLibrary } = require('./storage.cjs');
 const { RENDER_PARTITION, guardRenderWindow } = require('./renderGuard.cjs');
 const { requestFlush, createExitGuard } = require('./flushOnExit.cjs');
+const { aiEnabledIn, registerAiSetting } = require('./aiSetting.cjs');
 
 /**
  * Where the app remembers the user's chosen library folder.
@@ -254,6 +255,8 @@ async function startEmbeddedServer() {
 
   serverModule = require(serverPath);
   serverModule.setHtmlToPdfRenderer(renderPdfWithElectron);
+  // The AI opt-in, off unless saved as on (see electron/aiSetting.cjs).
+  serverModule.setAiEnabled(aiEnabledIn(readConfig()));
   return serverModule.startServer({ staticRoot: DIST_PATH });
 }
 
@@ -438,6 +441,14 @@ ipcMain.handle('marginalia:reset-storage-dir', async () => {
   serverModule?.setStoreDirectory(storeDir);
   const saveError = await persistStoreDir(undefined);
   return { changed: true, path: storeDir, ...(saveError && { error: saveError }) };
+});
+
+// ── AI opt-in: config.json `aiEnabled`, off by default ───────────────────────
+registerAiSetting({
+  ipcMain,
+  readConfig,
+  updateConfig,
+  apply: (on) => serverModule && serverModule.setAiEnabled(on)
 });
 
 // ── App info, for the About section in Settings ───────────────────────────────

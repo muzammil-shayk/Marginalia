@@ -39,7 +39,7 @@ export const BottomNav: React.FC<BottomNavProps> = ({
   }> = [
     {
       id: 'home',
-      label: 'Library',
+      label: 'My Collections',
       icon: BookOpen,
       screen: 'home',
       transition: 'push_back',

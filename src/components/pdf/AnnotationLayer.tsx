@@ -16,6 +16,7 @@ import { Lock, Unlock } from '../icons';
 import {
   Annotation,
   BOX_KINDS,
+  highlightOpacity,
   BracketSide,
   DEFAULT_NOTE_SIZE,
   DEFAULT_TEXT_SIZE,
@@ -1194,9 +1195,9 @@ export const TextMarkLayer: React.FC<{
                 // see `terminologyColor`'s doc comment above.
                 backgroundColor: a.isTerminology ? terminologyColor : a.color,
                 // Multiply keeps the page's own text legible through the tint, which a flat
-                // opaque fill greys out.
+                // opaque fill greys out. Muted colours are laid down harder (`highlightOpacity`).
                 mixBlendMode: 'multiply',
-                opacity: strong ? 0.62 : 0.38,
+                opacity: highlightOpacity(a.isTerminology ? terminologyColor : a.color, strong),
                 borderRadius: 2
               }}
             />

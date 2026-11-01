@@ -15,6 +15,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { AnimatePresence, animate, motion, useReducedMotion } from 'motion/react';
 import { documentThumbnail } from '../utils/documentThumbnail';
 import { fetchDocumentText, type StoredDocumentMeta } from '../utils/documentStorage';
+import { plural } from '../utils/plural';
 
 export function monogram(title: string): string {
   const words = title.replace(/[^\p{L}\p{N}\s]/gu, ' ').trim().split(/\s+/).filter(Boolean);
@@ -25,6 +26,18 @@ export function monogram(title: string): string {
 export const formatBytes = (bytes: number) =>
   !bytes ? '—' : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(0)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 
+/** Page one's paragraphs. A verbatim paste (a poem) keeps its line breaks and stanza gaps as one
+    pre-wrap block; other text is one paragraph per line, whitespace collapsed. */
+export function pageParagraphs(text: string, layout?: 'verbatim'): string[] {
+  // A page shows ~15 lines of ~45 characters; 1200 is plenty.
+  const head = text.slice(0, 1200).replace(/\r\n?/g, '\n');
+  if (layout === 'verbatim') return [head.replace(/^\s*\n/, '').trimEnd()].filter(Boolean);
+  return head
+    .split('\n')
+    .map((p) => p.replace(/\s+/g, ' ').trim())
+    .filter(Boolean);
+}
+
 /* The opening paragraphs of a document without a rendered page, set as its page one. One local read
    per book and edit (no network, no AI), kept for the session; a failed read is not kept. */
 const openings = new Map<string, Promise<string[] | null>>();
@@ -34,12 +47,7 @@ function openingParagraphs(doc: StoredDocumentMeta): Promise<string[] | null> {
   let work = openings.get(key);
   if (!work) {
     work = fetchDocumentText(doc.id).then((text) => {
-      // A page shows ~15 lines of ~45 characters; 1200 is plenty.
-      const paras = text
-        ?.slice(0, 1200)
-        .split(/\r?\n/)
-        .map((p) => p.replace(/\s+/g, ' ').trim())
-        .filter(Boolean);
+      const paras = text == null ? null : pageParagraphs(text, doc.layout);
       if (!paras?.length) openings.delete(key);
       return paras?.length ? paras : null;
     });
@@ -73,7 +81,7 @@ export const DocumentCover: React.FC<{ doc: StoredDocumentMeta; className?: stri
         <img src={src} alt="" className="absolute inset-0 h-full w-full object-cover object-top bg-white select-none pointer-events-none" />
       ) : (
         paras && (
-          <div className="shelf-page-text">
+          <div className="shelf-page-text" data-verbatim={doc.layout === 'verbatim' || undefined}>
             {paras.map((p, i) => (
               <p key={i}>{p}</p>
             ))}
@@ -85,16 +93,21 @@ export const DocumentCover: React.FC<{ doc: StoredDocumentMeta; className?: stri
   );
 };
 
-/** Cloth colours for spines: base, ink, and the painted band near the foot. */
-const CLOTHS = [
-  { base: '#e0603c', ink: '#fff4e8', band: '#a83a22' },
-  { base: '#2f9c8a', ink: '#f6efe2', band: '#1d6b5e' },
-  { base: '#7440ab', ink: '#fbefff', band: '#c4412f' },
-  { base: '#efe6d4', ink: '#1b1a18', band: '#d9a441' },
-  { base: '#161616', ink: '#f3efe7', band: '#b8452a' },
-  { base: '#3e7d5c', ink: '#f3efe7', band: '#24533b' },
-  { base: '#c4412f', ink: '#fff0e6', band: '#6a3797' },
-  { base: '#3a4fc4', ink: '#f3efe7', band: '#23338f' }
+/**
+ * Cloth colours for spines: base, ink, and the painted band near the foot. One muted pastel
+ * family (low chroma, close in lightness) so the shelf reads as a single quiet set in either
+ * theme; the warm near-black ink keeps every title at 4.5:1 or more on base and band
+ * (checked in Bookshelf.test.ts).
+ */
+export const CLOTHS = [
+  { name: 'sage', base: '#bcc5b0', ink: '#2a2621', band: '#a3ae95' },
+  { name: 'stone', base: '#d3cabb', ink: '#2a2621', band: '#bcb2a1' },
+  { name: 'blush', base: '#dfc3ba', ink: '#2a2621', band: '#caa89d' },
+  { name: 'clay', base: '#ccb09f', ink: '#2a2621', band: '#b69683' },
+  { name: 'mist', base: '#bccacd', ink: '#2a2621', band: '#a2b3b7' },
+  { name: 'oat', base: '#e2d7c1', ink: '#2a2621', band: '#cdbfa4' },
+  { name: 'heather', base: '#c8c0cc', ink: '#2a2621', band: '#b0a7b6' },
+  { name: 'lichen', base: '#aeb5a0', ink: '#2a2621', band: '#969e88' }
 ] as const;
 
 function hash(text: string): number {
@@ -116,15 +129,19 @@ function spineLook(doc: StoredDocumentMeta, k = 1) {
   return { ...cloth, width, height, bandAt: 70 + ((h >> 8) % 14) };
 }
 
-/* Books grow with the stage from 860px wide, up to 1.5x (then the shelf is about as wide as the desk
+/* Books grow with the stage from 760px wide, up to 1.5x (then the shelf is about as wide as the desk
    below it), but never so far that a shelf which fits at 1x would start to scroll: `span` is the
    books' width at 1x, and they may take 90% of the row. 0.05 steps, so a window drag refits titles
    a handful of times, not on every pixel. */
 const MAX_SCALE = 1.5;
 function stageScale(stageWidth: number, rowPadding: number, span: number) {
   const fits = span > 0 ? (0.9 * (stageWidth - rowPadding)) / span : MAX_SCALE;
-  return Math.min(MAX_SCALE, Math.max(1, Math.floor(Math.min(stageWidth / 860, fits) * 20) / 20));
+  return Math.min(MAX_SCALE, Math.max(1, Math.floor(Math.min(stageWidth / 760, fits) * 20) / 20));
 }
+
+/** "N% completed", or nothing for a book never opened (`progressPercent` null). */
+export const progressLabel = (doc: { progressPercent?: number | null }) =>
+  typeof doc.progressPercent === 'number' ? `${Math.round(doc.progressPercent)}% completed` : '';
 
 const clothVars = (look: Look) =>
   ({ color: look.ink, '--cloth': look.base, '--band': look.band, '--band-at': `${look.bandAt}%` }) as React.CSSProperties;
@@ -772,8 +789,8 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
     // `.shelf-row` is positioned, so a spine's offsets are relative to the row's unscrolled content;
     // the row's own offsets bring them into the stage, where the caption and arrow live.
     setCaptionX(scroller.offsetLeft + el.offsetLeft - scroller.scrollLeft + el.offsetWidth / 2);
-    // 20px lift, 26px of arrow, a little air; never up into the caption band (it ends ~80px down).
-    setPointerTop(Math.max(84, scroller.offsetTop + el.offsetTop - 20 - 30));
+    // 20px lift, 26px of arrow, a little air; never up into the caption band (it ends ~64px down).
+    setPointerTop(Math.max(68, scroller.offsetTop + el.offsetTop - 20 - 30));
   }, []);
 
   const point = (id: string) => {
@@ -991,7 +1008,7 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
   return (
     <div ref={stageRef} className="shelf-stage" style={{ '--shelf-k': k } as React.CSSProperties}>
       {/* ── The shelf ── */}
-      <div className="relative pt-28">
+      <div className="relative pt-12">
         {/* Hover / focus caption, in its own band above the tallest book; the arrow points down to it. */}
         <div
           aria-hidden="true"
@@ -1003,8 +1020,9 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
             <>
               <p className="font-handwriting text-[26px] leading-tight truncate">{pointedDoc.title}</p>
               <p className="shelf-label mt-1 truncate">
-                {pointedDoc.format} · {pointedDoc.annotationCount} {pointedDoc.annotationCount === 1 ? 'mark' : 'marks'} ·{' '}
-                {pointedDoc.wordCount.toLocaleString()} words
+                {pointedDoc.format} · {plural(pointedDoc.annotationCount, 'mark')} ·{' '}
+                {plural(pointedDoc.wordCount, 'word')}
+                {progressLabel(pointedDoc) && ` · ${progressLabel(pointedDoc)}`}
               </p>
             </>
           )}
@@ -1022,7 +1040,7 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
         <div
           ref={scrollerRef}
           role="list"
-          aria-label={`${docs.length} ${docs.length === 1 ? 'book' : 'books'} on the shelf. Arrow keys move along it.`}
+          aria-label={`${plural(docs.length, 'book')} on the shelf. Arrow keys move along it.`}
           className="shelf-row no-scrollbar"
           onScroll={() => {
             layoutEpoch.current++;
@@ -1054,7 +1072,7 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
                 data-out={isOut(doc.id) || undefined}
                 data-lifted={pointed === doc.id || undefined}
                 tabIndex={doc.id === tabStop ? 0 : -1}
-                aria-label={`${doc.title}, ${doc.format}, ${doc.annotationCount} ${doc.annotationCount === 1 ? 'mark' : 'marks'}, ${doc.wordCount.toLocaleString()} words`}
+                aria-label={`${doc.title}, ${doc.format}, ${plural(doc.annotationCount, 'mark')}, ${plural(doc.wordCount, 'word')}`}
                 aria-expanded={onDesk}
                 aria-controls={selectedId ? 'shelf-desk' : undefined}
                 onPointerEnter={() => point(doc.id)}
@@ -1147,6 +1165,14 @@ export const Bookshelf: React.FC<BookshelfProps> = ({ docs, groupByMonth, themes
                       >
                         <DocumentCover doc={selected} className="rounded-[3px]" />
                         <span className="shelf-endpaper shelf-desk-endpaper" />
+                        {/* The bookmark ribbon lies down the gutter as far as the reader has got;
+                            mounted on landing so it unrolls once the book is open. */}
+                        {landedId === selected.id && (selected.progressPercent ?? 0) > 0 && (
+                          <span
+                            className="shelf-bookmark"
+                            style={{ '--read': `${selected.progressPercent}%` } as React.CSSProperties}
+                          />
+                        )}
                       </div>
                     </motion.div>
                   </div>
@@ -1233,7 +1259,7 @@ const DeskCard: React.FC<{
   const { doc } = p;
   const docThemes = p.themes.filter((t) => doc.themeIds?.includes(t.id));
   const added = new Date(doc.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
-  const chipLabels = [...docThemes.map((t) => t.name), ...(doc.analysis?.primaryThemes.slice(0, 3) ?? [])].join('\n');
+  const chipLabels = docThemes.map((t) => t.name).join('\n');
 
   // The chip slot is two rows tall and never grows: chips that fall below it are hidden and a "+N"
   // chip takes the last place that still fits. Set imperatively (the `hidden` attribute is not a
@@ -1281,9 +1307,9 @@ const DeskCard: React.FC<{
 
   const summary =
     doc.annotationCount > 0
-      ? `${doc.annotationCount} ${doc.annotationCount === 1 ? 'mark' : 'marks'}${
-          docThemes.length ? ` filed under ${docThemes.length} ${docThemes.length === 1 ? 'theme' : 'themes'}` : ''
-        }${doc.terminologyCount > 0 ? `, ${doc.terminologyCount} ${doc.terminologyCount === 1 ? 'term' : 'terms'} defined` : ''}.`
+      ? `${plural(doc.annotationCount, 'mark')}${
+          docThemes.length ? ` filed under ${plural(docThemes.length, 'theme')}` : ''
+        }${doc.terminologyCount > 0 ? `, ${plural(doc.terminologyCount, 'term')} defined` : ''}.`
       : 'No marks yet. Open it to start annotating.';
 
   return (
@@ -1333,8 +1359,9 @@ const DeskCard: React.FC<{
         )}
       </div>
 
-      <p className="shelf-label mt-3 truncate">
-        {doc.wordCount.toLocaleString()} words{doc.originalBytes > 0 ? ` · ${formatBytes(doc.originalBytes)}` : ''}
+      <p className="shelf-label shelf-note-words mt-3 truncate">
+        {plural(doc.wordCount, 'word')}{doc.originalBytes > 0 ? ` · ${formatBytes(doc.originalBytes)}` : ''}
+        {progressLabel(doc) && <span className="shelf-progress"> · {progressLabel(doc)}</span>}
       </p>
 
       <p className="shelf-note-summary shelf-clamp font-serif text-[var(--shelf-ink)]/90 mt-4">{summary}</p>
@@ -1344,11 +1371,6 @@ const DeskCard: React.FC<{
           <span key={t.id} data-chip className="shelf-chip" title={t.name}>
             <span className="w-2 h-2 shrink-0 rounded-full" style={{ backgroundColor: t.color }} />
             <span className="truncate">{t.name}</span>
-          </span>
-        ))}
-        {doc.analysis?.primaryThemes.slice(0, 3).map((t) => (
-          <span key={t} data-chip className="shelf-chip opacity-75" title={t}>
-            <span className="truncate">{t}</span>
           </span>
         ))}
         <span data-more hidden className="shelf-chip" />

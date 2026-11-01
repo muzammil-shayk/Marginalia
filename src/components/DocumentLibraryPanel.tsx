@@ -33,6 +33,7 @@ import {
   renameStoredDocument
 } from '../utils/documentStorage';
 import { ErrorDialog } from './ErrorDialog';
+import { plural } from '../utils/plural';
 
 interface DocumentLibraryPanelProps {
   isOpen: boolean;
@@ -134,7 +135,7 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
       className={`flex flex-col min-h-0 border-l z-40 max-sm:fixed max-sm:inset-y-0 max-sm:right-0 max-sm:w-full max-sm:shadow-2xl sm:relative sm:h-full sm:w-80 sm:shrink-0 ${
         isDark ? 'bg-night-1 border-stone-800' : 'bg-white border-stone-200'
       }`}
-      aria-label="Document library"
+      aria-label="My Collections"
     >
       <ErrorDialog open={Boolean(failure)} message={failure ?? ''} onClose={() => setFailure(null)} />
 
@@ -143,7 +144,7 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <HardDrive className="w-4 h-4 text-muted" />
-            <h2 className="title-hand text-[26px] text-stone-900 dark:text-paper">Library</h2>
+            <h2 className="title-hand text-[26px] text-stone-900 dark:text-paper">My Collections</h2>
             <span className="text-[11px] text-muted tabular-nums">({documents.length})</span>
           </div>
           <div className="flex items-center gap-0.5">
@@ -247,7 +248,7 @@ export const DocumentLibraryPanel: React.FC<DocumentLibraryPanelProps> = ({
                             {doc.title}
                           </h4>
                           <p className="text-[10.5px] text-muted mt-0.5">
-                            {doc.format} · {doc.wordCount.toLocaleString()} words · {formatBytes(doc.originalBytes)}
+                            {doc.format} · {plural(doc.wordCount, 'word')} · {formatBytes(doc.originalBytes)}
                           </p>
                           <p className="text-[10.5px] text-muted flex items-center gap-2 mt-0.5">
                             <span>{new Date(doc.updatedAt).toLocaleDateString()}</span>

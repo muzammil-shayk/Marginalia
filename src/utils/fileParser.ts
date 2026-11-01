@@ -125,8 +125,8 @@ async function parsePdf(file: File, title: string): Promise<ParseResult> {
       text:
         `${title}\n\n` +
         'This PDF has no text layer — it is a scan, or a document built from page images. ' +
-        'You can read it and annotate it by hand, but selecting text, searching it and running ' +
-        'the thematic analysis need machine-readable words, which this file does not carry. ' +
+        'You can read it and annotate it by hand, but selecting text and searching it need ' +
+        'machine-readable words, which this file does not carry. ' +
         'Running it through OCR first would restore them.',
       pageCount: pdf.numPages,
       format: 'PDF',

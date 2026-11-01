@@ -18,10 +18,10 @@
 import React, { useEffect, useRef } from 'react';
 import { motion, useReducedMotion } from 'motion/react';
 import { useDismiss } from './useDismiss';
-import { useAnchoredPanel, AnchorRect } from './useAnchoredPanel';
+import { useAnchoredPanel, AnchorRect, PanelContext } from './useAnchoredPanel';
 import { ANNOTATION_SURFACE, isTypingTarget, popoverTakesTab } from './workspaceKeys';
 
-export type { AnchorRect } from './useAnchoredPanel';
+export type { AnchorRect, PanelContext } from './useAnchoredPanel';
 
 export interface AnchoredPopoverProps {
   /** Viewport rectangle of what the popover describes; null closes it. */
@@ -41,6 +41,8 @@ export interface AnchoredPopoverProps {
   measureKey?: unknown;
   /** Elements to stay off when the other side of the anchor is free (see `placePanel`). */
   avoidSelector?: string;
+  /** Glyphs to keep clear and free places to use (see `placePanel`). */
+  placementContext?: () => PanelContext;
   /** Extra classes for the surface, e.g. its gap and padding. */
   className?: string;
   children: React.ReactNode;
@@ -49,8 +51,8 @@ export interface AnchoredPopoverProps {
 const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /** The surface every annotation popover shares. */
-export const popoverSurfaceClass = (isDark: boolean) =>
-  `fixed z-50 flex flex-wrap items-center w-max max-w-[calc(100vw-16px)] rounded-xl shadow-2xl border ${
+export const popoverSurfaceClass = (isDark: boolean, wrap = true) =>
+  `fixed z-50 flex ${wrap ? 'flex-wrap' : 'flex-nowrap'} items-center w-max max-w-[calc(100vw-16px)] rounded-xl shadow-2xl border ${
     isDark ? 'bg-night-3 border-stone-700' : 'bg-white border-stone-200'
   }`;
 
@@ -80,6 +82,7 @@ export const AnchoredPopover: React.FC<AnchoredPopoverProps> = ({
   ignoreSelector,
   measureKey,
   avoidSelector,
+  placementContext,
   className = 'gap-0.5 p-1',
   children
 }) => {
@@ -102,7 +105,7 @@ export const AnchoredPopover: React.FC<AnchoredPopoverProps> = ({
     restoreFocus();
     onDismiss();
   }, ignoreSelector);
-  const panel = useAnchoredPanel(ref, anchor, [measureKey], bottomInset, topInset, avoidSelector);
+  const panel = useAnchoredPanel(ref, anchor, [measureKey], bottomInset, topInset, avoidSelector, placementContext);
 
   // Tab from the page itself (or from nowhere) steps into the popover, since it is what the
   // reader is working with right now; Tab elsewhere keeps its ordinary order (`popoverTakesTab`). Capture phase, so the browser's own Tab order
@@ -170,7 +173,7 @@ export const AnchoredPopover: React.FC<AnchoredPopoverProps> = ({
       role="toolbar"
       aria-label={label}
       aria-orientation="horizontal"
-      className={`${popoverSurfaceClass(isDark)} ${className}`}
+      className={`${popoverSurfaceClass(isDark, !className.includes('flex-nowrap'))} ${className}`}
       style={panel}
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}

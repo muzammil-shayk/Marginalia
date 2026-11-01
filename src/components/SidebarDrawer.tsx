@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, BookOpen, PlusCircle, Settings, Sparkles } from './icons';
+import { X, BookOpen, PlusCircle, Settings } from './icons';
 import { Screen, TransitionType } from '../types';
 import { AnimatePresence, motion } from 'motion/react';
 import logo from '../assets/images/marginalia-logo.png';
@@ -11,8 +11,6 @@ interface SidebarDrawerProps {
   isDark?: boolean;
   /** Marks the matching link as the selected tab; omit and no link is marked. */
   currentScreen?: Screen;
-  /** Opens the thematic analysis dialog. See DesktopNav for why it is not a screen. */
-  onOpenAnalysis?: () => void;
 }
 
 export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
@@ -20,7 +18,6 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
   onClose,
   onNavigate,
   isDark = false,
-  onOpenAnalysis,
   currentScreen
 }) => {
   const link = (active: boolean) =>
@@ -79,22 +76,8 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               className={link(currentScreen === 'home' || currentScreen === 'reader')}
             >
               <BookOpen className={icon(currentScreen === 'home' || currentScreen === 'reader')} />
-              <span className="caps">Library</span>
+              <span className="caps">My Collections</span>
             </button>
-
-            {onOpenAnalysis && (
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  onOpenAnalysis();
-                }}
-                className={link(false)}
-              >
-                <Sparkles className={icon(false)} />
-                <span className="caps">AI Analysis</span>
-              </button>
-            )}
 
             <button
               type="button"
@@ -125,7 +108,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
         {/* Footer info */}
         <div className="pt-4 border-t border-stone-200 dark:border-stone-800 text-[11px] text-muted space-y-1">
           <p className="title-hand text-[15px] text-gold">Marginalia</p>
-          <p>Mindful reading and AI thematic synthesis</p>
+          <p>Mindful reading, kept in the margins</p>
           <p className="italic pt-1">
             For close readers,
             <br />

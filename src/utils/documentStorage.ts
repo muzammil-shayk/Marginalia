@@ -1,4 +1,4 @@
-import type { ThematicAnalysisResult } from '../types';
+import type { TextStyle } from './pastedText';
 /**
  * Client side of the local document store (see `src/services/documentStore.ts` for the server
  * half). Documents live on the machine's own filesystem instead of in the browser, so the app
@@ -31,9 +31,15 @@ export interface StoredDocumentMeta {
   themeCounts: Record<string, number>;
   /** How many annotations in this document are marked terminology, for the Home screen's Terminologies section. */
   terminologyCount: number;
-  /** A digest of the saved thematic analysis, or null if this book has never been analysed.
-   *  Drives the Home screen's AI Themes section without loading every full result. */
-  analysis: {
+  /** "N% completed" (0–100, rounded, the furthest point reached), or null when never read. */
+  progressPercent: number | null;
+  /** `'verbatim'` on pasted custom text: split it with `splitParagraphs(text, 'verbatim')` (utils/pastedText). */
+  layout?: 'verbatim';
+  /**
+   * @deprecated Thematic analysis was removed in 2.5.0 and the server no longer sends this; it is
+   * always absent. Kept only until the last reader of it (Bookshelf) is removed.
+   */
+  analysis?: {
     analysedAt: string;
     primaryThemes: string[];
     themeCount: number;
@@ -114,12 +120,18 @@ export async function storeHtmlDocument(params: {
   return res.json();
 }
 
-/** Stores a document that has no original file behind it — text pasted straight into the app. */
+/**
+ * Stores a document that has no original file behind it — text pasted straight into the app.
+ * Pass `layout: 'verbatim'` for pasted custom text so its line breaks and indentation are kept,
+ * plus the clipboard's `text/html` as `html` to keep bold/italic/underline (sanitised server-side).
+ */
 export async function storePastedDocument(params: {
   title: string;
   text: string;
   format?: string;
   filename?: string;
+  layout?: 'verbatim';
+  html?: string;
 }): Promise<StoredDocumentMeta> {
   const res = await fetch('/api/documents', {
     method: 'POST',
@@ -128,7 +140,9 @@ export async function storePastedDocument(params: {
       title: params.title,
       text: params.text,
       format: params.format || 'TXT',
-      filename: params.filename
+      filename: params.filename,
+      layout: params.layout,
+      html: params.html
     })
   });
 
@@ -150,6 +164,25 @@ export async function fetchDocumentText(id: string): Promise<string | null> {
     if (!res.ok) return null;
     const doc = await res.json();
     return typeof doc.text === 'string' ? doc.text : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A stored document's text with its layout and pasted formatting, or null when it is gone. */
+export async function fetchDocumentContent(
+  id: string
+): Promise<{ text: string; layout?: 'verbatim'; textStyles?: TextStyle[] } | null> {
+  try {
+    const res = await fetch(`/api/documents/${id}`);
+    if (!res.ok) return null;
+    const doc = await res.json();
+    if (typeof doc.text !== 'string') return null;
+    return {
+      text: doc.text,
+      ...(doc.layout === 'verbatim' && { layout: 'verbatim' as const }),
+      ...(Array.isArray(doc.textStyles) && { textStyles: doc.textStyles })
+    };
   } catch {
     return null;
   }
@@ -259,40 +292,6 @@ export async function saveGeminiConfig(update: {
     return { configured: Boolean(body.configured), source: 'settings', model: body.model };
   } catch {
     return null;
-  }
-}
-
-/**
- * The analysis already saved for a document, or null if it has never been analysed.
- *
- * Separate from `fetchDocument` because that hands back the entire text of the book, which is the
- * one thing this caller does not want.
- */
-export async function fetchSavedAnalysis(
-  id: string
-): Promise<{ data: ThematicAnalysisResult; analysedAt: string; model: string } | null> {
-  try {
-    const res = await fetch(`/api/documents/${id}/analysis`);
-    if (!res.ok) return null;
-    const body = await res.json();
-    return body?.data ? { data: body.data, analysedAt: body.analysedAt, model: body.model } : null;
-  } catch {
-    return null;
-  }
-}
-
-/**
- * What a stored PDF says it is inside its own metadata, for prefilling the analysis lookup form.
- * Empty strings when the document is not a PDF, carries nothing usable, or cannot be parsed —
- * the caller falls back to guessing from the filename.
- */
-export async function fetchBookMetadata(id: string): Promise<{ title: string; author: string }> {
-  try {
-    const res = await fetch(`/api/documents/${id}/book-metadata`);
-    if (!res.ok) return { title: '', author: '' };
-    return await res.json();
-  } catch {
-    return { title: '', author: '' };
   }
 }
 
@@ -430,6 +429,20 @@ export async function saveReadingState(id: string, readingState: ReadingState): 
   }
 }
 
+/** Saves one reading-progress report (see `useReadingProgress`, which debounces these). */
+export async function saveReadingProgress(id: string, report: { position: number; total: number }): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/documents/${id}/progress`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(report)
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Deletes a document from this device permanently — its record, its original file and its
  * annotations. There is no undo, which is why the library panel confirms first.
@@ -549,8 +562,33 @@ export interface DesktopBridge {
   onUpdateStatus(callback: (status: UpdateStatus) => void): () => void;
   getDismissedUpdate(): Promise<string | null>;
   setDismissedUpdate(version: string): Promise<void>;
+  /** Optional: absent on a shell older than 2.5.0. */
+  getAiEnabled?(): Promise<boolean>;
+  setAiEnabled?(enabled: boolean): Promise<boolean>;
 }
 
 export function desktopBridge(): DesktopBridge | null {
   return (window as unknown as { marginaliaDesktop?: DesktopBridge }).marginaliaDesktop ?? null;
+}
+
+/**
+ * Whether AI features are turned on (Settings opt-in, off by default, kept in the desktop shell's
+ * config.json). False outside the desktop app or if the shell cannot answer. While false, show
+ * no AI UI: the server refuses every AI route anyway (403 `{ aiDisabled: true }`).
+ */
+export async function getAiEnabled(): Promise<boolean> {
+  try {
+    return (await desktopBridge()?.getAiEnabled?.()) === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Turns AI features on or off. Resolves with the value actually saved (false if saving failed). */
+export async function setAiEnabled(on: boolean): Promise<boolean> {
+  try {
+    return (await desktopBridge()?.setAiEnabled?.(on === true)) === true;
+  } catch {
+    return false;
+  }
 }

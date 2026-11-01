@@ -347,3 +347,71 @@ test('deleting a document removes its {id}.json.legacy too', async (t) => {
   await backend.deleteDocument(meta.id);
   assert.deepEqual(await fs.readdir(path.join(root, 'documents')), []);
 });
+
+// ── 2.5.0: reading progress ──────────────────────────────────────────────────
+
+test('a progress report is stored, keeps the furthest point and shows as a percentage in the list', async (t) => {
+  const { backend } = await tempStore(t);
+  const id = await makeDoc(backend);
+  assert.equal((await backend.listDocuments())[0].progressPercent, null);
+  await backend.updateDocument(id, { readingProgress: { position: 6, total: 10 } });
+  const meta = await backend.updateDocument(id, { readingProgress: { position: 2, total: 10 } });
+  assert.equal(meta?.progressPercent, 60);
+  assert.deepEqual((await backend.getDocument(id))?.readingProgress, { position: 2, total: 10, furthest: 0.6 });
+  assert.equal((await backend.listDocuments())[0].progressPercent, 60);
+});
+
+test('a progress report does not count as library activity', async (t) => {
+  const { backend } = await tempStore(t);
+  const id = await makeDoc(backend);
+  const before = (await backend.getDocument(id))!.updatedAt;
+  await new Promise((r) => setTimeout(r, 5));
+  await backend.updateDocument(id, { readingProgress: { position: 1, total: 2 } });
+  assert.equal((await backend.getDocument(id))!.updatedAt, before);
+});
+
+test('an invalid progress report leaves the stored progress alone', async (t) => {
+  const { backend } = await tempStore(t);
+  const id = await makeDoc(backend);
+  await backend.updateDocument(id, { readingProgress: { position: 5, total: 10 } });
+  await backend.updateDocument(id, { readingProgress: { position: 1, total: 0 } });
+  assert.deepEqual((await backend.getDocument(id))?.readingProgress, { position: 5, total: 10, furthest: 0.5 });
+});
+
+// ── 2.5.0: pasted text layout ────────────────────────────────────────────────
+
+test('pasted text keeps its layout and styles across saves; the list shows the layout but not the styles', async (t) => {
+  const { backend } = await tempStore(t);
+  const textStyles = [{ style: 'bold' as const, anchor: { paragraphIndex: 0, start: 2, end: 7 } }];
+  const meta = await backend.saveDocument({ title: 'Poem', text: '  Shall I', format: 'TXT', layout: 'verbatim', textStyles });
+  await backend.updateDocument(meta.id, { annotations: [{ id: 'm1' }] });
+  const doc = await backend.getDocument(meta.id);
+  assert.equal(doc?.layout, 'verbatim');
+  assert.deepEqual(doc?.textStyles, textStyles);
+  const listed = (await backend.listDocuments())[0] as unknown as Record<string, unknown>;
+  assert.equal(listed.layout, 'verbatim');
+  assert.equal('textStyles' in listed, false);
+});
+
+test('a document stored without a layout has none, so the reader keeps the original paragraph rule', async (t) => {
+  const { backend } = await tempStore(t);
+  const meta = await backend.saveDocument({ title: 'Old', text: 'x', format: 'TXT' });
+  const doc = await backend.getDocument(meta.id);
+  assert.equal(doc?.layout, undefined);
+  assert.equal(doc?.textStyles, undefined);
+});
+
+// ── 2.5.0: thematic analysis removed; stored analyses are kept on disk ───────
+
+test('an analysis stored before 2.5.0 stays in the record across saves, and the list no longer carries it', async (t) => {
+  const { root, backend } = await tempStore(t);
+  const id = await makeDoc(backend);
+  const file = path.join(root, 'documents', `${id}.json`);
+  const stored = { themes: [{ themeName: 'Loss', prominence: 'Primary' }], analysedAt: '2026-01-01T00:00:00.000Z', model: 'm' };
+  await fs.writeFile(file, JSON.stringify({ ...JSON.parse(await fs.readFile(file, 'utf-8')), analysis: stored }));
+  await backend.updateDocument(id, { annotations: [{ id: 'm1' }] });
+  await backend.updateDocument(id, { title: 'Renamed' });
+  assert.deepEqual(JSON.parse(await fs.readFile(file, 'utf-8')).analysis, stored);
+  const listed = (await backend.listDocuments())[0] as unknown as Record<string, unknown>;
+  assert.equal('analysis' in listed, false);
+});

@@ -48,3 +48,11 @@ test('separate lines stay separate', () => {
   const merged = mergeRectsIntoLines([rect(100, 40, 200), rect(100, 60, 200)]);
   assert.equal(merged.length, 2);
 });
+
+test('muted highlight colours are laid down harder than vivid ones, so they never read as a selection', async () => {
+  const { highlightOpacity } = await import('./annotationModel');
+  assert.equal(highlightOpacity('#52796f'), 0.56); // sage
+  assert.equal(highlightOpacity('#eab308'), 0.38); // vivid yellow
+  assert.ok(highlightOpacity('#52796f', true) > highlightOpacity('#52796f'));
+  assert.equal(highlightOpacity('not-a-colour'), 0.38);
+});

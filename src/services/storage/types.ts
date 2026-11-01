@@ -1,4 +1,4 @@
-import type { ThematicAnalysisResult } from '../../types';
+import type { TextStyle } from '../../utils/pastedText';
 
 /**
  * The storage contract every document backend implements. One exists today: the local
@@ -10,31 +10,6 @@ import type { ThematicAnalysisResult } from '../../types';
  *   documents/{id}.json   metadata + extracted text + annotations
  *   originals/{id}{ext}   the raw uploaded file
  */
-
-/**
- * A thematic analysis kept with the document it is about.
- *
- * Stored because a run costs real tokens and a minute of waiting — analysing the same book twice
- * to read the same answer is the one thing worth caching in this app. `analysedAt` and `model`
- * are kept so a result can be judged: an analysis from a year ago on a retired model is still
- * worth showing, but the reader should be able to see that is what it is.
- */
-export interface StoredAnalysis extends ThematicAnalysisResult {
-  analysedAt: string;
-  model: string;
-}
-
-/**
- * Just enough of an analysis for the library to list it without loading every document's full
- * result. Recomputed from `analysis` on every write, the same way `themeIds` is.
- */
-export interface AnalysisSummary {
-  analysedAt: string;
-  /** The themes marked Primary, in the order the model gave them. What the Home screen shows. */
-  primaryThemes: string[];
-  /** How many themes were found in total, primary or not. */
-  themeCount: number;
-}
 
 /** Everything about a stored document except its (potentially huge) text and original bytes. */
 export interface DocumentMeta {
@@ -70,14 +45,19 @@ export interface DocumentMeta {
    * `themeIds` is; see `countTerminology`.
    */
   terminologyCount: number;
-  /** A one-line digest of this document's saved analysis, or null if it has never been analysed. */
-  analysis: AnalysisSummary | null;
   /**
    * How many marks this document carries under each theme id, so the library can say "4 marks
    * under Key Concepts" rather than only "this book touches Key Concepts". `themeIds` is kept
    * alongside it because a great deal of code only asks the yes/no question.
    */
   themeCounts: Record<string, number>;
+  /** The library's "N% completed" (0–100, rounded), or null when the reader has never reported a position. */
+  progressPercent: number | null;
+  /**
+   * `'verbatim'` for pasted custom text that keeps its line breaks and indentation: the reader
+   * splits it with `splitParagraphs(text, 'verbatim')`. Absent on every other document.
+   */
+  layout?: 'verbatim';
 }
 
 /**
@@ -110,15 +90,20 @@ export interface ReadingState {
   viewMode: 'single' | 'spread';
 }
 
-// `analysis` is narrowed rather than inherited: the meta carries only the digest, the stored
-// record carries the whole result.
-export interface StoredDocument extends Omit<DocumentMeta, 'analysis'> {
+export interface StoredDocument extends DocumentMeta {
   text: string;
   annotations: StoredAnnotation[];
   /** Null until the reader has opened this document in the PDF workspace at least once. */
   readingState: ReadingState | null;
-  /** The last thematic analysis run on this document, kept so it need not be paid for twice. */
-  analysis: StoredAnalysis | null;
+  /** Null until the reader has reported a position. See `nextReadingProgress`. */
+  readingProgress: ReadingProgress | null;
+  /** Bold/italic/underline carried over from pasted HTML. Absent when there was none. */
+  textStyles?: TextStyle[];
+  /**
+   * A thematic analysis saved before 2.5.0 removed the feature. Kept in the record exactly as
+   * stored (the reader's data), never read or sent to the client.
+   */
+  analysis?: unknown;
   /**
    * The annotation set as it was immediately before a write that made it smaller.
    *
@@ -188,17 +173,6 @@ export function computeThemeCounts(annotations: StoredAnnotation[]): Record<stri
   return counts;
 }
 
-/** Digests a stored analysis for the library list. See `DocumentMeta.analysis`. */
-export function summarizeAnalysis(analysis: StoredAnalysis | null): AnalysisSummary | null {
-  if (!analysis) return null;
-  const themes = Array.isArray(analysis.themes) ? analysis.themes : [];
-  return {
-    analysedAt: analysis.analysedAt,
-    primaryThemes: themes.filter((t) => t.prominence === 'Primary').map((t) => t.themeName),
-    themeCount: themes.length
-  };
-}
-
 /** How many of this document's annotations are marked terminology. See `DocumentMeta.terminologyCount`. */
 export function countTerminology(annotations: StoredAnnotation[]): number {
   return oneEntryPerMark(annotations).filter((a) => a.isTerminology === true).length;
@@ -209,6 +183,8 @@ export interface SaveDocumentParams {
   text: string;
   format: string;
   filename?: string;
+  layout?: 'verbatim';
+  textStyles?: TextStyle[];
 }
 
 /** The fields a caller is allowed to change on an existing document. */
@@ -216,7 +192,8 @@ export interface UpdateDocumentParams {
   title?: string;
   annotations?: StoredAnnotation[];
   readingState?: ReadingState;
-  analysis?: StoredAnalysis;
+  /** One progress report; the stored furthest point is kept. Invalid reports change nothing. */
+  readingProgress?: { position: number; total: number };
   /** Restores `annotationsBackup` over the live set. Used by the recovery endpoint. */
   restoreAnnotationsBackup?: true;
 }
@@ -307,7 +284,8 @@ export function buildMeta(id: string, params: SaveDocumentParams): DocumentMeta 
     themeIds: [],
     themeCounts: {},
     terminologyCount: 0,
-    analysis: null
+    progressPercent: null,
+    ...(params.layout === 'verbatim' && { layout: 'verbatim' as const })
   };
 }
 
@@ -321,4 +299,42 @@ export const isGeminiKey = (key: string): boolean => /^gemini/i.test(key);
 export function publicSettings(settings: Record<string, unknown> | null): Record<string, unknown> | null {
   if (!settings) return settings;
   return Object.fromEntries(Object.entries(settings).filter(([key]) => !isGeminiKey(key)));
+}
+
+/**
+ * How far the reader has got in a document. `position`/`total` are the last report in whatever
+ * unit the reader uses (PDF: page of pages; text: paragraph of paragraphs). `furthest` is the
+ * furthest fraction (0–1) ever reached, so a PDF that gains or loses pages keeps a sane value.
+ */
+export interface ReadingProgress {
+  position: number;
+  total: number;
+  furthest: number;
+}
+
+/** Applies one progress report. Null when the report is invalid. */
+export function nextReadingProgress(
+  prev: ReadingProgress | null,
+  report: { position: number; total: number }
+): ReadingProgress | null {
+  const { position, total } = report ?? ({} as Partial<ReadingProgress>);
+  if (!isFiniteNumber(position) || !isFiniteNumber(total) || total <= 0 || position < 0) return null;
+  const clamped = Math.min(position, total);
+  const before = prev && isFiniteNumber(prev.furthest) ? prev.furthest : 0;
+  return { position: clamped, total, furthest: Math.min(1, Math.max(before, clamped / total)) };
+}
+
+/** The library's "N% completed": the furthest point, rounded, 0–100; null when never read. */
+export function progressPercent(progress: ReadingProgress | null): number | null {
+  if (!progress || !isFiniteNumber(progress.furthest)) return null;
+  return Math.round(Math.min(1, Math.max(0, progress.furthest)) * 100);
+}
+
+const isFiniteNumber = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/** A document name as typed, tidied: one line, trimmed, at most 300 characters; null when empty. */
+export function cleanTitle(input: unknown): string | null {
+  if (typeof input !== 'string') return null;
+  const title = input.replace(/\s+/g, ' ').trim().slice(0, 300).trim();
+  return title || null;
 }

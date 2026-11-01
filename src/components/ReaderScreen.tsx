@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import {
   ArrowLeft,
@@ -15,12 +15,10 @@ import {
   Redo2,
   PanelRightOpen,
   X,
-  Download,
-  Sparkles
+  Download
 } from './icons';
 import { AnnotationFocus, Screen, TransitionType, UserSettings } from '../types';
 import { HoverTooltip } from './HoverTooltip';
-import { ThematicAnalysisView } from './ThematicAnalysisView';
 import { ParagraphRange, rangesFromSelectionParts, selectionParagraphParts, selectionState } from '../utils/textFormatting';
 import { noteTimeLabel } from '../hooks/noteTimestamp';
 import type { PlainTextAnnotations } from '../hooks/usePlainTextAnnotations';
@@ -29,9 +27,15 @@ import { markColor, reuseUnchanged, segmentParagraph, textMarkViews, uncoveredRa
 import { markFill } from '../utils/markFill';
 import { inputKindOf, selectionTrigger, type InputKind } from '../utils/selectionTrigger';
 import { useDialogFocus } from '../hooks/useDialogFocus';
+import { stackMargin } from './marginLayout';
+import { styleRuns } from './textStyleRuns';
+import { splitParagraphs, type TextStyle } from '../utils/pastedText';
+import { fetchDocumentContent } from '../utils/documentStorage';
+import { useReadingProgress } from '../hooks/useReadingProgress';
 import { DEFAULT_TEXT_SIZE, REACTION_KINDS, reactionChar, type AnnotationKind } from './pdf/annotationModel';
 import { SelectionPopover, SelectionAnchor } from './pdf/SelectionPopover';
 import { MarkProperties } from './pdf/MarkProperties';
+import type { PanelContext } from './pdf/useAnchoredPanel';
 import { NotesList } from './pdf/NotesList';
 import { InstanceNavigator } from './pdf/InstanceNavigator';
 import { isTypingTarget, resolveWorkspaceKey, TOOL_HOTKEYS, withShortcut } from './pdf/workspaceKeys';
@@ -45,6 +49,7 @@ import {
   textMarksForExport,
   ExportOptions
 } from '../utils/exportAnnotations';
+import { plural } from '../utils/plural';
 
 interface ReaderScreenProps {
   settings: UserSettings;
@@ -52,9 +57,7 @@ interface ReaderScreenProps {
   isDark?: boolean;
   documentText?: string;
   documentTitle?: string;
-  /** Id in the local document store. Absent for pasted text that was never saved, which is why
-   *  the AI tab is hidden rather than disabled in that case — there is nothing for the server to
-   *  read. */
+  /** Id in the local document store. Absent only for text from an old session that was never saved. */
   docId?: string;
   /** The document's marks, lifted to App so they survive navigating away and back. */
   annotations: PlainTextAnnotations;
@@ -83,8 +86,8 @@ const isReactionKind = (kind: TextMarkKind) => (REACTION_KINDS as readonly strin
 /** PDF weights are fractions of page width; the properties strip draws them at 620 px a unit. */
 const weightPx = (w: number | undefined) => (w ? Math.max(1, w * 620) : 2);
 
-type Tab = 'notes' | 'export' | 'analysis';
-const TAB_INDEXES: Record<Tab, number> = { notes: 0, export: 1, analysis: 2 };
+type Tab = 'notes' | 'export';
+const TAB_INDEXES: Record<Tab, number> = { notes: 0, export: 1 };
 
 const tabVariants = {
   enter: (dir: number) => ({ x: dir > 0 ? 80 : -80, opacity: 0, scale: 0.98 }),
@@ -104,6 +107,8 @@ interface ParagraphActions {
   hover: (id: string | null) => void;
   edit: (id: string) => void;
   remove: (id: string) => void;
+  /** Opens or closes a note pinned in the narrow margin (null closes). */
+  togglePin: (id: string | null) => void;
   addNote: (idx: number) => void;
   activate: (idx: number) => void;
 }
@@ -121,7 +126,17 @@ interface ParagraphProps {
   hovKey: string;
   isActive: boolean;
   isDark: boolean;
-  showInlineNotes: boolean;
+  /**
+   * How notes sit in the margin: 'cards' beside the text (wide window), 'pins' in a narrow gutter
+   * that open the card on tap (phone, or a panel taking the room), 'off' when hidden.
+   */
+  margin: MarginMode;
+  /** The pinned note open in the narrow gutter, if it belongs to this paragraph. */
+  openPin: string;
+  /** Pasted custom text keeps its own line breaks and indentation. */
+  verbatim: boolean;
+  /** Pasted base formatting for this paragraph (bold, italic, underline), drawn under the marks. */
+  styles: TextStyle[];
   terminologyColor: string;
   fontFamily: string;
   fontSize: number;
@@ -130,7 +145,20 @@ interface ParagraphProps {
   actions: ParagraphActions;
 }
 
+type MarginMode = 'cards' | 'pins' | 'off';
+/** Margin column for note cards: a 1.5rem gap plus a 15rem card. */
+const MARGIN_CARDS_PX = 264;
+/** Narrow gutter for pins: a 24px pin plus its gap. */
+const MARGIN_PINS_PX = 30;
+/** The text column wants at least this much beside a margin of cards, or pins are used instead. */
+const MIN_TEXT_PX = 520;
 const EMPTY_MARKS: TextMark[] = [];
+const EMPTY_STYLES: TextStyle[] = [];
+const RUN_STYLE: Record<string, React.CSSProperties> = {
+  bold: { fontWeight: 700 },
+  italic: { fontStyle: 'italic' },
+  underline: { textDecorationLine: 'underline', textUnderlineOffset: '3px' }
+};
 const EMPTY_NOTES: NoteItem[] = [];
 
 const noteSurface = (c: string, m: TextMark): React.CSSProperties => {
@@ -140,8 +168,73 @@ const noteSurface = (c: string, m: TextMark): React.CSSProperties => {
   return { borderColor: c };
 };
 
+/** A sticky note card, beside its line in the margin (or opened from a margin pin). */
+const NoteCard: React.FC<{
+  note: TextMark;
+  quote: string | undefined;
+  color: string;
+  on: boolean;
+  isDark: boolean;
+  label: string;
+  time: string | null | undefined;
+  actions: ParagraphActions;
+}> = ({ note, quote, color, on, isDark, label, time, actions }) => (
+  <div
+    data-note-card={note.id}
+    data-mark-ui
+    onMouseEnter={() => actions.hover(note.id)}
+    onMouseLeave={() => actions.hover(null)}
+    onClick={(e) => actions.markClick(e, note.id)}
+    className={`p-3 rounded-xl border shadow-xs transition-shadow cursor-pointer text-stone-900 dark:text-stone-100 ${
+      isDark ? 'bg-night-3' : 'bg-white'
+    } ${on ? 'shadow-md' : ''}`}
+    style={{ ...noteSurface(color, note), borderWidth: on ? 2 : 1.5 }}
+  >
+    <div className="flex items-start justify-between gap-2 mb-1">
+      <div className="flex items-center gap-1.5 min-w-0">
+        <StickyNoteIcon className="w-3.5 h-3.5 shrink-0" style={{ color }} />
+        <h4 className="font-semibold text-[12.5px] tracking-tight truncate">{label}</h4>
+      </div>
+      <div className="flex items-center gap-0.5 shrink-0 -mr-1 -mt-0.5">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            actions.edit(note.id);
+          }}
+          className="w-6 h-6 flex items-center justify-center rounded text-muted hover:text-stone-900 dark:hover:text-white cursor-pointer"
+          title="Edit the note"
+          aria-label="Edit the note"
+        >
+          <Pencil className="w-3 h-3" />
+        </button>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            actions.remove(note.id);
+          }}
+          className="w-6 h-6 flex items-center justify-center rounded text-muted hover:text-red-600 cursor-pointer"
+          title="Delete this mark"
+          aria-label="Delete this mark"
+        >
+          <Trash2 className="w-3 h-3" />
+        </button>
+      </div>
+    </div>
+    {quote && (
+      <div className="text-[11px] italic text-stone-600 dark:text-stone-400 border-l-2 pl-2 my-1.5 leading-snug line-clamp-3" style={{ borderLeftColor: color }}>
+        &ldquo;{quote}&rdquo;
+      </div>
+    )}
+    {note.text && <p className="text-[12px] leading-relaxed whitespace-pre-wrap break-words">{note.text}</p>}
+    {/* Only the time: every note here is the reader's own, so a name added nothing. */}
+    {time && <p className="mt-1 text-right text-[10px] text-muted">{time}</p>}
+  </div>
+);
+
 /**
- * One paragraph: its text cut into marked pieces, its note button and its inline note cards.
+ * One paragraph: its text cut into marked pieces, its note button and its margin notes.
  * Memoised: it re-renders only when its own marks, notes or selected/hovered ids change, so
  * pointing at one mark in a 3,000-paragraph book redraws one or two paragraphs, not all of them.
  */
@@ -155,7 +248,10 @@ const Paragraph = React.memo(function Paragraph({
   hovKey,
   isActive,
   isDark,
-  showInlineNotes,
+  margin,
+  openPin,
+  verbatim,
+  styles,
   terminologyColor,
   fontFamily,
   fontSize,
@@ -167,12 +263,25 @@ const Paragraph = React.memo(function Paragraph({
   const isOn = (id: string) => Boolean(selected?.has(id) || hovered?.has(id));
   const colorOf = (m: TextMark) => (m.isTerminology ? terminologyColor : markColor(m.color, FALLBACK_COLOR));
 
+  /** Text from `start` to `end` with its pasted base formatting; offsets are unchanged. */
+  const styled = (start: number, end: number): React.ReactNode =>
+    styles.length
+      ? styleRuns(start, end, styles).map((r) =>
+          r.styles.length ? (
+            <span key={r.start} style={Object.assign({}, ...r.styles.map((k) => RUN_STYLE[k]))}>
+              {text.slice(r.start, r.end)}
+            </span>
+          ) : (
+            text.slice(r.start, r.end)
+          )
+        )
+      : text.slice(start, end);
+
   const renderText = (): React.ReactNode => {
-    if (!paraMarks.length) return text;
+    if (!paraMarks.length) return styled(0, text.length);
     const byId = new Map(paraMarks.map((m) => [m.id, m]));
     const heads = glyphHeads ? new Set(glyphHeads.split(' ')) : null;
     return segmentParagraph(text.length, paraMarks).map((seg) => {
-      const piece = text.slice(seg.start, seg.end);
       const here = seg.ids.map((id) => byId.get(id)!);
       // A reaction's glyph sits before its passage: an empty button with a CSS glyph, so the
       // paragraph's text (and every offset counted from it) is unchanged.
@@ -205,7 +314,7 @@ const Paragraph = React.memo(function Paragraph({
         return (
           <React.Fragment key={seg.start}>
             {glyphNodes}
-            {piece}
+            {styled(seg.start, seg.end)}
           </React.Fragment>
         );
       }
@@ -227,7 +336,11 @@ const Paragraph = React.memo(function Paragraph({
           style.border = `${m.thickness || 2}px solid ${c}`;
           style.borderRadius = '50% / 30%';
           style.padding = '0.05em 0.4em';
-        } else if (m.kind === 'note' && !style.border) style.borderBottom = `2px dotted ${c}`;
+        } else if (m.kind === 'note') {
+          // A note lights up the words it is about, the way a highlight does, plus its dotted rule.
+          if (style.backgroundColor === 'transparent') style.backgroundColor = markFill(c, isDark);
+          if (!style.border) style.borderBottom = `2px dotted ${c}`;
+        }
       }
       if (lines.length) {
         style.textDecorationLine = lines.join(' ');
@@ -251,7 +364,7 @@ const Paragraph = React.memo(function Paragraph({
             className="cursor-pointer"
             style={style}
           >
-            {piece}
+            {styled(seg.start, seg.end)}
           </mark>
         </React.Fragment>
       );
@@ -270,7 +383,7 @@ const Paragraph = React.memo(function Paragraph({
       <p
         id={`${PARA_TEXT_ID_PREFIX}${idx}`}
         className="leading-relaxed text-stone-800 dark:text-stone-200"
-        style={{ fontFamily, fontSize: `${fontSize}px`, lineHeight: '1.75' }}
+        style={{ fontFamily, fontSize: `${fontSize}px`, lineHeight: '1.75', whiteSpace: verbatim ? 'pre-wrap' : undefined }}
       >
         {renderText()}
       </p>
@@ -291,76 +404,58 @@ const Paragraph = React.memo(function Paragraph({
         {notes.length > 0 && (
           // Gold on its own 10% tint: 4.78:1 on paper; the dark gold is lighter still on night.
           <span className="text-[10px] font-semibold text-gold bg-gold/10 px-2 py-0.5 rounded-full">
-            {notes.length} {notes.length === 1 ? 'note' : 'notes'}
+            {plural(notes.length, 'note')}
           </span>
         )}
       </div>
 
-      {/* Inline notes, in the margin of the paragraph they were written about. */}
-      {showInlineNotes && notes.length > 0 && (
-        <div className="mt-3 space-y-2.5 pl-3 border-l-2 border-gold/40">
-          {notes.map(({ mark: note, quote }) => {
-            const color = colorOf(note);
-            const on = isOn(note.id);
-            const time = noteTimeLabel(note, now);
+      {/* Notes in the margin, level with the line they were written about. `top` is set by the
+          reader's margin layout pass (see `layoutMargin`), which also keeps cards from overlapping. */}
+      {margin !== 'off' &&
+        notes.map(({ mark: note, quote }) => {
+          const color = colorOf(note);
+          const on = isOn(note.id);
+          const label = note.title || 'Reader Note';
+          if (margin === 'pins') {
+            const open = openPin === note.id;
             return (
-              <div
-                key={note.id}
-                data-note-card={note.id}
-                data-mark-ui
-                onMouseEnter={() => actions.hover(note.id)}
-                onMouseLeave={() => actions.hover(null)}
-                onClick={(e) => actions.markClick(e, note.id)}
-                className={`p-3.5 rounded-xl border shadow-xs transition-shadow cursor-pointer text-stone-900 dark:text-stone-100 ${
-                  isDark ? 'bg-night-3' : 'bg-white'
-                } ${on ? 'shadow-md' : ''}`}
-                style={{ ...noteSurface(color, note), borderWidth: on ? 2 : 1.5 }}
-              >
-                <div className="flex items-start justify-between gap-2 mb-1.5">
-                  <div className="flex items-center gap-1.5 min-w-0">
-                    <StickyNoteIcon className="w-3.5 h-3.5 shrink-0" style={{ color }} />
-                    <h4 className="font-semibold text-[13px] tracking-tight truncate">{note.title || 'Reader Note'}</h4>
-                  </div>
-                  <div className="flex items-center gap-0.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        actions.edit(note.id);
-                      }}
-                      className="w-6 h-6 flex items-center justify-center rounded text-muted hover:text-stone-900 dark:hover:text-white cursor-pointer"
-                      title="Edit the note"
-                      aria-label="Edit the note"
-                    >
-                      <Pencil className="w-3 h-3" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        actions.remove(note.id);
-                      }}
-                      className="w-6 h-6 flex items-center justify-center rounded text-muted hover:text-red-600 cursor-pointer"
-                      title="Delete this mark"
-                      aria-label="Delete this mark"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-                {quote && (
-                  <div className="text-[11px] italic text-stone-600 dark:text-stone-400 border-l-2 pl-2 my-1.5 leading-snug" style={{ borderLeftColor: color }}>
-                    &ldquo;{quote}&rdquo;
+              <div key={note.id} data-margin-item={note.id} className="absolute left-full ml-1.5 top-0 w-6">
+                <button
+                  type="button"
+                  data-note-card={note.id}
+                  data-mark-ui
+                  aria-expanded={open}
+                  aria-label={`Note: ${label}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    actions.togglePin(open ? null : note.id);
+                  }}
+                  className={`w-6 h-6 -mt-0.5 flex items-center justify-center rounded-md border cursor-pointer transition-colors ${
+                    isDark ? 'bg-night-3' : 'bg-white'
+                  } ${open || on ? 'shadow-md' : 'shadow-xs'}`}
+                  style={{ borderColor: color }}
+                >
+                  <StickyNoteIcon className="w-3.5 h-3.5" style={{ color }} weight={open ? 'fill' : 'regular'} />
+                </button>
+                {open && (
+                  <div className="absolute right-0 top-7 z-20 w-[min(18rem,calc(100vw-3rem))]">
+                    <NoteCard note={note} quote={quote} color={color} on isDark={isDark} label={label} time={noteTimeLabel(note, now)} actions={actions} />
                   </div>
                 )}
-                {note.text && <p className="text-[12px] leading-relaxed whitespace-pre-wrap break-words">{note.text}</p>}
-                {/* Only the time: every note here is the reader's own, so a name added nothing. */}
-                {time && <p className="mt-1.5 text-right text-[10px] text-muted">{time}</p>}
               </div>
             );
-          })}
-        </div>
-      )}
+          }
+          return (
+            <div key={note.id} data-margin-item={note.id} className="absolute left-full ml-6 top-0 w-60">
+              {/* Drawn by the layout pass only when the card had to move down off its line: a thin
+                  rule from the line, across the gutter, to the card. */}
+              <svg data-margin-link aria-hidden className="absolute -left-6 w-6 overflow-visible pointer-events-none" style={{ display: 'none', color }}>
+                <path fill="none" stroke="currentColor" strokeWidth="1" strokeOpacity="0.6" vectorEffect="non-scaling-stroke" />
+              </svg>
+              <NoteCard note={note} quote={quote} color={color} on={on} isDark={isDark} label={label} time={noteTimeLabel(note, now)} actions={actions} />
+            </div>
+          );
+        })}
     </div>
   );
 });
@@ -379,22 +474,49 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     annotations;
   const reduceMotion = useReducedMotion();
 
-  // Paragraphs exactly as the marks' anchors count them: the stored text split on blank lines.
-  const paragraphs = useMemo(
-    () =>
-      documentText && documentText.trim()
-        ? documentText
-            .split(/\n\n+/)
-            .map((text) => text.trim())
-            .filter((text) => text.length > 0)
-        : [],
-    [documentText]
-  );
+  /**
+   * The stored text with its layout and pasted formatting. Until it arrives a saved document shows
+   * no paragraphs: split the default way first, a verbatim paste would put marks on the wrong lines.
+   */
+  const [content, setContent] = useState<{ text: string; layout?: 'verbatim'; textStyles?: TextStyle[] } | null>(null);
+  /**
+   * A failed fetch shows an error with Retry and no paragraphs, so nothing can be marked. Falling
+   * back to the bare text would lose the layout and anchor marks to the wrong paragraphs.
+   */
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  useEffect(() => {
+    if (!docId) return;
+    let live = true;
+    setLoadFailed(false);
+    void fetchDocumentContent(docId).then((c) => {
+      if (!live) return;
+      if (c) setContent(c);
+      else setLoadFailed(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [docId, loadAttempt]);
+  const sourceText = docId ? content?.text : documentText;
+  const verbatim = content?.layout === 'verbatim';
+  // Paragraphs exactly as the marks' anchors count them (`splitParagraphs`, shared with the store).
+  const paragraphs = useMemo(() => splitParagraphs(sourceText ?? '', content?.layout), [sourceText, content?.layout]);
+  const stylesByPara = useMemo(() => {
+    const map = new Map<number, TextStyle[]>();
+    for (const st of content?.textStyles ?? []) (map.get(st.anchor.paragraphIndex) ?? map.set(st.anchor.paragraphIndex, []).get(st.anchor.paragraphIndex)!).push(st);
+    return map;
+  }, [content?.textStyles]);
+
+  // How far through the text the reader has got: the last paragraph in view, of all of them.
+  const reportProgress = useReadingProgress(docId);
 
   const displayTitle = documentTitle || (documentText ? 'Uploaded Document' : 'No Document Selected');
   const displayAuthor = documentText ? 'User Uploaded Text' : '';
   const [activeParagraphIndex, setActiveParagraphIndex] = useState<number | null>(null);
   const [showInlineNotes, setShowInlineNotes] = useState(true);
+  /** The note opened from a margin pin (narrow margin only). */
+  const [openPin, setOpenPin] = useState<string | null>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
   // On a phone the panel covers the page, so one left open while the window narrows is closed.
   useEffect(() => {
@@ -957,11 +1079,167 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
       hover: (id) => setHoveredId(id),
       edit: (id) => handlersRef.current.startEditing(id),
       remove: (id) => handlersRef.current.deleteMark(id),
+      togglePin: (id) => setOpenPin(id),
       addNote: (idx) => handlersRef.current.createParagraphNote(idx),
       activate: (idx) => setActiveParagraphIndex(idx)
     }),
     []
   );
+  // Reports the last paragraph in view as the reader scrolls (debounced by the hook), and once
+  // on opening, so a document read in one screen still counts as read that far.
+  useEffect(() => {
+    if (!docId || paragraphs.length === 0 || activeControlTab !== 'notes') return;
+    let frame = 0;
+    const measure = () => {
+      frame = 0;
+      // Binary search: paragraphs run top to bottom, so find the last one whose top is on screen.
+      let lo = 0;
+      let hi = paragraphs.length - 1;
+      let last = -1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        const el = document.getElementById(`reader-para-${mid}`);
+        if (!el) return;
+        if (el.getBoundingClientRect().top < window.innerHeight) {
+          last = mid;
+          lo = mid + 1;
+        } else hi = mid - 1;
+      }
+      if (last >= 0) reportProgress(last + 1, paragraphs.length);
+    };
+    const onScroll = () => {
+      if (!frame) frame = requestAnimationFrame(measure);
+    };
+    const first = window.setTimeout(measure, 600);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      window.clearTimeout(first);
+      cancelAnimationFrame(frame);
+      window.removeEventListener('scroll', onScroll);
+    };
+  }, [docId, paragraphs.length, activeControlTab, reportProgress]);
+
+  /**
+   * The margin: note cards beside the text when there is room for both, else pins in a narrow
+   * gutter. Room is the body's width less the docked marks panel (an overlay on a phone).
+   */
+  const bodyRef = useRef<HTMLDivElement>(null);
+  // A state, not a ref: the column remounts with the reading tab, and the layout must follow it.
+  const [flow, setFlow] = useState<HTMLDivElement | null>(null);
+  const [bodyWidth, setBodyWidth] = useState(0);
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(() => setBodyWidth(el.clientWidth));
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  const docked = isPanelOpen && typeof window !== 'undefined' && window.innerWidth >= 768 ? 320 : 0;
+  // 40: the text column's own side padding.
+  const marginMode: MarginMode = !showInlineNotes
+    ? 'off'
+    : bodyWidth - docked >= MIN_TEXT_PX + MARGIN_CARDS_PX + 40
+      ? 'cards'
+      : 'pins';
+  useEffect(() => {
+    if (marginMode !== 'pins') setOpenPin(null);
+  }, [marginMode]);
+  // An open pin closes on Escape or a press anywhere but itself.
+  useEffect(() => {
+    if (!openPin) return;
+    const onDown = (e: PointerEvent) => {
+      if (!(e.target instanceof Element) || !e.target.closest(`[data-margin-item="${openPin}"]`)) setOpenPin(null);
+    };
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpenPin(null);
+    document.addEventListener('pointerdown', onDown, true);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onDown, true);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [openPin]);
+
+  /**
+   * Puts each margin note level with the first line of its words (a paragraph note: the
+   * paragraph's first line), pushed down only as far as it takes to clear the note above.
+   * Offsets, not client rects, so the tab's slide-in transform does not skew the maths.
+   */
+  const layoutMargin = useCallback(() => {
+    if (!flow) return;
+    const nodes = Array.from(flow.querySelectorAll<HTMLElement>('[data-margin-item]'));
+    const items = nodes.map((node) => {
+      const id = node.dataset.marginItem!;
+      const para = node.parentElement!;
+      const word = para.querySelector<HTMLElement>(`p [data-mark-ids~="${id}"]`);
+      // 10: the paragraph's own top padding, where its first line starts.
+      const lineTop = word ? word.offsetTop : 10;
+      // Middle of that first line, where a connector would leave it.
+      const lineMid = word ? Math.round(word.offsetHeight / 2) : 14;
+      return { id, node, paraTop: para.offsetTop, desired: para.offsetTop + lineTop, lineMid, height: node.offsetHeight };
+    });
+    const { tops, bottom } = stackMargin(items, marginMode === 'pins' ? 4 : 10);
+    for (const it of items) {
+      const top = tops.get(it.id) ?? it.desired;
+      it.node.style.top = `${top - it.paraTop}px`;
+      // A card pushed down off its line gets a thin rule back to it: out of the line, down the
+      // gutter, into the card at the height it would have met it (so the drop reads as exact).
+      const link = it.node.querySelector<SVGSVGElement>('[data-margin-link]');
+      const shift = Math.round(top - it.desired);
+      if (!link) continue;
+      link.style.display = shift > 3 ? 'block' : 'none';
+      if (shift <= 3) continue;
+      link.style.top = `${it.lineMid - shift}px`;
+      link.style.height = `${shift}px`;
+      link.querySelector('path')?.setAttribute('d', `M2 0.5 H12 V${shift + 0.5} H24`);
+    }
+    // Room below the last paragraph for a stack of notes that runs past the end of the text.
+    const content = flow.scrollHeight - (parseFloat(flow.style.paddingBottom) || 0);
+    flow.style.paddingBottom = `${Math.max(0, Math.ceil(bottom - content))}px`;
+  }, [flow, marginMode]);
+  useLayoutEffect(() => {
+    layoutMargin();
+    if (!flow) return;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(layoutMargin);
+    });
+    observer.observe(flow);
+    // Cards change height without the column doing so (a note edited, a webfont arriving).
+    flow.querySelectorAll('[data-margin-item]').forEach((n) => observer.observe(n));
+    return () => {
+      cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [flow, layoutMargin, paraData, openPin, settings.fontSize, settings.typography]);
+
+  /**
+   * What the selection menu and the properties strip must keep clear: every glyph box of the
+   * paragraphs on screen, plus their "+ Note" rows. In card mode the margin beside the text is
+   * free (bar note cards, which the panels avoid), so that is where they go, level with the line.
+   * On a phone the bottom nav's strip is chrome already over the page: a panel may sit there,
+   * spanning it like a sheet.
+   */
+  const placementContext = useCallback((): PanelContext => {
+    const obstacles: PanelContext['obstacles'] = [];
+    const range = document.createRange();
+    flow?.querySelectorAll<HTMLElement>(`[id^="${PARA_TEXT_ID_PREFIX}"], [data-para-note]`).forEach((el) => {
+      const box = el.getBoundingClientRect();
+      if (box.bottom < 0 || box.top > window.innerHeight) return;
+      range.selectNodeContents(el);
+      for (const r of Array.from(range.getClientRects())) if (r.width > 0 && r.height > 0) obstacles.push(r);
+    });
+    const column = flow?.getBoundingClientRect();
+    // 24: the gap the note cards keep from the text (`ml-6`); 16: from the window edge.
+    const lane = marginMode === 'cards' && column ? { left: column.right + 24, right: window.innerWidth - 16 } : undefined;
+    // The nav's resting place, even while it is slid away on scroll: the panel takes its spot.
+    const navHeight = document.getElementById('bottom-navigation-bar')?.offsetHeight ?? 0;
+    const dock = navHeight
+      ? { left: 0, right: window.innerWidth, top: window.innerHeight - navHeight, bottom: window.innerHeight }
+      : undefined;
+    return { obstacles, lane, dock };
+  }, [flow, marginMode]);
+
   const paragraphFont = settings.typography.includes('Newsreader')
     ? 'Newsreader, Georgia, serif'
     : settings.typography.includes('Sans')
@@ -1005,12 +1283,16 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     <div className={`min-h-screen flex flex-col transition-colors ${isDark ? 'bg-night text-stone-100' : 'bg-paper text-ink'}`}>
       {/* Theme picker — which theme new marks are filed under, and so their colour. */}
       <div
-        ref={themeStripRef}
-        className={`chip-strip px-3 sm:px-6 py-2 border-b flex items-center gap-1.5 text-[11px] w-full max-w-full overflow-x-auto snap-x snap-mandatory scroll-smooth ${
+        className={`pl-3 sm:pl-6 py-2 border-b flex items-center gap-1.5 text-[11px] w-full max-w-full ${
           isDark ? 'bg-night-2 border-stone-800/80' : 'bg-stone-100 border-stone-200'
         }`}
       >
+        {/* The label stays put; only the chips scroll, so it is never clipped at 320 px. */}
         <span className="font-semibold text-muted shrink-0">Tagging as</span>
+        <div
+          ref={themeStripRef}
+          className="chip-strip min-w-0 flex-1 flex items-center gap-1.5 pr-3 sm:pr-6 overflow-x-auto snap-x snap-mandatory scroll-smooth"
+        >
         {settings.activeThemes.map((theme, i) => (
           <button
             key={theme.id}
@@ -1029,6 +1311,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
             <span className="whitespace-nowrap">{theme.name}</span>
           </button>
         ))}
+        </div>
       </div>
 
       {/* Top Reader Navigation Bar */}
@@ -1044,16 +1327,15 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
             type="button"
             onClick={() => onNavigate('home', 'push_back')}
             className="p-1.5 rounded-xl text-stone-700 dark:text-stone-300 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer shrink-0"
-            title="Back to Library"
-            aria-label="Back to Library"
+            title="Back to My Collections"
+            aria-label="Back to My Collections"
           >
             <ArrowLeft className="w-4 h-4" />
           </button>
           <div className="min-w-0 truncate">
-            <h1 className="font-serif text-[16px] sm:text-[18px] font-bold truncate text-stone-900 dark:text-paper leading-tight">
+            <h1 className="title-hand text-[22px] sm:text-[25px] truncate text-stone-900 dark:text-paper">
               {displayTitle}
             </h1>
-            <p className="text-[11px] sm:text-[12px] text-muted truncate leading-tight">{displayAuthor || 'Active Reading Session'}</p>
           </div>
         </div>
         <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
@@ -1090,11 +1372,13 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
             }}
             aria-pressed={activeControlTab === 'notes' ? showInlineNotes : undefined}
             className={pillClass(activeControlTab === 'notes')}
-            title={activeControlTab === 'notes' ? (showInlineNotes ? 'Hide inline notes' : 'Show inline notes') : 'Back to reading'}
+            title={activeControlTab === 'notes' ? (showInlineNotes ? 'Hide margin notes' : 'Show margin notes') : 'Back to reading'}
           >
             <StickyNoteIcon className="w-4 h-4" />
             {activeControlTab === 'notes' && (
-              <span className="whitespace-nowrap animate-in fade-in duration-150">Notes ({noteHeads.length})</span>
+              <span className="whitespace-nowrap animate-in fade-in duration-150">
+                {plural(noteHeads.length, 'note')}
+              </span>
             )}
           </button>
           <button
@@ -1119,17 +1403,6 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
             <Download className="w-4 h-4" />
             {activeControlTab === 'export' && <span className="whitespace-nowrap animate-in fade-in duration-150">Export Notes</span>}
           </button>
-          {docId && (
-            <button
-              type="button"
-              onClick={() => handleSwitchTab('analysis')}
-              className={pillClass(activeControlTab === 'analysis')}
-              title="AI Thematic Analysis"
-            >
-              <Sparkles className="w-4 h-4" />
-              {activeControlTab === 'analysis' && <span className="whitespace-nowrap animate-in fade-in duration-150">AI Analysis</span>}
-            </button>
-          )}
         </div>
 
         <div className="flex items-center gap-0.5 shrink-0">
@@ -1184,14 +1457,15 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
       </div>
 
       {/* Body: the text column, and the notes panel beside it (an overlay on a narrow window). */}
-      <div className="flex-1 flex max-w-6xl mx-auto w-full overflow-x-clip">
+      <div ref={bodyRef} className="flex-1 flex max-w-6xl mx-auto w-full overflow-x-clip">
         {/* data-zoom-target: where the shelf's Read zoom lands page one (see zoomIntoReader in Bookshelf). */}
         <main
           ref={textRef}
           data-zoom-target
           data-annotation-surface
           tabIndex={-1}
-          className="flex-1 min-w-0 max-w-2xl mx-auto w-full px-5 py-6 space-y-6 pb-8"
+          className="flex-1 min-w-0 mx-auto w-full px-5 py-6 space-y-6 pb-8"
+          style={{ maxWidth: `calc(42rem + ${marginMode === 'cards' ? MARGIN_CARDS_PX : marginMode === 'pins' ? MARGIN_PINS_PX : 0}px)` }}
           onClick={(e) => {
             if (e.target === e.currentTarget) clearSelection();
           }}
@@ -1218,12 +1492,28 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                     <span className="text-stone-300 dark:text-stone-700">•</span>
                     <span className="text-muted italic">Select text to mark it, or write a note</span>
                   </div>
-                  <h2 className="font-serif text-[26px] sm:text-[32px] font-bold leading-tight text-stone-900 dark:text-paper">
+                  <h2 className="title-hand text-balance text-[36px] sm:text-[44px] text-stone-900 dark:text-paper">
                     {displayTitle}
                   </h2>
-                  {displayAuthor && <p className="text-[13px] text-muted">{displayAuthor}</p>}
+                  {loadFailed && !content && (
+                    <div role="alert" className="pt-4 flex flex-col items-center gap-3">
+                      <p className="text-[14px] text-muted">This document could not be loaded, so it can’t be marked yet.</p>
+                      <button
+                        type="button"
+                        onClick={() => setLoadAttempt((n) => n + 1)}
+                        className="rounded-full caps px-5 py-2.5 text-[12px] bg-accent hover:bg-accent-hover text-on-accent transition-colors cursor-pointer"
+                      >
+                        Retry
+                      </button>
+                    </div>
+                  )}
                 </div>
 
+                <div
+                  ref={setFlow}
+                  className="relative space-y-6"
+                  style={{ marginRight: marginMode === 'cards' ? MARGIN_CARDS_PX : marginMode === 'pins' ? MARGIN_PINS_PX : 0 }}
+                >
                 {paragraphs.map((text, idx) => {
                   const notes = paraData.notes.get(idx) ?? EMPTY_NOTES;
                   return (
@@ -1238,7 +1528,10 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                       hovKey={hovByPara.get(idx) ?? ''}
                       isActive={activeParagraphIndex === idx}
                       isDark={isDark}
-                      showInlineNotes={showInlineNotes}
+                      margin={marginMode}
+                      verbatim={verbatim}
+                      styles={stylesByPara.get(idx) ?? EMPTY_STYLES}
+                      openPin={openPin && notes.some((n) => n.mark.id === openPin) ? openPin : ''}
                       terminologyColor={settings.terminologyColor}
                       fontFamily={paragraphFont}
                       fontSize={settings.fontSize}
@@ -1247,6 +1540,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                     />
                   );
                 })}
+                </div>
               </motion.div>
             )}
 
@@ -1279,13 +1573,13 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                 <div className="space-y-4">
                   <div className="p-4 rounded-2xl bg-stone-100 dark:bg-stone-800/60 flex items-center justify-between">
                     <div>
-                      <h4 className="font-bold text-[14px] text-stone-900 dark:text-paper">{displayTitle}</h4>
+                      <h4 className="title-hand text-[21px] text-stone-900 dark:text-paper">{displayTitle}</h4>
                       <p className="text-[12px] text-muted">
                         {exportable.length} of {exportEntries.length} marks and notes match the filter below
                       </p>
                     </div>
                     <span className="text-[11px] font-bold uppercase tracking-wider px-2.5 py-1 rounded-lg bg-accent text-on-accent">
-                      {exportable.length} {exportable.length === 1 ? 'Mark' : 'Marks'}
+                      {plural(exportable.length, 'Mark')}
                     </span>
                   </div>
 
@@ -1334,19 +1628,6 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
               </motion.div>
             )}
 
-            {activeControlTab === 'analysis' && docId && (
-              <motion.div
-                key="analysis-tab"
-                custom={slideDirection}
-                variants={tabVariants}
-                initial="enter"
-                animate="center"
-                exit="exit"
-                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              >
-                <ThematicAnalysisView docId={docId} documentTitle={displayTitle} className="space-y-4" />
-              </motion.div>
-            )}
           </AnimatePresence>
         </main>
 
@@ -1359,7 +1640,9 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
           } ${isDark ? 'bg-night-1 border-stone-800' : 'bg-white border-stone-200'}`}
         >
           <div className={`shrink-0 flex items-center justify-between px-3 py-2 border-b ${isDark ? 'border-stone-800' : 'border-stone-100'}`}>
-            <h2 className="caps text-muted">Marks · {views.length}</h2>
+            <h2 className="title-hand text-[24px] text-stone-900 dark:text-paper">
+              {plural(views.length, 'mark')}
+            </h2>
             <button type="button" onClick={() => setIsPanelOpen(false)} aria-label="Hide marks panel" className={iconBtn}>
               <X className="w-3.5 h-3.5" />
             </button>
@@ -1408,6 +1691,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
           isDark={isDark}
           bottomInset={bottomInset}
           topInset={popoverTopInset}
+          placementContext={placementContext}
           onColorChange={(color, themeId) => updateMarks([selectedView.id], { color, themeId })}
           onWeightChange={(weight) => updateMarks([selectedView.id], { weight })}
           onStrokeStyleChange={(strokeStyle) => updateMarks([selectedView.id], { strokeStyle })}
@@ -1455,8 +1739,9 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
           }}
           terminologyColor={settings.terminologyColor}
           onDismiss={() => setSelectionAnchor(null)}
-          // Above the passage by default, but not over a note card when below is free.
+          // Never over the text or a note card: the margin, above, below, the nav, or a gap.
           avoidSelector="[data-note-card]"
+          placementContext={placementContext}
           onClose={dropSelection}
         />
       )}

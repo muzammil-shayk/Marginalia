@@ -67,8 +67,8 @@ export const DARK_SWATCH_RING = 'dark:ring-1 dark:ring-paper/50';
 const segment = (active: boolean) =>
   `px-2 h-6 rounded-md flex items-center justify-center gap-1 text-[10.5px] font-semibold transition-colors cursor-pointer ${textTile(active)}`;
 
-export const Divider: React.FC<{ isDark: boolean }> = ({ isDark }) => (
-  <div className={`w-px h-5 mx-0.5 shrink-0 ${isDark ? 'bg-stone-700' : 'bg-stone-200'}`} />
+export const Divider: React.FC<{ isDark: boolean; className?: string }> = ({ isDark, className = '' }) => (
+  <div className={`w-px h-5 mx-0.5 shrink-0 ${isDark ? 'bg-stone-700' : 'bg-stone-200'} ${className}`} />
 );
 
 /**

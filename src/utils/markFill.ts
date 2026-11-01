@@ -20,8 +20,8 @@ const TEXT_DARK: RGB = [0xe2, 0xdb, 0xcd];
 
 /** Fill-to-ground contrast each state aims for. Hover is the mark being pointed at. */
 export const FILL_TARGETS = {
-  light: { rest: 1.4, hover: 1.75 },
-  dark: { rest: 1.8, hover: 2.4 }
+  light: { rest: 1.55, hover: 1.9 },
+  dark: { rest: 2.0, hover: 2.6 }
 } as const;
 const DARK_LIFT = 0.25;
 const MIN_TEXT = 4.5;

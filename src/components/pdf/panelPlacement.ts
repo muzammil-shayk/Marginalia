@@ -9,6 +9,12 @@
  * `avoid` lists boxes the panel should not cover (the reader's note cards). A side that fits but
  * would cover one counts as blocked, and the other side is used when it is clear; when both are
  * blocked the usual order stands.
+ *
+ * `obstacles` are the glyph boxes of the text around the anchor. When given, the panel must not
+ * cover a single one, so the search widens: a `lane` beside the text column first (the reader's
+ * margin, level with the anchor), then directly above or below, then a `dock` over chrome that
+ * already hides the page (the phone's bottom nav), then the nearest clear gap between lines or
+ * paragraphs. Only when none of those is clear does the old above/below order apply.
  */
 
 export interface PlacementRect {
@@ -40,13 +46,26 @@ export interface PlacementInput {
   gap?: number;
   /** Boxes the panel should stay off when it has the choice. */
   avoid?: PlacementRect[];
+  /** Glyph boxes the panel must never cover (see the header). */
+  obstacles?: PlacementRect[];
+  /** A free column beside the text, e.g. the reader's margin: x-range the panel may sit in. */
+  lane?: { left: number; right: number };
+  /** Chrome the panel may sit on without hiding the page (the bottom nav). */
+  dock?: PlacementRect;
 }
 
 export interface Placement {
   left: number;
   top: number;
-  side: 'above' | 'below';
+  side: 'above' | 'below' | 'lane' | 'dock' | 'gap';
+  /** Docked panels span the dock (less 8px each side). */
+  width?: number;
 }
+
+/** How far the gap search may move a panel from its anchor before giving up. */
+const GAP_REACH = 240;
+/** Clearance kept between the panel and any glyph. */
+const GLYPH_PAD = 2;
 
 export function placePanel({
   anchor,
@@ -58,7 +77,10 @@ export function placePanel({
   bottomInset = 0,
   margin = 8,
   gap = 8,
-  avoid = []
+  avoid = [],
+  obstacles,
+  lane,
+  dock
 }: PlacementInput): Placement {
   const ceiling = topInset + margin;
   const floor = viewportHeight - bottomInset - margin;
@@ -72,6 +94,51 @@ export function placePanel({
   const left = Math.min(Math.max(anchor.left, margin), maxLeft);
   const covers = (top: number) =>
     avoid.some((r) => r.left < left + width && r.right > left && r.top < top + height && r.bottom > top);
+
+  if (obstacles) {
+    const free = (l: number, t: number) =>
+      t >= ceiling &&
+      t + height <= floor &&
+      // 8px of air from a note card, so the two never read as one block.
+      !avoid.some((r) => r.left - 8 < l + width && r.right + 8 > l && r.top - 8 < t + height && r.bottom + 8 > t) &&
+      !obstacles.some(
+        (r) =>
+          r.left - GLYPH_PAD < l + width &&
+          r.right + GLYPH_PAD > l &&
+          r.top - GLYPH_PAD < t + height &&
+          r.bottom + GLYPH_PAD > t
+      );
+    // Nearest clear top to `ideal` along x = l, within `reach` either way.
+    const nearest = (l: number, ideal: number, reach: number) => {
+      for (let d = 0; d <= reach; d += 2) {
+        if (free(l, ideal - d)) return ideal - d;
+        if (free(l, ideal + d)) return ideal + d;
+      }
+      return null;
+    };
+    if (lane && lane.right - lane.left >= width) {
+      // Level with the anchor's first line; pushed off a note card only as far as needed.
+      const t = nearest(lane.left, anchor.top - 6, viewportHeight);
+      if (t !== null) return { left: lane.left, top: t, side: 'lane' };
+    }
+    if (free(left, aboveTop)) return { left, top: aboveTop, side: 'above' };
+    if (free(left, belowTop)) return { left, top: belowTop, side: 'below' };
+    // Only while the anchor itself sits clear above the dock.
+    if (dock && dock.bottom - dock.top >= height && dock.right - dock.left >= width && anchor.bottom + gap <= dock.top) {
+      return {
+        left: dock.left + 8,
+        top: dock.top + (dock.bottom - dock.top - height) / 2,
+        side: 'dock',
+        width: dock.right - dock.left - 16
+      };
+    }
+    const up = nearest(left, aboveTop, GAP_REACH);
+    const down = nearest(left, belowTop, GAP_REACH);
+    const t =
+      up === null ? down : down === null ? up : anchor.top - (up + height) <= down - anchor.bottom ? up : down;
+    if (t !== null) return { left, top: t, side: 'gap' };
+  }
+
   const clearAbove = fitsAbove && !covers(aboveTop);
   const clearBelow = fitsBelow && !covers(belowTop);
 

@@ -28,11 +28,12 @@ import {
   countMarks,
   computeThemeIds,
   countTerminology,
+  nextReadingProgress,
+  progressPercent,
   countWords,
   isGeminiKey,
   isValidId,
-  safeExtension,
-  summarizeAnalysis
+  safeExtension
 } from './types';
 import { migrateTextEntries } from '../../utils/textMarks';
 
@@ -172,8 +173,9 @@ export class LocalDocumentBackend implements DocumentBackend {
       text: params.text,
       annotations: [],
       readingState: null,
-      analysis: null,
-      annotationsBackup: null
+      readingProgress: null,
+      annotationsBackup: null,
+      ...(params.textStyles?.length && { textStyles: params.textStyles })
     });
     return meta;
   }
@@ -288,6 +290,7 @@ export class LocalDocumentBackend implements DocumentBackend {
     if (!raw) return null;
     {
       const annotations = Array.isArray(raw.annotations) ? raw.annotations : [];
+      const readingProgress = raw.readingProgress ?? null;
       return {
         id,
         title: raw.title || 'Untitled Document',
@@ -305,12 +308,16 @@ export class LocalDocumentBackend implements DocumentBackend {
         themeIds: computeThemeIds(annotations),
         themeCounts: computeThemeCounts(annotations),
         terminologyCount: countTerminology(annotations),
+        progressPercent: progressPercent(readingProgress),
         text: raw.text || '',
         annotations,
         readingState: raw.readingState ?? null,
-        // Absent on every record written before analyses were saved, which is most of them.
-        analysis: raw.analysis ?? null,
+        readingProgress,
+        // Thematic analysis was removed in 2.5.0; one saved earlier is carried through untouched.
+        ...(raw.analysis != null && { analysis: raw.analysis }),
         annotationsBackup: raw.annotationsBackup ?? null,
+        ...(raw.layout === 'verbatim' && { layout: 'verbatim' as const }),
+        ...(Array.isArray(raw.textStyles) && { textStyles: raw.textStyles }),
         ...(raw.pendingOriginal === true && { pendingOriginal: true as const })
       };
     }
@@ -378,8 +385,8 @@ export class LocalDocumentBackend implements DocumentBackend {
     for (const id of ids) {
       const doc = await this.getDocument(id);
       if (!doc) continue;
-      const { text, annotations, analysis, annotationsBackup, pendingOriginal, ...rest } = doc;
-      metas.push({ ...rest, analysis: summarizeAnalysis(analysis) });
+      const { text, annotations, analysis, annotationsBackup, pendingOriginal, textStyles, ...rest } = doc;
+      metas.push(rest);
     }
     return metas.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
@@ -398,8 +405,8 @@ export class LocalDocumentBackend implements DocumentBackend {
     await this.keepLegacyCopy(doc);
     await this.write(updated);
 
-    const { text, annotations: _a, analysis, annotationsBackup: _b, pendingOriginal: _p, ...rest } = updated;
-    return { ...rest, analysis: summarizeAnalysis(analysis) };
+    const { text, annotations: _a, analysis, annotationsBackup: _b, pendingOriginal: _p, textStyles: _s, ...rest } = updated;
+    return rest;
   }
 
   /**
@@ -428,6 +435,7 @@ export class LocalDocumentBackend implements DocumentBackend {
      * previous set costs one copy and makes both recoverable. Never overwritten by a growing
      * write, so the backup always describes the last time marks went missing.
      */
+    const readingProgress = params.readingProgress && nextReadingProgress(doc.readingProgress, params.readingProgress);
     const shrinks = params.annotations !== undefined && annotations.length < doc.annotations.length;
     // A held backup is only replaced by a bigger one. Otherwise a reader who loses thirty marks
     // to a bad write and then deletes one of the two survivors — before noticing anything is
@@ -457,7 +465,7 @@ export class LocalDocumentBackend implements DocumentBackend {
       themeCounts: computeThemeCounts(annotations),
       terminologyCount: countTerminology(annotations),
       readingState: params.readingState ?? doc.readingState,
-      analysis: params.analysis ?? doc.analysis,
+      ...(readingProgress && { readingProgress, progressPercent: progressPercent(readingProgress) }),
       annotationsBackup,
       updatedAt: changesActivity ? new Date().toISOString() : doc.updatedAt
     };

@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import { StickyNote } from '../types';
 import { groupHeads, sortTextMarks, type TextMark, type TextMarkKind } from './textMarks';
+import { plural } from './plural';
 
 /** The global theme list, just enough of it to resolve an id to a display name. */
 export type ThemeRef = { id: string; name: string };
@@ -50,7 +51,7 @@ export function generatePlainText(notes: ExportEntry[], options: ExportOptions):
   output += `Author:   ${options.bookAuthor}\n`;
   if (options.bookChapter) output += `Chapter:  ${options.bookChapter}\n`;
   output += `Exported: ${dateStr}\n`;
-  output += `Total:    ${notes.length} annotation(s)\n`;
+  output += `Total:    ${plural(notes.length, 'annotation')}\n`;
   output += `Theme:    ${!options.themeFilter || options.themeFilter === 'All' ? 'All' : themeName(options.themeFilter, options.themes)}\n\n`;
   output += `-----------------------------------------------------------------\n\n`;
 

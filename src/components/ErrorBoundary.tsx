@@ -45,7 +45,7 @@ export class ErrorBoundary extends Component<Props, State> {
             <AlertCircle className="w-6 h-6" />
           </div>
           <div>
-            <h3 className="font-serif text-[20px] font-bold">Something went wrong</h3>
+            <h3 className="title-hand text-[28px]">Something went wrong</h3>
             <p className="text-[13px] text-muted mt-1">
               This screen ran into an unexpected problem. Your documents and annotations are safe
               on disk — nothing was lost.

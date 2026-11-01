@@ -16,7 +16,7 @@ import { Highlighter, Underline, Strikethrough, StickyNote, Tag, X } from '../ic
 import { AnnotationKind, REACTION_KINDS, reactionChar } from './annotationModel';
 import { UserSettings } from '../../types';
 import { HoverTooltip } from '../HoverTooltip';
-import { AnchoredPopover, PopoverDivider, PopoverGroup, popoverActionClass } from './AnchoredPopover';
+import { AnchoredPopover, PopoverDivider, PopoverGroup, popoverActionClass, PanelContext } from './AnchoredPopover';
 import { DARK_SWATCH_RING, isInkOnDark } from './StyleControls';
 import { TOOL_HOTKEYS, themeShortcut, withShortcut } from './workspaceKeys';
 
@@ -50,6 +50,8 @@ export interface SelectionPopoverProps {
   onDismiss: () => void;
   /** Elements the menu should not cover when the other side of the selection is free. */
   avoidSelector?: string;
+  /** Glyphs to keep clear and free places to use (the reader's; see `placePanel`). */
+  placementContext?: () => PanelContext;
   /**
    * The X button specifically. Unlike `onDismiss` (outside click / Escape, which must leave the
    * selection intact for whatever the reader is reaching for next), pressing X means "I'm done
@@ -132,6 +134,7 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
   terminologyColor,
   onDismiss,
   avoidSelector,
+  placementContext,
   onClose
 }) => {
   // A near-black tool colour would vanish on the dark pill, so its icon turns cream there.
@@ -147,6 +150,7 @@ export const SelectionPopover: React.FC<SelectionPopoverProps> = ({
       bottomInset={bottomInset}
       measureKey={themes.length}
       avoidSelector={avoidSelector}
+      placementContext={placementContext}
       className="gap-x-0.5 gap-y-1 p-1"
     >
       {themes.length > 0 && (

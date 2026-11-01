@@ -22,9 +22,66 @@ export interface ReleaseNote {
   highlights: ChangelogItem[];
 }
 
-export const CURRENT_APP_VERSION = '2.4.0';
+export const CURRENT_APP_VERSION = '2.5.0';
 
 export const CHANGELOG_RELEASES: ReleaseNote[] = [
+  {
+    version: '2.5.0',
+    title: 'Your Readings, Your Margins',
+    date: 'November 2026',
+    summary:
+      'Clearer names for every section, reading progress on your shelf, margin notes that sit level with your excerpts, and AI that is optional and off by default.',
+    highlights: [
+      {
+        category: 'feature',
+        title: 'Renamed sections',
+        description:
+          'The app now speaks in your terms: My Readings, My Margins Tracker, My Collections, Custom Annotations, and Personal Atelier for Margins, all stored on this device.'
+      },
+      {
+        category: 'feature',
+        title: 'Reading progress and a bookmark ribbon',
+        description:
+          'Each book shows "N% completed", and a gold bookmark ribbon on the desk marks where you stopped.'
+      },
+      {
+        category: 'feature',
+        title: 'Pasted excerpts keep their shape',
+        description:
+          'Name your pasted excerpts. Their formatting stays intact, so poems keep their lines and stanzas.'
+      },
+      {
+        category: 'feature',
+        title: 'Sticky notes level with your words',
+        description:
+          'A sticky note in the margin now sits level with its line and highlights the words it belongs to.'
+      },
+      {
+        category: 'improvement',
+        title: 'AI is optional and off by default',
+        description:
+          'AI thematic analysis and AI Synthesis are removed. The remaining AI features are optional, switched on only in Settings, and never run on their own.'
+      },
+      {
+        category: 'improvement',
+        title: 'A calmer look',
+        description:
+          'One handwritten heading font throughout, and muted pastel spines on the shelf.'
+      },
+      {
+        category: 'improvement',
+        title: 'Toolbars stay out of the way',
+        description:
+          'Toolbars no longer cover the text you are reading, and the counts shown are clearer.'
+      },
+      {
+        category: 'fix',
+        title: 'Small fixes',
+        description:
+          'A round of small fixes and polish across the library and the reader.'
+      }
+    ]
+  },
   {
     version: '2.4.0',
     title: 'One Set of Tools for Every Book',

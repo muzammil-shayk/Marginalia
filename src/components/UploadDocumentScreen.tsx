@@ -7,6 +7,7 @@ import { filesFromDrop, pickDocumentAndSiblings } from '../utils/fileDrop';
 import { isAnnotatableFormat } from '../utils/annotatableFormats';
 import { storeUploadedDocument, storePastedDocument, storeHtmlDocument } from '../utils/documentStorage';
 import { ErrorDialog } from './ErrorDialog';
+import { plural } from '../utils/plural';
 
 interface UploadDocumentScreenProps {
   onNavigate: (screen: Screen, transition?: TransitionType) => void;
@@ -30,6 +31,13 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
   onOpenLibrary
 }) => {
   const [pastedText, setPastedText] = useState('');
+  /** The name a pasted excerpt is filed under; blank files it as "Custom Annotations". */
+  const [pastedName, setPastedName] = useState('');
+  /**
+   * The clipboard's own HTML from the last paste, so bold, italic, underline and line breaks
+   * survive. Dropped as soon as the text is edited by hand: it would no longer match.
+   */
+  const [pastedHtml, setPastedHtml] = useState<string | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [isParsing, setIsParsing] = useState(false);
@@ -60,7 +68,7 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
   const handleStartAnalysis = async () => {
     const fallbackTitle = selectedFile
       ? selectedFile.name.replace(/\.[^/.]+$/, "")
-      : "Custom Document Analysis";
+      : pastedName.trim() || 'Custom Annotations';
     const finalTitle = parsedTitle || fallbackTitle;
     const finalText = parsedText || pastedText || '';
     const finalFormat = parsedFormat || 'TXT';
@@ -89,7 +97,15 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
           format: finalFormat
         });
       } else {
-        meta = await storePastedDocument({ title: finalTitle, text: finalText, format: finalFormat });
+        // Pasted custom text keeps its own line breaks and indentation, and the clipboard's
+        // formatting when the text is exactly what was pasted.
+        meta = await storePastedDocument({
+          title: finalTitle,
+          text: finalText,
+          format: finalFormat,
+          layout: 'verbatim',
+          ...(pastedHtml ? { html: pastedHtml } : {})
+        });
       }
 
       onDocumentStored?.();
@@ -176,7 +192,7 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
           Add a Document
         </h2>
         <p className="text-[13px] text-muted">
-          Files open in the annotating workspace. AI analysis runs only when you ask for it.
+          Files open in the annotating workspace.
         </p>
       </div>
 
@@ -236,10 +252,10 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
             {selectedFile && typeof parsedText === 'string'
               ? textLayerMissing
                 ? 'No text layer — opens for reading and hand annotation'
-                : `${parsedText.split(/\s+/).filter(Boolean).length} words extracted cleanly` +
+                : `${plural(parsedText.split(/\s+/).filter(Boolean).length, 'word')} extracted cleanly` +
                   (parsedFormat === 'HTML'
                     ? inlinedAssets > 0
-                      ? ` • ${inlinedAssets} image${inlinedAssets === 1 ? '' : 's'} embedded`
+                      ? ` • ${plural(inlinedAssets, 'image')} embedded`
                       : ' • no images found beside it'
                     : '')
               : 'PDF, HTML, TXT, DOCX and EPUB — drop the whole folder for an HTML book'}
@@ -262,7 +278,7 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
           <AlertCircle className="w-4 h-4 shrink-0 mt-px" />
           <span>
             This PDF is made of page images, with no text layer. It will open in the viewer and
-            every annotation tool works on it — but text selection, search and AI analysis need
+            every annotation tool works on it — but text selection and search need
             machine-readable words, so those stay unavailable until the file is run through OCR.
           </span>
         </div>
@@ -280,15 +296,44 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
 
       {/* Manual Paste Text Box */}
       <div className="space-y-2">
-        <label className="text-[12px] font-semibold text-stone-700 dark:text-stone-300 block">
+        <label htmlFor="paste-text" className="text-[12px] font-semibold text-stone-700 dark:text-stone-300 block">
           Or paste text directly
         </label>
+        <input
+          id="paste-name"
+          type="text"
+          maxLength={300}
+          value={pastedName}
+          onChange={(e) => setPastedName(e.target.value)}
+          placeholder="An excerpt from Hamlet by Shakespeare"
+          aria-label="Name for the pasted text"
+          className={`w-full px-3.5 py-2.5 rounded-2xl border text-[13px] transition-all focus:outline-none focus:ring-1 focus:ring-gold ${
+            isDark
+              ? 'bg-night-2 border-stone-800 text-stone-100 placeholder-stone-500'
+              : 'bg-white border-stone-300/80 text-stone-900 placeholder-stone-500'
+          }`}
+        />
         <textarea
+          id="paste-text"
           rows={4}
-          placeholder="Paste document contents, an excerpt, or notes…"
+          placeholder="Annotations for excerpts… paste text here"
           value={pastedText}
+          onPaste={(e) => {
+            const html = e.clipboardData.getData('text/html');
+            const plain = e.clipboardData.getData('text/plain');
+            // Only a paste into an empty box is the whole document; a paste into existing text
+            // makes a mix the HTML no longer describes.
+            const whole = !pastedText.trim() || e.currentTarget.value.length === e.currentTarget.selectionEnd - e.currentTarget.selectionStart;
+            setPastedHtml(html && whole ? html : null);
+            if (html && whole) {
+              e.preventDefault();
+              setPastedText(plain);
+              if (parseError) setParseError(null);
+            }
+          }}
           onChange={(e) => {
             setPastedText(e.target.value);
+            setPastedHtml(null);
             if (parseError) setParseError(null);
           }}
           className={`w-full p-3.5 rounded-2xl border text-[13px] font-serif leading-relaxed transition-all resize-none focus:outline-none focus:ring-1 focus:ring-gold ${
@@ -304,9 +349,7 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
             disabled={isParsing || isStoring || (!selectedFile && !parsedText && !pastedText.trim())}
             className="flex items-center gap-1.5 px-5 py-2.5 rounded-full bg-accent caps hover:bg-accent-hover text-on-accent font-semibold text-[13px] transition-all shadow-xs cursor-pointer disabled:opacity-50"
           >
-            {/* Not a sparkle: this button saves the document and opens it to read. Nothing is
-                sent to Gemini here — analysis is a separate, deliberate press inside the reader,
-                and a wand on the button that merely opens a book promised otherwise. */}
+            {/* Not a sparkle: this button saves the document and opens it to read. */}
             {isStoring ? <Loader2 className="w-4 h-4 animate-spin" /> : <BookOpen className="w-4 h-4" />}
             <span>
               {isStoring
@@ -334,7 +377,7 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
               onClick={onOpenLibrary}
               className="ml-auto text-[11px] font-semibold text-gold dark:text-gold hover:underline cursor-pointer"
             >
-              Open library
+              Open My Collections
             </button>
           )}
         </div>
@@ -372,7 +415,7 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
                       {doc.title}
                     </h4>
                     <p className="text-[11px] text-muted">
-                      {doc.wordCount} words • Added {doc.date}
+                      {plural(doc.wordCount, 'word')} • Added {doc.date}
                     </p>
                   </div>
                 </div>

@@ -40,7 +40,7 @@ import {
   TextSizePicker,
   WeightPicker
 } from './StyleControls';
-import { AnchoredPopover } from './AnchoredPopover';
+import { AnchoredPopover, PanelContext } from './AnchoredPopover';
 import { withShortcut } from './workspaceKeys';
 
 /** How the Delete key is named on this platform, for the delete button's tooltip. */
@@ -57,6 +57,8 @@ interface MarkPropertiesProps {
   bottomInset?: number;
   /** Pixels at the top of the window this strip must stay clear of — the toolbar. */
   topInset?: number;
+  /** Glyphs to keep clear and free places to use (the reader's; see `placePanel`). */
+  placementContext?: () => PanelContext;
   settings: UserSettings;
   isDark?: boolean;
   onColorChange: (color: string, themeId: string | null) => void;
@@ -80,6 +82,7 @@ export const MarkProperties: React.FC<MarkPropertiesProps> = ({
   rect,
   bottomInset = 0,
   topInset = 0,
+  placementContext,
   settings,
   isDark = false,
   onColorChange,
@@ -117,13 +120,21 @@ export const MarkProperties: React.FC<MarkPropertiesProps> = ({
       topInset={topInset}
       bottomInset={bottomInset}
       measureKey={mark.kind}
-      className="gap-1 p-1.5"
+      // Off the reader's note cards when the other side of the mark is free.
+      avoidSelector="[data-note-card]"
+      placementContext={placementContext}
+      className="flex-nowrap gap-1 p-1.5"
     >
-      <span className="caps caps-sm text-muted dark:text-paper/70 px-1 capitalize">
+      {/* One row at every width: on a phone the style controls scroll sideways (edges fade)
+          rather than stacking a second row over the text being styled. Comment and delete stay
+          pinned at the end, always in reach. */}
+      <div className="hide-scrollbar flex flex-nowrap items-center gap-1 min-w-0 flex-1 overflow-x-auto">
+      {/* The kind is in the toolbar's name; on a phone its label gives way to the controls. */}
+      <span className="caps caps-sm text-muted dark:text-paper/70 px-1 capitalize max-sm:hidden">
         {mark.isTerminology ? 'Terminology' : mark.kind}
       </span>
 
-      <Divider isDark={isDark} />
+      <Divider isDark={isDark} className="max-sm:hidden" />
 
       {mark.isTerminology ? (
         // Its colour is the live Settings → Terminology setting, not a per-mark choice — offering
@@ -191,6 +202,8 @@ export const MarkProperties: React.FC<MarkPropertiesProps> = ({
           <AlignPicker value={mark.align} color={mark.color} onChange={onTextAlignChange} />
         </>
       )}
+
+      </div>
 
       <Divider isDark={isDark} />
 

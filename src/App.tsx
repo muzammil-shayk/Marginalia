@@ -22,7 +22,6 @@ import { isAnnotatableFormat } from './utils/annotatableFormats';
 import { DocumentLibraryPanel } from './components/DocumentLibraryPanel';
 import { SearchModal } from './components/SearchModal';
 import { SidebarDrawer } from './components/SidebarDrawer';
-import { AnalysisModal } from './components/AnalysisModal';
 import { ChangelogModal } from './components/ChangelogModal';
 import { UpdatePrompt } from './components/UpdatePrompt';
 import { CURRENT_APP_VERSION } from './data/changelog';
@@ -145,7 +144,6 @@ export default function App() {
   );
   const [transitionType, setTransitionType] = useState<TransitionType>('push');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [isAnalysisOpen, setIsAnalysisOpen] = useState(false);
   /**
    * Whether the workspace should pick up where the reader left off, or open at page one.
    *
@@ -315,7 +313,7 @@ export default function App() {
         setAnalysisDoc((prev) => (prev.docId === analysisDoc.docId ? { ...prev, text } : prev));
       } else {
         setDocumentLoadError(
-          `"${analysisDoc.title}" is no longer in your library. Add it again to keep reading.`
+          `"${analysisDoc.title}" is no longer in My Collections. Add it again to keep reading.`
         );
       }
     });
@@ -469,7 +467,7 @@ export default function App() {
         handleSelectDocumentForAnalysis(doc.title, text, doc.format, doc.docId);
       } else {
         setDocumentLoadError(
-          `"${doc.title}" is no longer in your library. Add it again to keep reading.`
+          `"${doc.title}" is no longer in My Collections. Add it again to keep reading.`
         );
         setUploadedLibrary((prev) => prev.filter((d) => d.id !== doc.id));
       }
@@ -587,7 +585,6 @@ export default function App() {
         hasActiveDocument={hasActiveDocument}
         collapsed={Boolean(settings.sidebarCollapsed)}
         onToggleCollapsed={() => setSettings((prev) => ({ ...prev, sidebarCollapsed: !prev.sidebarCollapsed }))}
-        onOpenAnalysis={() => setIsAnalysisOpen(true)}
         onOpenSearch={() => setIsSearchOpen(true)}
       />
 
@@ -609,21 +606,6 @@ export default function App() {
           onNavigate={navigate}
           isDark={isDark}
           currentScreen={currentScreen}
-          onOpenAnalysis={() => setIsAnalysisOpen(true)}
-        />
-
-        {/* Thematic analysis, opened from either sidebar rather than from a document. */}
-        <AnalysisModal
-          isOpen={isAnalysisOpen}
-          // The dialog opens OVER a still-mounted library, so closing it is the only moment the
-          // dashboard can learn that a book was just analysed. Every other refresh rides on the
-          // screen remounting; this path has no navigation to ride.
-          onClose={() => {
-            setIsAnalysisOpen(false);
-            setLibraryRefreshToken((n) => n + 1);
-          }}
-          isDark={isDark}
-          onAddDocument={() => navigate('upload', 'push')}
         />
 
         {/* What's New changelog dialog, opened on first launch after update or from Settings */}
@@ -730,9 +712,11 @@ export default function App() {
                         onContinueAnnotating={() => {
                           setResumeAnnotating(true);
                           setAnnotationFocus(null);
-                          navigate('workspace', 'push');
+                          // Text documents (TXT, EPUB, DOCX, pasted custom text) resume in the
+                          // reader, which carries the same annotation tools; PDFs in the workspace.
+                          navigate(isAnnotatableFormat(analysisDoc.format) ? 'workspace' : 'reader', 'push');
                         }}
-                        canAnnotateActive={Boolean(analysisDoc.docId && isAnnotatableFormat(analysisDoc.format))}
+                        canAnnotateActive={Boolean(analysisDoc.docId || analysisDoc.text?.trim())}
                         onDocumentDeleted={handleStoredDocumentDeleted}
                         onDocumentRenamed={handleStoredDocumentRenamed}
                         refreshToken={libraryRefreshToken}

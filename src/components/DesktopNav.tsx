@@ -1,5 +1,5 @@
 import React from 'react';
-import { BookOpen, Settings as SettingsIcon, PlusCircle, PanelLeftClose, PanelLeftOpen, Sparkles, Search } from './icons';
+import { BookOpen, Settings as SettingsIcon, PlusCircle, PanelLeftClose, PanelLeftOpen, Search } from './icons';
 import { Screen, TransitionType } from '../types';
 import logo from '../assets/images/marginalia-logo.png';
 
@@ -17,9 +17,6 @@ interface DesktopNavProps {
    */
   collapsed: boolean;
   onToggleCollapsed: () => void;
-  /** Opens the thematic analysis dialog. Not a screen: it asks which book to read and shows the
-   *  result in place, so routing to it would leave a back button pointing at nothing. */
-  onOpenAnalysis?: () => void;
   /**
    * Opens search. Its only trigger used to be the mobile header, which is `md:hidden` — and the
    * desktop window's minimum is 900px, so search could not be opened in the desktop app at all.
@@ -34,7 +31,6 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
   hasActiveDocument = true,
   collapsed,
   onToggleCollapsed,
-  onOpenAnalysis,
   onOpenSearch
 }) => {
 
@@ -45,9 +41,9 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
     screen: Screen;
     transition: TransitionType;
   }> = [
-    // Library, Add Document and Settings only. Reading and analysis are reached from a document
+    // My Collections, Add Document and Settings only. Reading is reached from a document
     // rather than from the sidebar.
-    { id: 'home', label: 'Library', icon: BookOpen, screen: 'home', transition: 'push_back' },
+    { id: 'home', label: 'My Collections', icon: BookOpen, screen: 'home', transition: 'push_back' },
     { id: 'upload', label: 'Add Document', icon: PlusCircle, screen: 'upload', transition: 'push' },
     { id: 'settings', label: 'Settings', icon: SettingsIcon, screen: 'settings', transition: 'push' }
   ];
@@ -169,23 +165,6 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
           </button>
         )}
 
-        {/* Analysis is a dialog rather than a tab: it can be opened over any screen, and it
-            asks which book to read rather than assuming the one on screen. */}
-        {onOpenAnalysis && (
-          <button
-            type="button"
-            onClick={onOpenAnalysis}
-            title={collapsed ? 'AI Analysis' : undefined}
-            className={`w-full flex items-center rounded-xl text-[13px] font-medium transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.97] whitespace-nowrap overflow-hidden cursor-pointer ${
-              collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3.5 py-2.5'
-            } ${
-              isDark ? 'text-stone-400' : 'text-stone-600'
-            } hover:text-nav-active-fg hover:bg-nav-hover`}
-          >
-            <Sparkles className={`shrink-0 ${collapsed ? 'w-5.5 h-5.5' : 'w-4 h-4'}`} />
-            {!collapsed && <span className="caps truncate whitespace-nowrap">AI Analysis</span>}
-          </button>
-        )}
       </nav>
 
       {/* The control that gives the window back to the document. Same spot in both states:

@@ -56,3 +56,24 @@ test('dark reader selection (index.css): stone-200 on gold 35% over night keeps 
   const fill = night.map((v, i) => v + (gold[i] - v) * 0.35) as [number, number, number];
   assert.ok(contrast(textDark, fill) >= 4.5, `got ${contrast(textDark, fill).toFixed(2)}`);
 });
+
+test('sage reads clearly apart from the text selection in both themes', () => {
+  const { paper, night } = READER_GROUNDS;
+  // Hue angle in degrees: sage is a green, the selection an amber.
+  const hue = ([r, g, b]: number[]) => {
+    const max = Math.max(r, g, b), min = Math.min(r, g, b), d = max - min || 1;
+    const h = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    return (h * 60 + 360) % 360;
+  };
+  const apart = (a: number, b: number) => Math.min(Math.abs(a - b), 360 - Math.abs(a - b));
+  // Both themes select in gold 35% (index.css), over paper and over night.
+  const lightSel = paper.map((v, i) => v + ([233, 185, 73][i] - v) * 0.35);
+  const darkSel = night.map((v, i) => v + ([233, 185, 73][i] - v) * 0.35);
+  const sageLight = solveMarkFill('#52796f', false)!.composite;
+  const sageDark = solveMarkFill('#52796f', true)!.composite;
+  assert.ok(apart(hue(sageLight), hue(lightSel)) >= 45, `light hue ${hue(sageLight)} vs ${hue(lightSel)}`);
+  assert.ok(apart(hue(sageDark), hue(darkSel)) >= 45, `dark hue ${hue(sageDark)} vs ${hue(darkSel)}`);
+  // And sage stands off the page more than it did at the 2.4.0 targets (1.4 light, 1.8 dark).
+  assert.ok(contrast(sageLight, paper) >= 1.53);
+  assert.ok(contrast(sageDark, night) >= 1.98);
+});

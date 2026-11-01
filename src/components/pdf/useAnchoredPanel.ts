@@ -15,7 +15,14 @@
  */
 
 import { RefObject, useLayoutEffect, useState } from 'react';
-import { placePanel } from './panelPlacement';
+import { placePanel, PlacementRect } from './panelPlacement';
+
+/** What a page tells its panels about itself at measure time (see `placePanel`). */
+export interface PanelContext {
+  obstacles: PlacementRect[];
+  lane?: { left: number; right: number };
+  dock?: PlacementRect;
+}
 
 export interface AnchorRect {
   left: number;
@@ -38,9 +45,11 @@ export function useAnchoredPanel(
   /** The same for the top: the toolbar. A panel above a passage near it drops below instead. */
   topInset = 0,
   /** Elements the panel should not cover when the other side is free (the reader's note cards). */
-  avoidSelector?: string
+  avoidSelector?: string,
+  /** Text the panel must never cover, and the free places it may use instead (the reader's). */
+  context?: () => PanelContext
 ): { left: number; top: number; visibility: 'hidden' | 'visible' } {
-  const [position, setPosition] = useState<{ left: number; top: number } | null>(null);
+  const [position, setPosition] = useState<{ left: number; top: number; width?: number } | null>(null);
 
   useLayoutEffect(() => {
     const el = ref.current;
@@ -52,8 +61,13 @@ export function useAnchoredPanel(
     // Above the anchor by preference, so the panel never covers the next line being read; see
     // `placePanel` for the fallbacks.
     const measure = () => {
+      const ctx = context?.();
+      // In the margin lane the panel wraps to the lane's width; set before measuring.
+      el.style.maxWidth = ctx?.lane ? `${Math.floor(ctx.lane.right - ctx.lane.left)}px` : '';
       const { width, height } = el.getBoundingClientRect();
-      const { left, top } = placePanel({
+      // A docked width from the last pass must not feed this one's measurement.
+      el.style.width = '';
+      const { left, top, width: docked } = placePanel({
         anchor,
         width,
         height,
@@ -61,13 +75,19 @@ export function useAnchoredPanel(
         viewportHeight: window.innerHeight,
         topInset,
         bottomInset,
+        // A clear gap from the passage, so the panel never sits on the words it acts on.
+        gap: 12,
         avoid: avoidSelector
           ? Array.from(document.querySelectorAll(avoidSelector), (n) => n.getBoundingClientRect()).filter(
               (r) => r.width > 0 && r.bottom > 0 && r.top < window.innerHeight
             )
-          : undefined
+          : undefined,
+        ...ctx
       });
-      setPosition((prev) => (prev && prev.left === left && prev.top === top ? prev : { left, top }));
+      if (docked) el.style.width = `${docked}px`;
+      setPosition((prev) =>
+        prev && prev.left === left && prev.top === top && prev.width === docked ? prev : { left, top, width: docked }
+      );
     };
 
     measure();
@@ -81,7 +101,7 @@ export function useAnchoredPanel(
       observer.disconnect();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ref, anchor?.left, anchor?.top, anchor?.bottom, bottomInset, topInset, avoidSelector, ...deps]);
+  }, [ref, anchor?.left, anchor?.top, anchor?.bottom, bottomInset, topInset, avoidSelector, context, ...deps]);
 
   return {
     left: position?.left ?? (anchor?.left ?? 0),

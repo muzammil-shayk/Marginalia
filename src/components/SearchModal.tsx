@@ -134,7 +134,7 @@ export const SearchModal: React.FC<SearchModalProps> = ({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search marks, themes, terminology and text…"
-            className="flex-1 bg-transparent outline-none text-[14px] placeholder:text-muted"
+            className="flex-1 bg-transparent outline-none rounded-md focus-visible:ring-1 focus-visible:ring-gold/60 text-[14px] placeholder:text-muted"
           />
           {searching && <Loader2 className="w-4 h-4 animate-spin text-stone-400 shrink-0" />}
           <button

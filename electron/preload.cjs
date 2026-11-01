@@ -57,6 +57,12 @@ contextBridge.exposeInMainWorld('marginaliaDesktop', {
   /** Records the update version the reader said "Later" to. */
   setDismissedUpdate: (version) => ipcRenderer.invoke('marginalia:updater-set-dismissed', version),
 
+  // ── AI opt-in (off by default, kept in config.json) ───────────────────────
+  /** Whether AI features are turned on. */
+  getAiEnabled: () => ipcRenderer.invoke('marginalia:ai-get'),
+  /** Turns AI features on or off; resolves with the value actually saved. */
+  setAiEnabled: (enabled) => ipcRenderer.invoke('marginalia:ai-set', enabled === true),
+
   /**
    * Registers the renderer's "save everything pending now" handler. Main calls it before a window
    * closes or the app quits (see electron/flushOnExit.cjs) and waits up to 3 s for the answer.

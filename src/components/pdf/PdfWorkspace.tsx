@@ -8,8 +8,9 @@
  */
 
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useReadingProgress } from '../../hooks/useReadingProgress';
 import { GlobalWorkerOptions, getDocument, type PDFDocumentProxy } from 'pdfjs-dist';
-import { Loader2, FileWarning, ArrowLeft, PanelRightClose, PanelRightOpen, Check, StickyNote, X, PanelTop, PanelBottom, FileStack, Sparkles } from '../icons';
+import { Loader2, FileWarning, ArrowLeft, PanelRightClose, PanelRightOpen, Check, StickyNote, X, PanelTop, PanelBottom, FileStack } from '../icons';
 import { AnnotationFocus, Screen, TransitionType, UserSettings } from '../../types';
 import {
   Annotation,
@@ -39,7 +40,6 @@ import { PdfToolbar, NEUTRAL_COLORS } from './PdfToolbar';
 import { NotesList } from './NotesList';
 import { InstanceNavigator } from './InstanceNavigator';
 import { ErrorDialog } from '../ErrorDialog';
-import { ThematicAnalysisView } from '../ThematicAnalysisView';
 import { SelectionPopover, SelectionAnchor } from './SelectionPopover';
 import { isTypingTarget, resolveWorkspaceKey } from './workspaceKeys';
 import { LiveSelectionOverlay } from './LiveSelectionOverlay';
@@ -168,6 +168,11 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   /** Guards the one-time restore of the last page read, the same way `fittedRef` guards zoom. */
   const restoredPageRef = useRef<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  // How far through the PDF the reader has got (page of pages), saved debounced by the hook.
+  const reportProgress = useReadingProgress(docId);
+  useEffect(() => {
+    if (pageCount > 0) reportProgress(currentPage, pageCount);
+  }, [currentPage, pageCount, reportProgress]);
 
   const [tool, setTool] = useState<PdfTool>('select');
   const [activeThemeId, setActiveThemeId] = useState<string | null>(settings.activeThemes[0]?.id ?? null);
@@ -300,9 +305,6 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   useEffect(() => setActiveFocus(focus ?? null), [focus]);
 
   const [isPanelOpen, setIsPanelOpen] = useState(false);
-  /** Which of the two things the side panel shows. One panel, not two: they compete for the same
-   *  strip of screen and nobody reads their notes and a thematic analysis at the same time. */
-  const [panelTab, setPanelTab] = useState<'notes' | 'analysis'>('notes');
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [isExporting, setIsExporting] = useState(false);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -1648,12 +1650,12 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         <button
           type="button"
           onClick={() => onNavigate('home', 'push_back')}
-          title="Back to the library"
+          title="Back to My Collections"
           className="p-1.5 rounded-lg text-muted hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer"
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
-        <h1 className="font-serif text-[15px] font-semibold text-stone-900 dark:text-paper truncate flex-1 min-w-0">
+        <h1 className="title-hand text-[22px] text-stone-900 dark:text-paper truncate flex-1 min-w-0">
           {documentTitle}
         </h1>
         <span className="text-[11px] text-muted flex items-center gap-1 shrink-0 w-20 justify-end">
@@ -1681,41 +1683,20 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
           <>
             <button
               type="button"
-              onClick={() => {
-                setPanelTab('analysis');
-                setIsPanelOpen(!(isPanelOpen && panelTab === 'analysis'));
-              }}
-              title="Thematic analysis"
-              className={`p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer transition-[background-color,transform] duration-150 ease-out active:scale-[0.94] ${
-                isPanelOpen && panelTab === 'analysis'
-                  ? 'text-gold dark:text-gold'
-                  : 'text-muted'
-              }`}
-            >
-              <Sparkles
-                className="w-4 h-4"
-                weight={isPanelOpen && panelTab === 'analysis' ? 'fill' : 'regular'}
-              />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setPanelTab('notes');
-                setIsPanelOpen(!(isPanelOpen && panelTab === 'notes'));
-              }}
-              title={isPanelOpen && panelTab === 'notes' ? 'Hide marks panel' : 'Show marks panel'}
+              onClick={() => setIsPanelOpen(!isPanelOpen)}
+              title={isPanelOpen ? 'Hide marks panel' : 'Show marks panel'}
               // One glyph, not two. The note and the panel chevron said the same thing twice, and
               // read as two controls crammed into one button. Open state is carried by weight and
               // colour, the same way every other tool in this row shows it.
               className={`p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer transition-[background-color,transform] duration-150 ease-out active:scale-[0.94] ${
-                isPanelOpen && panelTab === 'notes'
+                isPanelOpen
                   ? 'text-gold dark:text-gold'
                   : 'text-muted'
               }`}
             >
               <StickyNote
                 className="w-4 h-4"
-                weight={isPanelOpen && panelTab === 'notes' ? 'fill' : 'regular'}
+                weight={isPanelOpen ? 'fill' : 'regular'}
               />
             </button>
           </>
@@ -1849,15 +1830,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
           })()}
         </div>
 
-        {/*
-          Both panels stay mounted; only one is shown.
-          
-          Unmounting the analysis panel threw away everything it held — the result of a run that
-          cost tokens and a minute of waiting, the title typed into the lookup form, which mode
-          was chosen — so glancing at your notes and coming back meant analysing the book again.
-          Hiding costs one hidden subtree and keeps all of it. The panel container is hidden the
-          same way, so closing the panel is just as cheap.
-        */}
+        {/* The marks panel stays mounted while hidden, so closing and reopening it is cheap. */}
         <div
           // Docked beside the pages on a wide window; an overlay once the window is too narrow
           // to give it a column. It used to be `hidden md:flex`, which left both toggles in the
@@ -1867,16 +1840,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
           } ${isDark ? 'bg-night-1 border-stone-800' : 'bg-white border-stone-200'}`}
         >
           <div
-            className={`min-h-0 flex-1 motion-safe:animate-[panel-in_200ms_var(--ease-out)] ${
-              panelTab === 'analysis' ? 'flex flex-col' : 'hidden'
-            }`}
-          >
-            <ThematicAnalysisView docId={docId} documentTitle={documentTitle} />
-          </div>
-          <div
-            className={`min-h-0 flex-1 motion-safe:animate-[panel-in_200ms_var(--ease-out)] ${
-              panelTab === 'notes' ? 'flex flex-col' : 'hidden'
-            }`}
+            className="min-h-0 flex-1 flex flex-col motion-safe:animate-[panel-in_200ms_var(--ease-out)]"
           >
             <NotesList
               annotations={annotations}

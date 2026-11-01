@@ -4,9 +4,9 @@
  * A complete redesign embodying editorial minimalism, tactile physical interactions,
  * and high-density knowledge synthesis:
  * - "On the Desk" spotlight: physical-feeling active reading volume.
- * - "Knowledge Studio": interactive bento hub replacing repetitive stacked accordions
- *   with a unified Thematic Atlas, Terminologies, and AI Thematic Synthesis.
- * - "The Stacks" bookshelf: dual view modes (Bookshelf & Compact Bibliography),
+ * - "My Margins Tracker": interactive bento hub replacing repetitive stacked accordions
+ *   with a unified Thematic Atlas and Terminologies.
+ * - "My Readings" bookshelf: dual view modes (Bookshelf & Compact Bibliography),
  *   format filters, search with keyboard shortcut (/), and refined typography.
  */
 
@@ -20,7 +20,6 @@ import {
   Pencil,
   Trash2,
   Loader2,
-  Sparkles,
   Lightbulb,
   Tag,
   ChevronDown,
@@ -34,7 +33,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { AnnotationFocus, Screen, TransitionType, UserSettings } from '../types';
 import { initialSettings } from '../data/mockData';
-import { Bookshelf } from './Bookshelf';
+import { Bookshelf, progressLabel } from './Bookshelf';
 import {
   StoredDocumentMeta,
   deleteStoredDocument,
@@ -45,6 +44,7 @@ import {
 } from '../utils/documentStorage';
 import { ErrorDialog } from './ErrorDialog';
 import { groupHeads, migrateTextEntries, sortTextMarks, type TextMark } from '../utils/textMarks';
+import { noun, plural } from '../utils/plural';
 
 interface HomeScreenProps {
   onNavigate: (screen: Screen, transition?: TransitionType) => void;
@@ -158,7 +158,7 @@ const MarkPeekRow: React.FC<{
           {title}
         </button>
         <span className="font-mono text-[11px] tabular-nums text-muted shrink-0">
-          {count} {count === 1 ? 'mark' : 'marks'}
+          {plural(count, 'mark')}
         </span>
         <button
           type="button"
@@ -238,15 +238,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const [sortOrder, setSortOrder] = useState<'recent' | 'title' | 'marks' | 'words'>('recent');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
-  // Knowledge Studio tabs: overview (bento), themes, terminology, ai
-  const [studioTab, setStudioTab] = useState<'overview' | 'themes' | 'terminology' | 'ai'>('overview');
+  // My Margins Tracker tabs: overview (bento), themes, terminology
+  const [studioTab, setStudioTab] = useState<'overview' | 'themes' | 'terminology'>('overview');
   /**
    * Which way the last tab change moved along the strip, so the incoming panel enters from the
    * side it came from. Direction is the only thing that makes a tab transition mean anything: a
    * panel that always slides in from the same edge is decoration.
    */
   const [studioDirection, setStudioDirection] = useState<1 | -1>(1);
-  const STUDIO_TABS = ['overview', 'themes', 'terminology', 'ai'] as const;
+  const STUDIO_TABS = ['overview', 'themes', 'terminology'] as const;
   const goToStudioTab = useCallback(
     (next: (typeof STUDIO_TABS)[number]) => {
       setStudioDirection(
@@ -317,7 +317,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
       setStored((prev) => prev.filter((d) => d.id !== id));
       onDocumentDeleted?.(id);
     } else {
-      setFailure('Could not delete that document. It is still in your library.');
+      setFailure('Could not delete that document. It is still in My Collections.');
     }
     setBusyId(null);
     setConfirmingDeleteId(null);
@@ -327,7 +327,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   // Metrics
   const totalWords = useMemo(() => stored.reduce((sum, d) => sum + (d.wordCount || 0), 0), [stored]);
   /**
-   * Every mark in the library. Also what the Knowledge Studio badge counts.
+   * Every mark in the library. Also what the My Margins Tracker badge counts.
    *
    * That badge used to add Key Concepts marks, terminology marks and AI themes together, which
    * counted marks under Questions and Metaphors not at all, counted a mark that is also a term
@@ -372,19 +372,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   const terminologyMarks = useMemo(
     () => documentsWithTerminology.reduce((total, d) => total + d.terminologyCount, 0),
     [documentsWithTerminology]
-  );
-
-  // AI Themes
-  const analysedDocuments = useMemo(
-    () =>
-      stored
-        .filter((d) => d.analysis)
-        .sort((a, b) => (b.analysis?.analysedAt ?? '').localeCompare(a.analysis?.analysedAt ?? '')),
-    [stored]
-  );
-  const analysedThemeCount = useMemo(
-    () => analysedDocuments.reduce((total, d) => total + (d.analysis?.themeCount ?? 0), 0),
-    [analysedDocuments]
   );
 
   // Filter and sort visible documents
@@ -453,15 +440,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <span className="text-[11px] uppercase tracking-widest font-mono font-medium text-gold">
-                Personal Atelier
+                Personal Atelier for Margins
               </span>
               <span className="text-stone-300 dark:text-stone-700">/</span>
               <span className="text-[11px] font-mono text-muted">
                 Offline & Local
               </span>
             </div>
-            <h1 className="font-serif text-[32px] md:text-[40px] font-bold tracking-tight text-stone-900 dark:text-stone-100 leading-tight mt-1">
-              Library
+            <h1 className="title-hand title-hand-rule text-[44px] md:text-[52px] text-stone-900 dark:text-stone-100 mt-1">
+              My Collections
             </h1>
           </div>
 
@@ -489,7 +476,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-gold" />
               <strong className="text-stone-900 dark:text-stone-100 font-semibold">{stored.length}</strong>
-              <span className="text-muted">{stored.length === 1 ? 'volume' : 'volumes'}</span>
+              <span className="text-muted">{noun(stored.length, 'volume')}</span>
             </span>
 
             <span className="text-stone-300 dark:text-stone-700">·</span>
@@ -498,7 +485,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               <strong className="text-stone-900 dark:text-stone-100 font-semibold">
                 {totalWords.toLocaleString()}
               </strong>
-              <span className="text-muted">words</span>
+              <span className="text-muted">{noun(totalWords, 'word')}</span>
             </span>
 
             <span className="text-stone-300 dark:text-stone-700">·</span>
@@ -507,7 +494,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               <strong className="text-stone-900 dark:text-stone-100 font-semibold">
                 {totalMarks.toLocaleString()}
               </strong>
-              <span className="text-muted">marks</span>
+              <span className="text-muted">{noun(totalMarks, 'mark')}</span>
             </span>
 
             <span className="text-stone-300 dark:text-stone-700">·</span>
@@ -516,12 +503,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               <strong className="text-stone-900 dark:text-stone-100 font-semibold">
                 {settings.activeThemes.length}
               </strong>
-              <span className="text-muted">themes</span>
+              <span className="text-muted">{noun(settings.activeThemes.length, 'theme')}</span>
             </span>
           </div>
 
           <div className="flex items-center gap-1 text-[11px] text-muted font-mono">
-            <span>Stored on this machine</span>
+            <span>Stored on this device</span>
           </div>
         </div>
       </header>
@@ -552,7 +539,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     On The Desk
                   </span>
                 </div>
-                <h2 className="font-serif text-[18px] md:text-[22px] font-bold text-stone-900 dark:text-stone-50 truncate mt-1">
+                <h2 className="title-hand text-[26px] md:text-[31px] text-stone-900 dark:text-stone-50 truncate mt-1">
                   {activeDocument!.title || 'Uploaded Document'}
                 </h2>
                 <p className="text-[12px] text-muted mt-0.5">
@@ -576,13 +563,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         </motion.section>
       )}
 
-      {/* ── THE BOOKSHELF ("THE STACKS") ────────────────────────────────── */}
+      {/* ── THE BOOKSHELF ("MY READINGS") ────────────────────────────────── */}
       <section id="shelf-section" className="mb-10 space-y-5">
         {/* Shelf Control Header */}
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="font-serif text-[22px] font-bold text-stone-900 dark:text-stone-100">
-              The Stacks
+            <h2 className="title-hand text-[32px] text-stone-900 dark:text-stone-100">
+              My Readings
             </h2>
             <span className="font-mono text-[12px] text-muted tabular-nums">
               ({visible.length})
@@ -597,7 +584,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 ref={searchInputRef}
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search stacks…"
+                placeholder="Search my readings…"
                 aria-label="Filter documents"
                 className={`w-44 md:w-56 pl-8.5 pr-8 py-1.5 rounded-xl border text-[12.5px] transition-all focus:outline-none focus:ring-1 focus:ring-gold ${
                   isDark
@@ -643,7 +630,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 value={sortOrder}
                 onChange={(e) => setSortOrder(e.target.value as any)}
                 aria-label="Sort documents"
-                className="bg-transparent border-none text-[12px] focus:outline-none cursor-pointer"
+                className="bg-transparent border-none text-[12px] outline-none focus-visible:ring-1 focus-visible:ring-gold rounded-sm cursor-pointer"
               >
                 <option value="recent">Recent</option>
                 <option value="title">Title</option>
@@ -710,11 +697,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               <Upload className="w-6 h-6" />
             </div>
             <div>
-              <h3 className="font-serif text-[22px] font-bold text-stone-900 dark:text-stone-100">
+              <h3 className="title-hand text-[31px] text-stone-900 dark:text-stone-100">
                 Your shelf is empty
               </h3>
               <p className="text-[13px] text-muted mt-1.5 max-w-md">
-                Add a PDF, EPUB, DOCX, or text file. Everything stays local on your machine.
+                Add a PDF, EPUB, DOCX, or text file. Everything stays local on your device.
               </p>
             </div>
             <span className="flex items-center gap-1.5 text-[13px] font-semibold text-gold">
@@ -791,6 +778,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
                   <div className="col-span-2 font-mono text-[11px] text-muted uppercase">
                     {doc.format}
+                    {typeof doc.progressPercent === 'number' && (
+                      <span className="normal-case" title={progressLabel(doc)}> · {Math.round(doc.progressPercent)}%</span>
+                    )}
                   </div>
 
                   <div className="col-span-2 text-right font-mono text-[11.5px] tabular-nums text-muted">
@@ -853,7 +843,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         )}
       </section>
 
-      {/* ── THE KNOWLEDGE STUDIO (REIMAGINED SYNTHESIS HUB) ────────────── */}
+      {/* ── MY MARGINS TRACKER ────────────── */}
       <section
         className={`rounded-2xl border transition-all duration-200 overflow-hidden ${
           isDark ? 'bg-night-3 border-stone-800/90' : 'bg-[#fcfbf9] border-stone-200/90'
@@ -871,12 +861,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="font-serif text-[15px] font-bold text-stone-900 dark:text-stone-100 leading-none">
-                  Knowledge Studio
+                <h2 className="title-hand text-[26px] text-stone-900 dark:text-stone-100 leading-none">
+                  My Margins Tracker
                 </h2>
                 <span className="font-mono text-[10.5px] px-1.5 py-0.2 rounded bg-stone-500/10 text-stone-600 dark:text-stone-400">
-                  {totalMarks} {totalMarks === 1 ? 'mark' : 'marks'}
-                  {analysedThemeCount > 0 && ` · ${analysedThemeCount} AI themes`}
+                  {plural(totalMarks, 'mark')}
                 </span>
               </div>
             </div>
@@ -886,12 +875,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             {!isStudioCollapsed && (
               <div
                 role="tablist"
-                aria-label="Knowledge Studio views"
+                aria-label="My Margins Tracker views"
                 // Arrow keys move between tabs, which is what `role="tablist"` promises a screen
                 // reader and a keyboard user. Without it the role was a claim the widget did not
                 // honour, which is worse than no role at all.
                 onKeyDown={(e) => {
-                  const order = ['overview', 'themes', 'terminology', 'ai'] as const;
+                  const order = ['overview', 'themes', 'terminology'] as const;
                   const at = order.indexOf(studioTab);
                   if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
                     e.preventDefault();
@@ -908,8 +897,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   [
                     { id: 'overview', label: 'Overview' },
                     { id: 'themes', label: 'Themes' },
-                    { id: 'terminology', label: 'Terminologies' },
-                    { id: 'ai', label: 'AI Synthesis' }
+                    { id: 'terminology', label: 'Terminologies' }
                   ] as const
                 ).map((tab) => (
                   <button
@@ -936,8 +924,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             <button
               type="button"
               onClick={toggleStudioCollapsed}
-              title={isStudioCollapsed ? 'Expand Studio' : 'Collapse Studio'}
-              aria-label={isStudioCollapsed ? 'Expand Knowledge Studio' : 'Collapse Knowledge Studio'}
+              title={isStudioCollapsed ? 'Expand My Margins Tracker' : 'Collapse My Margins Tracker'}
+              aria-label={isStudioCollapsed ? 'Expand My Margins Tracker' : 'Collapse My Margins Tracker'}
               aria-expanded={!isStudioCollapsed}
               aria-controls="knowledge-studio-body"
               className={`p-1.5 rounded-full border transition-colors cursor-pointer ${
@@ -972,7 +960,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 {studioTab === 'overview' && (
                   <div
                     key={studioTab}
-                    className={`${studioDirection === 1 ? TAB_IN_FORWARD : TAB_IN_BACK} grid md:grid-cols-2 grid-cols-1 xl:grid-cols-3 gap-4`}
+                    className={`${studioDirection === 1 ? TAB_IN_FORWARD : TAB_IN_BACK} grid md:grid-cols-2 grid-cols-1 gap-4`}
                   >
                     {/* Bento Card 1: Thematic Atlas */}
                     <div
@@ -986,12 +974,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                             className="w-2 h-2 rounded-full"
                             style={{ backgroundColor: keyConceptsTheme?.color || '#3b82f6' }}
                           />
-                          <h3 className="font-serif text-[14px] font-bold text-stone-900 dark:text-stone-100">
+                          <h3 className="title-hand text-[21px] text-stone-900 dark:text-stone-100">
                             Thematic Atlas
                           </h3>
                         </div>
                         <span className="font-mono text-[11px] text-muted tabular-nums">
-                          {keyConceptMarks} marks
+                          {plural(keyConceptMarks, 'mark')}
                         </span>
                       </div>
 
@@ -1032,7 +1020,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                                       book carried, which says nothing about key concepts and
                                       read as a wrong count sitting next to a right one. */}
                                   <span className="font-mono text-[11px] tabular-nums shrink-0 ml-2 text-muted">
-                                    {conceptMarks} {conceptMarks === 1 ? 'mark' : 'marks'}
+                                    {plural(conceptMarks, 'mark')}
                                   </span>
                                 </button>
                               );
@@ -1052,7 +1040,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                           onClick={() => goToStudioTab('themes')}
                           className="font-semibold text-gold hover:underline cursor-pointer"
                         >
-                          View all {settings.activeThemes.length} themes →
+                          View all {plural(settings.activeThemes.length, 'theme')} →
                         </button>
                         {themesAreUntouched && (
                           <button
@@ -1078,12 +1066,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                             className="w-2 h-2 rounded-full"
                             style={{ backgroundColor: settings.terminologyColor || '#ec4899' }}
                           />
-                          <h3 className="font-serif text-[14px] font-bold text-stone-900 dark:text-stone-100">
+                          <h3 className="title-hand text-[21px] text-stone-900 dark:text-stone-100">
                             Terminologies
                           </h3>
                         </div>
                         <span className="font-mono text-[11px] text-muted tabular-nums">
-                          {terminologyMarks} marks
+                          {plural(terminologyMarks, 'mark')}
                         </span>
                       </div>
 
@@ -1116,7 +1104,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                                   {doc.title}
                                 </span>
                                 <span className="font-mono text-[11px] text-muted tabular-nums shrink-0 ml-2">
-                                  {doc.terminologyCount} marks
+                                  {plural(doc.terminologyCount, 'mark')}
                                 </span>
                               </button>
                             ))}
@@ -1140,80 +1128,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                       </div>
                     </div>
 
-                    {/* Bento Card 3: AI Thematic Synthesis */}
-                    <div
-                      className={`flex flex-col rounded-xl border p-4.5 ${
-                        isDark ? 'bg-night-4/70 border-stone-800' : 'bg-white border-stone-200/80'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2 mb-3">
-                        <div className="flex items-center gap-2">
-                          <Sparkles className="w-3.5 h-3.5 text-gold" />
-                          <h3 className="font-serif text-[14px] font-bold text-stone-900 dark:text-stone-100">
-                            AI Synthesis
-                          </h3>
-                        </div>
-                        <span className="font-mono text-[11px] text-muted tabular-nums">
-                          {analysedThemeCount} themes
-                        </span>
-                      </div>
-
-                      <p className="text-[12px] text-muted leading-relaxed mb-3">
-                        Gemini deep analysis uncovering structural motifs and underlying arcs.
-                      </p>
-
-                      <div className="flex-1 flex flex-col gap-1.5 min-h-27.5">
-                        {analysedDocuments.length > 0 ? (
-                          <div className="space-y-1">
-                            <span className="text-[10.5px] uppercase tracking-wider font-mono font-medium text-muted">
-                              Analysed Texts
-                            </span>
-                            {analysedDocuments.slice(0, 2).map((doc) => (
-                              <div
-                                key={doc.id}
-                                className={`p-2 rounded-lg border text-left ${
-                                  isDark ? 'bg-white/2 border-stone-800' : 'bg-stone-50 border-stone-200/60'
-                                }`}
-                              >
-                                <div className="flex items-center justify-between">
-                                  <span className="font-serif text-[12.5px] font-semibold text-stone-800 dark:text-stone-200 truncate">
-                                    {doc.title}
-                                  </span>
-                                  <span className="font-mono text-[10.5px] text-muted shrink-0">
-                                    {doc.analysis?.themeCount} th.
-                                  </span>
-                                </div>
-                                <div className="flex flex-wrap gap-1 mt-1.5">
-                                  {doc.analysis?.primaryThemes.slice(0, 2).map((theme) => (
-                                    <span
-                                      key={theme}
-                                      className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-stone-500/10 text-stone-700 dark:text-stone-300 truncate max-w-35"
-                                    >
-                                      {theme}
-                                    </span>
-                                  ))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="flex-1 flex flex-col justify-center items-center text-center p-3 rounded-lg bg-stone-500/5">
-                            <Sparkles className="w-5 h-5 text-stone-400 mb-1" />
-                            <span className="text-[11.5px] text-muted">No books analysed yet</span>
-                          </div>
-                        )}
-                      </div>
-
-                      <div className="mt-3 pt-3 border-t border-stone-200/60 dark:border-stone-800/80 flex items-center justify-between text-[11.5px]">
-                        <button
-                          type="button"
-                          onClick={() => goToStudioTab('ai')}
-                          className="font-semibold text-gold hover:underline cursor-pointer"
-                        >
-                          Deep insights ({analysedDocuments.length}) →
-                        </button>
-                      </div>
-                    </div>
                   </div>
                 )}
 
@@ -1224,7 +1138,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     className={`${studioDirection === 1 ? TAB_IN_FORWARD : TAB_IN_BACK} space-y-4`}
                   >
                     <div className="flex items-center justify-between">
-                      <h3 className="font-serif text-[15px] font-bold text-stone-900 dark:text-stone-100">
+                      <h3 className="title-hand text-[22px] text-stone-900 dark:text-stone-100">
                         All Active Themes & Key Concepts
                       </h3>
                       <button
@@ -1261,7 +1175,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                                 </strong>
                               </span>
                               <span className="font-mono text-[11px] text-muted tabular-nums">
-                                {totalMarksForTheme} {totalMarksForTheme === 1 ? 'mark' : 'marks'}
+                                {plural(totalMarksForTheme, 'mark')}
                               </span>
                             </div>
 
@@ -1306,11 +1220,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     className={`${studioDirection === 1 ? TAB_IN_FORWARD : TAB_IN_BACK} space-y-4`}
                   >
                     <div className="flex items-center justify-between">
-                      <h3 className="font-serif text-[15px] font-bold text-stone-900 dark:text-stone-100">
-                        Terminologies Across the Library
+                      <h3 className="title-hand text-[22px] text-stone-900 dark:text-stone-100">
+                        Terminologies Across My Collections
                       </h3>
                       <span className="font-mono text-[12px] text-muted tabular-nums">
-                        {terminologyMarks} marks in {documentsWithTerminology.length} books
+                        {plural(terminologyMarks, 'mark')} in {plural(documentsWithTerminology.length, 'book')}
                       </span>
                     </div>
 
@@ -1357,76 +1271,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                   </div>
                 )}
 
-                {/* ── AI SYNTHESIS EXPANDED VIEW ── */}
-                {studioTab === 'ai' && (
-                  <div
-                    key={studioTab}
-                    className={`${studioDirection === 1 ? TAB_IN_FORWARD : TAB_IN_BACK} space-y-4`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-serif text-[15px] font-bold text-stone-900 dark:text-stone-100">
-                        AI-Analyzed Works & Narrative Arc Motifs
-                      </h3>
-                      <span className="font-mono text-[12px] text-muted tabular-nums">
-                        {analysedDocuments.length} books analyzed
-                      </span>
-                    </div>
-
-                    {analysedDocuments.length === 0 ? (
-                      <div className="py-8 text-center text-muted text-[13px]">
-                        No books analysed yet. Open any book and launch AI Analysis from the sidebar or reader.
-                      </div>
-                    ) : (
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {analysedDocuments.map((doc) => (
-                          <div
-                            key={doc.id}
-                            className={`p-4 rounded-xl border ${
-                              isDark ? 'bg-night-4/60 border-stone-800' : 'bg-white border-stone-200/80'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <h4 className="font-serif text-[15px] font-bold text-stone-900 dark:text-stone-100 truncate pr-2">
-                                {doc.title}
-                              </h4>
-                              <span className="font-mono text-[11px] text-muted shrink-0">
-                                {new Date(doc.analysis?.analysedAt ?? '').toLocaleDateString(undefined, {
-                                  month: 'short',
-                                  day: 'numeric'
-                                })}
-                              </span>
-                            </div>
-
-                            <p className="font-mono text-[11.5px] text-gold mt-1">
-                              {doc.analysis?.themeCount} thematic motifs detected
-                            </p>
-
-                            <div className="flex flex-wrap gap-1.5 mt-3">
-                              {doc.analysis?.primaryThemes.map((theme) => (
-                                <span
-                                  key={theme}
-                                  className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-stone-500/10 text-stone-700 dark:text-stone-300"
-                                >
-                                  {theme}
-                                </span>
-                              ))}
-                            </div>
-
-                            <div className="mt-3 pt-3 border-t border-stone-100 dark:border-stone-800/70 flex items-center justify-end">
-                              <button
-                                type="button"
-                                onClick={() => onOpenStoredDocument?.(doc)}
-                                className="text-[12px] font-semibold text-gold hover:underline cursor-pointer"
-                              >
-                                Open document →
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             </motion.div>
           )}

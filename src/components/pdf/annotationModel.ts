@@ -691,3 +691,17 @@ export function coveredFraction(rect: FractionRect, others: FractionRect[]): num
   covered += end - start;
   return covered / rect.w;
 }
+
+/**
+ * How strongly a highlight is laid over a PDF page (multiply blend). A muted, low-chroma colour —
+ * sage, slate, stone — at the usual 38% multiplied to a grey that read the same as the grey of a
+ * live selection, so it is laid down harder; vivid colours keep the lighter touch. Selected
+ * (strong) highlights are stronger again.
+ */
+export function highlightOpacity(color: string, strong = false): number {
+  const m = /^#?([0-9a-f]{6})$/i.exec(color.trim());
+  const rgb = m ? [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16)) : null;
+  const chroma = rgb ? (Math.max(...rgb) - Math.min(...rgb)) / 255 : 1;
+  if (strong) return chroma < 0.35 ? 0.72 : 0.62;
+  return chroma < 0.35 ? 0.56 : 0.38;
+}
