@@ -46,7 +46,7 @@ import {
 } from '../utils/documentStorage';
 import { ErrorDialog } from './ErrorDialog';
 import { groupHeads, migrateTextEntries, sortTextMarks, type TextMark } from '../utils/textMarks';
-import { noun, plural } from '../utils/plural';
+import { plural } from '../utils/plural';
 
 interface HomeScreenProps {
   onNavigate: (screen: Screen, transition?: TransitionType) => void;
@@ -330,7 +330,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   };
 
   // Metrics
-  const totalWords = useMemo(() => stored.reduce((sum, d) => sum + (d.wordCount || 0), 0), [stored]);
   /**
    * Every mark in the library. Also what the My Margins Tracker badge counts.
    *
@@ -469,53 +468,6 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           </div>
         </div>
 
-        {/* Live Telemetry Capsule */}
-        <div
-          className={`flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-xl border text-[12px] ${
-            isDark
-              ? 'bg-night-3 border-stone-800 text-stone-300'
-              : 'bg-[#faf9f6] border-stone-200/80 text-stone-600'
-          }`}
-        >
-          <div className="flex flex-wrap items-center gap-4 md:gap-6 spine-type text-[11.5px] tabular-nums">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-gold" />
-              <strong className="text-stone-900 dark:text-stone-100 font-semibold">{stored.length}</strong>
-              <span className="text-muted">{noun(stored.length, 'volume')}</span>
-            </span>
-
-            <span className="text-stone-300 dark:text-stone-700">·</span>
-
-            <span className="flex items-center gap-1.5">
-              <strong className="text-stone-900 dark:text-stone-100 font-semibold">
-                {totalWords.toLocaleString()}
-              </strong>
-              <span className="text-muted">{noun(totalWords, 'word')}</span>
-            </span>
-
-            <span className="text-stone-300 dark:text-stone-700">·</span>
-
-            <span className="flex items-center gap-1.5">
-              <strong className="text-stone-900 dark:text-stone-100 font-semibold">
-                {totalMarks.toLocaleString()}
-              </strong>
-              <span className="text-muted">{noun(totalMarks, 'mark')}</span>
-            </span>
-
-            <span className="text-stone-300 dark:text-stone-700">·</span>
-
-            <span className="flex items-center gap-1.5">
-              <strong className="text-stone-900 dark:text-stone-100 font-semibold">
-                {settings.activeThemes.length}
-              </strong>
-              <span className="text-muted">{noun(settings.activeThemes.length, 'theme')}</span>
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1 text-[11px] text-muted spine-type">
-            <span>Stored on this device</span>
-          </div>
-        </div>
       </header>
 
       {/* ── "ON THE DESK" (CURRENTLY READING SPOTLIGHT) ────────────────── */}

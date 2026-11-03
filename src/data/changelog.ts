@@ -22,9 +22,27 @@ export interface ReleaseNote {
   highlights: ChangelogItem[];
 }
 
-export const CURRENT_APP_VERSION = '2.8.0';
+export const CURRENT_APP_VERSION = '2.8.1';
 
 export const CHANGELOG_RELEASES: ReleaseNote[] = [
+  {
+    version: '2.8.1',
+    title: 'A Quieter Collection',
+    date: 'November 2026',
+    summary: 'My Collections drops its row of counts, and Settings takes the book spines’ type.',
+    highlights: [
+      {
+        category: 'improvement',
+        title: 'No counts row on My Collections',
+        description: 'The line of volumes, words, marks and themes under the heading is gone.'
+      },
+      {
+        category: 'improvement',
+        title: 'Settings in the spines’ type',
+        description: 'Settings, its labels and buttons and the theme manager now use the same type as the book spines.'
+      }
+    ]
+  },
   {
     version: '2.8.0',
     title: 'A Guide, More Pages, Cleaner Marks',
