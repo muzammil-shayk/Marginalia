@@ -49,13 +49,18 @@ export function uncoveredRanges(
   marks: TextMark[],
   ranges: ParagraphRange[],
   kind: TextMarkKind,
-  isTerminology: boolean
+  isTerminology: boolean,
+  /** Words already marked this way under ANOTHER theme can be marked again: one passage, several themes (2.8.0). */
+  themeId: string | null = null
 ): ParagraphRange[] {
   return ranges.filter((r) => {
     const same = marks
       .filter(
         (m) =>
-          m.anchor.paragraphIndex === r.paraIdx && m.kind === kind && Boolean(m.isTerminology) === isTerminology
+          m.anchor.paragraphIndex === r.paraIdx &&
+          m.kind === kind &&
+          Boolean(m.isTerminology) === isTerminology &&
+          (m.themeId ?? null) === themeId
       )
       .sort((a, b) => a.anchor.start - b.anchor.start);
     let cursor = r.start;

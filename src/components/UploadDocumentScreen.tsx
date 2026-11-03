@@ -321,7 +321,7 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
           maxLength={300}
           value={pastedName}
           onChange={(e) => setPastedName(e.target.value)}
-          placeholder="An excerpt from Hamlet by Shakespeare"
+          placeholder="Give your excerpt a title"
           aria-label="Name for the pasted text"
           className={`w-full px-3.5 py-2.5 rounded-2xl border text-[13px] transition-all focus:outline-none focus:ring-1 focus:ring-gold ${
             isDark

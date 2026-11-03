@@ -31,6 +31,7 @@ import {
   BookMarked,
   MotifPath
 } from './icons';
+import { GuideSection } from './GuideSection';
 import { motion, AnimatePresence } from 'motion/react';
 import { AnnotationFocus, Screen, TransitionType, UserSettings } from '../types';
 import { initialSettings } from '../data/mockData';
@@ -160,7 +161,7 @@ const MarkPeekRow: React.FC<{
         >
           {title}
         </button>
-        <span className="font-mono text-[11px] tabular-nums text-muted shrink-0">
+        <span className="spine-type text-[11px] tabular-nums text-muted shrink-0">
           {plural(count, 'mark')}
         </span>
         <button
@@ -443,11 +444,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[11px] uppercase tracking-widest font-mono font-medium text-gold">
+              <span className="text-[11px] uppercase tracking-widest spine-type font-medium text-gold">
                 Personal Atelier for Margins
               </span>
               <span className="text-stone-300 dark:text-stone-700">/</span>
-              <span className="text-[11px] font-mono text-muted">
+              <span className="text-[11px] spine-type text-muted">
                 Offline & Local
               </span>
             </div>
@@ -476,7 +477,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
               : 'bg-[#faf9f6] border-stone-200/80 text-stone-600'
           }`}
         >
-          <div className="flex flex-wrap items-center gap-4 md:gap-6 font-mono text-[11.5px] tabular-nums">
+          <div className="flex flex-wrap items-center gap-4 md:gap-6 spine-type text-[11.5px] tabular-nums">
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-gold" />
               <strong className="text-stone-900 dark:text-stone-100 font-semibold">{stored.length}</strong>
@@ -511,7 +512,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             </span>
           </div>
 
-          <div className="flex items-center gap-1 text-[11px] text-muted font-mono">
+          <div className="flex items-center gap-1 text-[11px] text-muted spine-type">
             <span>Stored on this device</span>
           </div>
         </div>
@@ -538,7 +539,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono font-semibold tracking-wider uppercase bg-gold/10 dark:bg-gold/15 text-gold">
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] spine-type font-semibold tracking-wider uppercase bg-gold/10 dark:bg-gold/15 text-gold">
                     <span className="w-1.5 h-1.5 rounded-full bg-gold animate-pulse" />
                     On The Desk
                   </span>
@@ -575,7 +576,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             <h2 className="title-hand text-[32px] text-stone-900 dark:text-stone-100">
               My Readings
             </h2>
-            <span className="font-mono text-[12px] text-muted tabular-nums">
+            <span className="spine-type text-[12px] text-muted tabular-nums">
               ({visible.length})
             </span>
           </div>
@@ -596,7 +597,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     : 'bg-white border-stone-200 text-stone-900 placeholder-stone-400'
                 }`}
               />
-              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none font-mono text-[10px] text-muted border border-stone-300 dark:border-stone-700 px-1 rounded">
+              <span className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none spine-type text-[10px] text-muted border border-stone-300 dark:border-stone-700 px-1 rounded">
                 /
               </span>
             </div>
@@ -685,7 +686,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         {isLoadingLibrary && stored.length === 0 ? (
           <div className="py-24 flex flex-col items-center justify-center gap-3">
             <Loader2 className="w-6 h-6 animate-spin text-stone-400" />
-            <p className="font-mono text-[12px] text-muted">Reading your local shelf…</p>
+            <p className="spine-type text-[12px] text-muted">Reading your local shelf…</p>
           </div>
         ) : stored.length === 0 ? (
           <button
@@ -724,7 +725,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 setQuery('');
                 setFormatFilter('all');
               }}
-              className="font-mono text-[12px] font-semibold text-gold hover:underline cursor-pointer"
+              className="spine-type text-[12px] font-semibold text-gold hover:underline cursor-pointer"
             >
               Reset filters
             </button>
@@ -751,7 +752,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             }`}
           >
             <div
-              className={`grid grid-cols-12 gap-2 px-4 py-2.5 text-[11px] font-mono uppercase tracking-wider text-muted border-b ${
+              className={`grid grid-cols-12 gap-2 px-4 py-2.5 text-[11px] spine-type uppercase tracking-wider text-muted border-b ${
                 isDark ? 'border-stone-800 bg-night-2' : 'border-stone-200/70 bg-stone-50'
               }`}
             >
@@ -780,14 +781,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     </button>
                   </div>
 
-                  <div className="col-span-2 font-mono text-[11px] text-muted uppercase">
+                  <div className="col-span-2 spine-type text-[11px] text-muted uppercase">
                     {doc.format}
                     {typeof doc.progressPercent === 'number' && (
                       <span className="normal-case" title={progressLabel(doc)}> · {Math.round(doc.progressPercent)}%</span>
                     )}
                   </div>
 
-                  <div className="col-span-2 text-right font-mono text-[11.5px] tabular-nums text-muted">
+                  <div className="col-span-2 text-right spine-type text-[11.5px] tabular-nums text-muted">
                     <span>{doc.wordCount.toLocaleString()}w</span>
                     {doc.annotationCount > 0 && (
                       <span className="ml-2 text-gold font-semibold">
@@ -868,7 +869,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 <h2 className="title-hand text-[26px] text-stone-900 dark:text-stone-100 leading-none">
                   My Margins Tracker
                 </h2>
-                <span className="font-mono text-[10.5px] px-1.5 py-0.2 rounded bg-stone-500/10 text-stone-600 dark:text-stone-400">
+                <span className="spine-type text-[10.5px] px-1.5 py-0.2 rounded bg-stone-500/10 text-stone-600 dark:text-stone-400">
                   {plural(totalMarks, 'mark')}
                 </span>
               </div>
@@ -995,7 +996,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                             Thematic Atlas
                           </h3>
                         </div>
-                        <span className="font-mono text-[11px] text-muted tabular-nums">
+                        <span className="spine-type text-[11px] text-muted tabular-nums">
                           {plural(keyConceptMarks, 'mark')}
                         </span>
                       </div>
@@ -1008,7 +1009,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                       <div className="flex-1 flex flex-col gap-1.5 min-h-27.5">
                         {keyConceptsBooks.length > 0 ? (
                           <div className="space-y-1">
-                            <span className="text-[10.5px] uppercase tracking-wider font-mono font-medium text-muted">
+                            <span className="text-[10.5px] uppercase tracking-wider spine-type font-medium text-muted">
                               Top Concept Volumes
                             </span>
                             {keyConceptsBooks.slice(0, 3).map((doc) => {
@@ -1036,7 +1037,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                                       about. It used to also show how many DIFFERENT themes the
                                       book carried, which says nothing about key concepts and
                                       read as a wrong count sitting next to a right one. */}
-                                  <span className="font-mono text-[11px] tabular-nums shrink-0 ml-2 text-muted">
+                                  <span className="spine-type text-[11px] tabular-nums shrink-0 ml-2 text-muted">
                                     {plural(conceptMarks, 'mark')}
                                   </span>
                                 </button>
@@ -1087,7 +1088,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                             Terminologies
                           </h3>
                         </div>
-                        <span className="font-mono text-[11px] text-muted tabular-nums">
+                        <span className="spine-type text-[11px] text-muted tabular-nums">
                           {plural(terminologyMarks, 'mark')}
                         </span>
                       </div>
@@ -1099,7 +1100,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                       <div className="flex-1 flex flex-col gap-1.5 min-h-27.5">
                         {documentsWithTerminology.length > 0 ? (
                           <div className="space-y-1">
-                            <span className="text-[10.5px] uppercase tracking-wider font-mono font-medium text-muted">
+                            <span className="text-[10.5px] uppercase tracking-wider spine-type font-medium text-muted">
                               Books with terms
                             </span>
                             {documentsWithTerminology.slice(0, 3).map((doc) => (
@@ -1120,7 +1121,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                                 <span className="font-serif text-[13px] text-stone-700 dark:text-stone-200 truncate group-hover:text-gold">
                                   {doc.title}
                                 </span>
-                                <span className="font-mono text-[11px] text-muted tabular-nums shrink-0 ml-2">
+                                <span className="spine-type text-[11px] text-muted tabular-nums shrink-0 ml-2">
                                   {plural(doc.terminologyCount, 'mark')}
                                 </span>
                               </button>
@@ -1191,7 +1192,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                                   {theme.name}
                                 </strong>
                               </span>
-                              <span className="font-mono text-[11px] text-muted tabular-nums">
+                              <span className="spine-type text-[11px] text-muted tabular-nums">
                                 {plural(totalMarksForTheme, 'mark')}
                               </span>
                             </div>
@@ -1240,7 +1241,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                       <h3 className="title-hand text-[22px] text-stone-900 dark:text-stone-100">
                         Terminologies Across My Collections
                       </h3>
-                      <span className="font-mono text-[12px] text-muted tabular-nums">
+                      <span className="spine-type text-[12px] text-muted tabular-nums">
                         {plural(terminologyMarks, 'mark')} in {plural(documentsWithTerminology.length, 'book')}
                       </span>
                     </div>
@@ -1293,6 +1294,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
           )}
         </AnimatePresence>
       </section>
+
+      {/* How each feature works, from real screenshots; the first-launch tour links here. */}
+      <GuideSection isDark={isDark} />
     </main>
   );
 };

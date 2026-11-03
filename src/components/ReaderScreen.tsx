@@ -369,9 +369,14 @@ const Paragraph = React.memo(function Paragraph({
       const style: React.CSSProperties = { color: 'inherit', backgroundColor: 'transparent', borderRadius: 2 };
       const lines: string[] = [];
       let decoColor = '';
+      // Words under highlights of several themes show every theme's colour, in bands.
+      const fills: string[] = [];
       for (const m of here) {
         const c = colorOf(m);
-        if (m.kind === 'highlight') style.backgroundColor = markFill(c, isDark);
+        if (m.kind === 'highlight') {
+          style.backgroundColor = markFill(c, isDark);
+          if (!fills.includes(style.backgroundColor)) fills.push(style.backgroundColor);
+        }
         else if (m.kind === 'underline' || m.kind === 'strikeout') {
           lines.push(m.kind === 'underline' ? 'underline' : 'line-through');
           if (m.kind === 'underline' || !decoColor) decoColor = c;
@@ -387,6 +392,12 @@ const Paragraph = React.memo(function Paragraph({
           if (style.backgroundColor === 'transparent') style.backgroundColor = markFill(c, isDark);
           if (!style.border) style.borderBottom = `2px dotted ${c}`;
         }
+      }
+      if (fills.length > 1) {
+        const step = 100 / fills.length;
+        style.backgroundImage = `linear-gradient(to bottom, ${fills.map((f, i) => `${f} ${i * step}% ${(i + 1) * step}%`).join(', ')})`;
+        // The bands alone: a fill under them would tint every band with the last colour.
+        style.backgroundColor = 'transparent';
       }
       if (lines.length) {
         style.textDecorationLine = lines.join(' ');
@@ -740,7 +751,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     (next: Exclude<TextTool, 'select'>, ranges: ParagraphRange[]) => {
       const isTerminology = next === 'terminology';
       const kind: TextMarkKind = isTerminology ? 'highlight' : next;
-      const fresh = uncoveredRanges(marks, ranges, kind, isTerminology);
+      const fresh = uncoveredRanges(marks, ranges, kind, isTerminology, activeThemeId);
       if (fresh.length === 0) return;
       const made = addMarks(
         fresh,
@@ -1712,7 +1723,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
           >
             <StickyNoteIcon className="w-4 h-4" />
             {activeControlTab === 'notes' && (
-              <span className="whitespace-nowrap animate-in fade-in duration-150">
+              <span className="spine-type whitespace-nowrap animate-in fade-in duration-150">
                 {/* Counts what it names, like the panel: marks always, notes only when there are some. */}
                 {plural(views.length, 'mark')}
                 {noteHeads.length > 0 && ` · ${plural(noteHeads.length, 'note')}`}

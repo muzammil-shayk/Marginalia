@@ -603,6 +603,8 @@ export async function exportAnnotatedPdf(
             y: y1,
             width: x2 - x1,
             height: y2 - y1,
+            // A mask covers what is under it; every other box is an outline.
+            ...(a.filled ? { color: rgb(r, g, b) } : {}),
             borderColor: rgb(r, g, b),
             borderWidth: widthPts,
             borderDashArray: dash,
@@ -625,7 +627,8 @@ export async function exportAnnotatedPdf(
           [x1, y1, x2, y2],
           {
             Subtype: PDFName.of(a.kind === 'rect' ? 'Square' : 'Circle'),
-            IC: context.obj([]), // No interior fill: these are outlines, on screen and here.
+            // Interior colour only for a mask; the other boxes are outlines, on screen and here.
+            IC: a.kind === 'rect' && a.filled ? context.obj([r, g, b]) : context.obj([]),
             BS: borderStyle(a, pw, context)
           },
           { bakedOntoPage: true }

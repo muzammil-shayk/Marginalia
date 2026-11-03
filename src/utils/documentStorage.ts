@@ -394,10 +394,14 @@ export async function deletePage(id: string, pageNumber: number): Promise<{ page
 }
 
 /** Where the reader left off in a document's PDF workspace — zoom, page, single/spread view. */
+/** Pages in view: one, a two-page spread, or a grid of four (2×2) or six (3×2) when zoomed out. */
+export type PdfViewMode = 'single' | 'spread' | 'grid4' | 'grid6';
+export const PDF_VIEW_MODES: readonly PdfViewMode[] = ['single', 'spread', 'grid4', 'grid6'];
+
 export interface ReadingState {
   scale: number;
   page: number;
-  viewMode: 'single' | 'spread';
+  viewMode: PdfViewMode;
 }
 
 /**

@@ -52,6 +52,14 @@ test('a term and a plain highlight do not cover each other', () => {
   assert.deepEqual(uncoveredRanges(marks, r, 'highlight', true), []);
 });
 
+test('the same words can be highlighted again under another theme, not under the same one', () => {
+  const marks = [mark('a', 0, 0, 9, { themeId: 'love' })];
+  const r = [{ paraIdx: 0, start: 0, end: 4 }];
+  assert.deepEqual(uncoveredRanges(marks, r, 'highlight', false, 'love'), []);
+  assert.deepEqual(uncoveredRanges(marks, r, 'highlight', false, 'death'), r);
+  assert.deepEqual(uncoveredRanges(marks, r, 'highlight', false, null), r);
+});
+
 test('views: one per group, quote joined, paragraph as page, reading order kept within a paragraph', () => {
   const paragraphs = ['Alpha beta gamma delta.', 'Epsilon zeta.'];
   const marks = [

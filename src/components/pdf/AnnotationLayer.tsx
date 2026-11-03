@@ -257,7 +257,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       // Capture keeps the drag following the pointer when it leaves the page box, which would
       // otherwise truncate the mark at the edge.
       e.currentTarget.setPointerCapture(e.pointerId);
-      if (tool === 'ink' || tool === 'mask') setDraftStroke([point]);
+      if (tool === 'ink') setDraftStroke([point]);
       else {
         setDraftStart(point);
         setDraftEnd(point);
@@ -271,7 +271,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     if (!box) return;
     const point = pointToFraction(e.clientX, e.clientY, box);
 
-    if (tool === 'ink' || tool === 'mask') {
+    if (tool === 'ink') {
       setDraftStroke((prev) => {
         if (!prev) return [point];
         // Thin out near-duplicate samples: a high-frequency pointer emits far more points than
@@ -307,13 +307,23 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
     drawingRef.current = false;
     e.currentTarget.releasePointerCapture?.(e.pointerId);
 
-    if (tool === 'ink' || tool === 'mask') {
+    if (tool === 'mask' && draftStart) {
+      // A solid box over whatever was dragged across (see PdfTool's doc comment).
+      const box = pageBox();
+      const to = box ? pointToFraction(e.clientX, e.clientY, box) : draftEnd ?? draftStart;
+      if (Math.hypot(to.x - draftStart.x, to.y - draftStart.y) > 0.01) {
+        onCreate({ ...base('rect'), box: boxFromPoints(draftStart, to), filled: true, weight: 0 });
+      }
+      setDraftStart(null);
+      setDraftEnd(null);
+      return;
+    }
+
+    if (tool === 'ink') {
       setDraftStroke((points) => {
         // A tap with the pen is a mis-click, not a one-point drawing.
         if (points && points.length > 1) {
           onCreate({
-            // `mask` draws exactly like `ink` (see PdfTool's doc comment) — same stored kind, just
-            // its own weight/colour defaults, so it needs no separate rendering or export path.
             ...base('ink'),
             points,
             weight: toolWeight ?? DEFAULT_WEIGHT,
@@ -720,7 +730,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
                 y={a.box.y * 100}
                 width={a.box.w * 100}
                 height={a.box.h * 100}
-                fill="none"
+                fill={a.filled ? a.color : 'none'}
                 {...strokeProps(a)}
                 style={interactive}
                 onClick={(e) => handleMarkClick(e, raw)}
@@ -767,6 +777,9 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
             strokeWidth={1}
             vectorEffect="non-scaling-stroke"
           />
+        )}
+        {draftBox && tool === 'mask' && (
+          <rect x={draftBox.x * 100} y={draftBox.y * 100} width={draftBox.w * 100} height={draftBox.h * 100} fill={activeColor} fillOpacity={0.85} />
         )}
         {draftBox && (tool === 'rect' || tool === 'ellipse' || tool === 'text') && (
           <rect

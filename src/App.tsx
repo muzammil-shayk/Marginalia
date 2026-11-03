@@ -29,6 +29,7 @@ import { ErrorDialog } from './components/ErrorDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { FOCUS_HOTKEY } from './components/FocusMode';
 import { Tutorial } from './components/Tutorial';
+import { showGuide } from './components/GuideSection';
 import { FeedbackPrompt } from './components/Feedback';
 import { MotifTracer } from './components/MotifTracer';
 import type { OpenedClassPack } from './utils/documentStorage';
@@ -36,6 +37,7 @@ import { localThemeStore } from './components/themeStore';
 import { themesToAdd } from './utils/marksExport';
 import { isTypingTarget } from './components/pdf/workspaceKeys';
 import { withoutSecrets } from './hooks/settingsCache';
+import { mergeHydratedSettings } from './hooks/settingsHydration';
 import { flushAllPending, handleBeforeUnload } from './hooks/unloadFlush';
 
 // ── Storage Keys ──
@@ -134,6 +136,8 @@ function saveSession(s: SessionState) {
 export default function App() {
   // ── Hydrate state ──
   const [settings, setSettings] = useState<UserSettings>(() => loadSettings());
+  /** The settings the session started on, so edits made before the disk copy arrives survive it. */
+  const launchSettings = useRef(settings);
   // shortcut: themes live in settings for now; the dedicated theme storage API replaces this adapter.
   const themeStore = useMemo(() => localThemeStore(settings.activeThemes, setSettings), [settings.activeThemes]);
   /** Themes a marks import brought along, kept with their ids so the imported marks find them. */
@@ -406,7 +410,9 @@ export default function App() {
       if (result.ok) {
         if (result.settings) {
           hadStoredSettings.current = true;
-          setSettings(mergeSettings(result.settings as Partial<UserSettings>));
+          // Edits made since launch (a theme made while this was loading) are kept, not replaced.
+          const remote = mergeSettings(result.settings as Partial<UserSettings>);
+          setSettings((prev) => mergeHydratedSettings(remote as never, launchSettings.current as never, prev as never) as UserSettings);
         }
         hasHydratedRemoteSettings.current = true;
         setSettingsHydrated(true);
@@ -697,6 +703,11 @@ export default function App() {
             setTutorialRequested(false);
           }}
           isDark={isDark}
+          onShowGuide={() => {
+            navigate('home', 'push_back');
+            // Once Home has mounted, and the dialog has gone, so focus and scrolling land on the page.
+            window.setTimeout(showGuide, 450);
+          }}
         />
 
         {/* Screen Rendering */}

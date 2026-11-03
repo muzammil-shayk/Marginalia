@@ -71,6 +71,7 @@ import {
 import { useDismiss } from './useDismiss';
 import { ArchivePanel, type ArchiveRow } from '../MarksArchive';
 import { UserSettings } from '../../types';
+import type { PdfViewMode } from '../../utils/documentStorage';
 import { HoverTooltip } from '../HoverTooltip';
 import { TOOL_HOTKEYS, themeShortcut, withShortcut } from './workspaceKeys';
 
@@ -220,8 +221,8 @@ interface PdfToolbarProps {
   currentPage: number;
   pageCount: number;
   onGoToPage: (page: number) => void;
-  viewMode: 'single' | 'spread';
-  onViewModeChange: (mode: 'single' | 'spread') => void;
+  viewMode: PdfViewMode;
+  onViewModeChange: (mode: PdfViewMode) => void;
   onInsertPage: () => void;
   markCount: number;
   onExport: () => void;
@@ -259,7 +260,7 @@ const TOOL_GROUPS: { id: PdfTool; label: string; icon: React.ElementType; hint: 
   ],
   [
     { id: 'ink', label: 'Pen', icon: PenLine, hint: 'Draw freehand' },
-    { id: 'mask', label: 'Mask', icon: EyeOff, hint: 'Draw over something to black it out' },
+    { id: 'mask', label: 'Mask', icon: EyeOff, hint: 'Drag a box over something to black it out' },
     { id: 'rect', label: 'Rectangle', icon: Square, hint: 'Drag a rectangle' },
     { id: 'ellipse', label: 'Ellipse', icon: Circle, hint: 'Drag an ellipse' },
     { id: 'arrow', label: 'Arrow', icon: ArrowUpRight, hint: 'Drag to draw an arrow on the page' },
@@ -782,23 +783,36 @@ export const PdfToolbar: React.FC<PdfToolbarProps> = ({
 
         <div className={`w-px h-6 mx-0.5 ${isDark ? 'bg-stone-800' : 'bg-stone-200'}`} />
 
-        <HoverTooltip label={viewMode === 'spread' ? 'Switch to single-page view' : 'Two-page spread (← → turn pages)'}>
-          <button
-            type="button"
-            onClick={() => onViewModeChange(viewMode === 'spread' ? 'single' : 'spread')}
-            aria-label="Two-page spread"
-            aria-pressed={viewMode === 'spread'}
-            className={`p-1.5 rounded-lg cursor-pointer ${
-              viewMode === 'spread'
-                ? 'bg-accent text-on-accent shadow-xs'
-                : isDark
-                  ? 'text-stone-400 hover:bg-stone-800 hover:text-stone-200'
-                  : 'text-muted hover:bg-stone-100 hover:text-stone-800'
-            }`}
-          >
-            {viewMode === 'spread' ? <BookOpen className="w-4 h-4" /> : <FileText className="w-4 h-4" />}
-          </button>
-        </HoverTooltip>
+        {/* Pages in view: 1, a 2-page spread (turns like a book), or 4 / 6 zoomed out. */}
+        <div role="radiogroup" aria-label="Pages in view" className={`flex items-center rounded-lg p-0.5 ${isDark ? 'bg-stone-800/60' : 'bg-stone-100'}`}>
+          {(
+            [
+              { mode: 'single', n: '1', label: 'One page' },
+              { mode: 'spread', n: '2', label: 'Two-page spread (← → or swipe to turn)' },
+              { mode: 'grid4', n: '4', label: 'Four pages' },
+              { mode: 'grid6', n: '6', label: 'Six pages' }
+            ] as const
+          ).map((o) => (
+            <HoverTooltip key={o.mode} label={o.label}>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={viewMode === o.mode}
+                aria-label={o.label}
+                onClick={() => onViewModeChange(o.mode)}
+                className={`min-w-6 h-6 px-1 rounded-md text-[11.5px] spine-type cursor-pointer ${
+                  viewMode === o.mode
+                    ? 'bg-accent text-on-accent shadow-xs'
+                    : isDark
+                      ? 'text-stone-400 hover:text-stone-200'
+                      : 'text-muted hover:text-stone-800'
+                }`}
+              >
+                {o.n}
+              </button>
+            </HoverTooltip>
+          ))}
+        </div>
 
         <HoverTooltip label="Insert or delete a page">
           <button

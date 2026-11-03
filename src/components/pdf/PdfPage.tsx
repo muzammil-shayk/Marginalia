@@ -26,6 +26,7 @@ import {
   isTextAnchored
 } from './annotationModel';
 import { AnnotationLayer, TextMarkLayer } from './AnnotationLayer';
+import { TURN_MS } from '../pageTurn';
 import './pdfTextLayer.css';
 
 interface PdfPageProps {
@@ -60,6 +61,12 @@ interface PdfPageProps {
   /** Removes this page from the document entirely. Absent when the document has only one page
    *  left — a PDF can't go to zero pages, so there is nothing this button could do there. */
   onDeletePage?: () => void;
+  /**
+   * Book view's neighbouring pages (2.8.0): drawn now, kept out of sight and out of reach, so a
+   * page turn lands on finished pages. Drawing them only once the turn began held the turn up
+   * on the main thread, and the leaf carrying the old pages' marks stayed on screen 1–2 s.
+   */
+  offstage?: boolean;
 }
 
 export const PdfPage: React.FC<PdfPageProps> = ({
@@ -90,7 +97,8 @@ export const PdfPage: React.FC<PdfPageProps> = ({
   onUpdate,
   onHover,
   onVisible,
-  onDeletePage
+  onDeletePage,
+  offstage = false
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -228,14 +236,21 @@ export const PdfPage: React.FC<PdfPageProps> = ({
     setIsRendered(true);
   }, [pdf, pageNumber, scale]);
 
+  // Offstage pages are always drawn (they sit out of view, where the observer never sees them).
+  const shouldRender = isNear || offstage;
   useEffect(() => {
-    if (!isNear || !size) return;
-    void renderPage();
+    if (!shouldRender || !size) return;
+    // An offstage page waits out the page turn that brought it next door, so drawing it never
+    // competes with the turn for the main thread.
+    const wait = offstage && !isNear ? TURN_MS + 150 : 0;
+    const timer = window.setTimeout(() => void renderPage(), wait);
     return () => {
+      window.clearTimeout(timer);
       renderTaskRef.current?.cancel();
       textLayerInstanceRef.current?.cancel();
     };
-  }, [isNear, size, renderPage]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldRender, size, renderPage]);
 
   // Clears the `selecting` state everywhere once the drag ends, wherever it ended.
   useEffect(() => {
@@ -254,7 +269,7 @@ export const PdfPage: React.FC<PdfPageProps> = ({
   // Release the bitmap once well out of view. Each canvas is several megabytes at typical zoom,
   // so holding every visited page would grow without bound over a long document.
   useEffect(() => {
-    if (isNear) return;
+    if (shouldRender) return;
     const canvas = canvasRef.current;
     if (canvas) {
       canvas.width = 0;
@@ -275,6 +290,9 @@ export const PdfPage: React.FC<PdfPageProps> = ({
     <div
       ref={containerRef}
       data-page-number={pageNumber}
+      data-offstage={offstage || undefined}
+      aria-hidden={offstage || undefined}
+      inert={offstage || undefined}
       // False until pdf.js has reported this page's real size. Until then the element still has
       // a height — a 60vh placeholder — so anything measuring it lands on a guess.
       data-page-sized={String(Boolean(size))}
@@ -282,6 +300,7 @@ export const PdfPage: React.FC<PdfPageProps> = ({
       style={{
         width: size ? `${size.width}px` : '100%',
         height: size ? `${size.height}px` : '60vh',
+        ...(offstage ? { position: 'absolute', left: '-200vw', top: 0, visibility: 'hidden', pointerEvents: 'none' } : {}),
         // The text layer's font sizing is expressed against this variable.
         ['--total-scale-factor' as never]: String(scale)
       }}

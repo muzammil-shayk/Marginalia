@@ -87,7 +87,8 @@ export interface StoredAnnotation {
 export interface ReadingState {
   scale: number;
   page: number;
-  viewMode: 'single' | 'spread';
+  /** 'grid4' and 'grid6' since 2.8.0: four or six pages in view, zoomed out. */
+  viewMode: 'single' | 'spread' | 'grid4' | 'grid6';
 }
 
 export interface StoredDocument extends DocumentMeta {

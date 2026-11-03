@@ -10,6 +10,7 @@ import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useLayo
 import { ChevronLeft, ChevronRight } from './icons';
 import { clampSpread, columnAt, pageCountFor, playTurn, snapshotPage, turnDirection, type PageBox } from './pageTurn';
 import { isTypingTarget } from './pdf/workspaceKeys';
+import { useSwipeTurn } from './swipeTurn';
 
 export interface TextSpreadHandle {
   /** Turns to the spread holding `el` (a paragraph or a mark inside one). */
@@ -263,6 +264,10 @@ export const TextSpread = forwardRef<TextSpreadHandle, TextSpreadProps>(function
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [turnTo]);
+
+  // A sideways swipe (finger, pen, trackpad) turns too.
+  const swipe = useCallback((step: 1 | -1) => turnTo(spreadRef.current + step), [turnTo]);
+  useSwipeTurn(hostRef, swipe);
 
   const g = geo;
   const colW = g ? g.pageW - 2 * g.padX : 0;

@@ -182,7 +182,8 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   }
 ];
 
-export const Tutorial: React.FC<{ open: boolean; onClose: () => void; isDark: boolean }> = ({ open, onClose, isDark }) => {
+/** `onShowGuide` takes the reader to the guide on My Collections ("See the full guide", last step). */
+export const Tutorial: React.FC<{ open: boolean; onClose: () => void; isDark: boolean; onShowGuide?: () => void }> = ({ open, onClose, isDark, onShowGuide }) => {
   const [index, setIndex] = useState(0);
   const [dir, setDir] = useState<1 | -1>(1);
   const ref = useRef<HTMLDivElement>(null);
@@ -268,6 +269,18 @@ export const Tutorial: React.FC<{ open: boolean; onClose: () => void; isDark: bo
               ))}
             </div>
             <div className="flex items-center gap-2">
+              {last && onShowGuide && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onClose();
+                    onShowGuide();
+                  }}
+                  className="rounded-full caps px-3 py-2.5 text-[12px] text-gold hover:underline cursor-pointer"
+                >
+                  See the full guide
+                </button>
+              )}
               {index > 0 && (
                 <button
                   type="button"

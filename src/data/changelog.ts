@@ -22,9 +22,69 @@ export interface ReleaseNote {
   highlights: ChangelogItem[];
 }
 
-export const CURRENT_APP_VERSION = '2.7.0';
+export const CURRENT_APP_VERSION = '2.8.0';
 
 export const CHANGELOG_RELEASES: ReleaseNote[] = [
+  {
+    version: '2.8.0',
+    title: 'A Guide, More Pages, Cleaner Marks',
+    date: 'November 2026',
+    summary:
+      'A picture guide on My Collections, four- and six-page PDF views, swipe to turn pages, several themes on one passage, and fixes for page turns, quotes, file names and new themes.',
+    highlights: [
+      {
+        category: 'feature',
+        title: 'Getting the most from Marginalia',
+        description:
+          'A guide at the foot of My Collections, grouped into Reading, Marking, Notes, Themes, Finding and Exporting, with a real screenshot of each feature. The first-launch tour links to it.'
+      },
+      {
+        category: 'feature',
+        title: 'One, two, four or six PDF pages',
+        description: 'Choose how many pages are in view from the PDF toolbar. Every page stays markable.'
+      },
+      {
+        category: 'feature',
+        title: 'Swipe to turn pages',
+        description: 'In the two-page view, swipe sideways with a finger, pen or trackpad, as well as using the arrows and arrow keys.'
+      },
+      {
+        category: 'feature',
+        title: 'One passage, several themes',
+        description: 'The same words can be highlighted again under another theme. Words under two themes show both colours.'
+      },
+      {
+        category: 'improvement',
+        title: 'Mask blacks out a box',
+        description: 'The Mask tool now drags a solid box over anything, instead of drawing freehand.'
+      },
+      {
+        category: 'improvement',
+        title: 'The spines’ type in the sidebar',
+        description: 'The sidebar, its footer, the breadcrumb and the counts of marks and words now use the same type as the book spines. The paste box asks you to give your excerpt a title.'
+      },
+      {
+        category: 'fix',
+        title: 'Page turns land on finished pages',
+        description: 'In a PDF’s two-page view, the previous pages’ marks no longer linger for a second or two after a turn: the pages either side are drawn ahead.'
+      },
+      {
+        category: 'fix',
+        title: 'Quotes hold only the book’s words',
+        description: 'A selection started beside a line no longer puts the sidebar’s and toolbar’s labels into the quote, the marks panel, search or exports.'
+      },
+      {
+        category: 'fix',
+        title: 'Any file name opens',
+        description: 'A file named with a curly apostrophe or Urdu letters no longer crashes the app when it is opened or downloaded.'
+      },
+      {
+        category: 'fix',
+        title: 'New themes stay tagged',
+        description: 'A theme made while Marginalia was still loading your settings is kept, and its marks stay filed under it and in My Margins Tracker.'
+      }
+    ]
+  },
   {
     version: '2.7.0',
     title: 'Urdu, Poetry and Motifs',

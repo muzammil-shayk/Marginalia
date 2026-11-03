@@ -25,6 +25,7 @@ import { documentParamsFromBody } from "./src/services/documentInput";
 import geminiConfigRouter from "./src/services/geminiConfig";
 import markBackupRouter from "./src/services/markBackupRoutes";
 import libraryRouter from "./src/services/libraryRoutes";
+import { contentDisposition } from "./src/services/contentDisposition";
 import { setAiEnabled } from "./src/services/aiGate";
 import { wordWindow, markSearchHits } from "./searchSnippet";
 
@@ -448,17 +449,17 @@ app.get("/api/documents/:id/original", async (req, res) => {
     return;
   }
   const ext = path.extname(original.filename).toLowerCase();
-  // Header values cannot contain control characters — Node throws ERR_INVALID_CHAR and the
-  // download 500s. The filename comes from the client at upload time, so it is stripped rather
-  // than trusted.
+  // Header values cannot contain control characters, nor anything above U+00FF (a curly
+  // apostrophe, Urdu) — Node throws ERR_INVALID_CHAR. The filename comes from the client at
+  // upload time, so it is stripped here and encoded by `contentDisposition`.
   const safeName = original.filename.replace(/[\r\n\u0000-\u001f\u007f"]/g, "").trim() || "document";
 
   if (req.query.disposition === "inline") {
     res.setHeader("Content-Type", INLINE_CONTENT_TYPES[ext] || "application/octet-stream");
-    res.setHeader("Content-Disposition", `inline; filename="${safeName}"`);
+    res.setHeader("Content-Disposition", contentDisposition("inline", safeName));
   } else {
     res.setHeader("Content-Type", "application/octet-stream");
-    res.setHeader("Content-Disposition", `attachment; filename="${safeName}"`);
+    res.setHeader("Content-Disposition", contentDisposition("attachment", safeName));
   }
   res.send(original.buffer);
 });
@@ -564,7 +565,7 @@ app.put("/api/documents/:id/reading-state", async (req, res) => {
     !readingState ||
     typeof readingState.scale !== "number" ||
     typeof readingState.page !== "number" ||
-    (readingState.viewMode !== "single" && readingState.viewMode !== "spread")
+    !["single", "spread", "grid4", "grid6"].includes(readingState.viewMode)
   ) {
     res.status(400).json({ error: "A valid readingState object is required." });
     return;

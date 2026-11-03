@@ -103,9 +103,9 @@ export function fontStack(font: TextFont | undefined): string {
  * `terminology` and `mask` are toolbar-level tools only, never stored `AnnotationKind`s:
  * - `terminology` marks a passage as an ordinary `kind: 'highlight'` flagged `isTerminology: true`
  *   (see `Annotation.isTerminology`), reusing highlight's rendering and export path.
- * - `mask` draws an ordinary `kind: 'ink'` stroke — already fully opaque on screen and in export,
- *   unlike a highlight's translucent tint — just with its own much thicker default weight and a
- *   default black colour, so a drag actually blots a line out rather than tinting it.
+ * - `mask` drags out a solid box: an ordinary `kind: 'rect'` with `filled: true`, black by
+ *   default, opaque on screen and in export. (Before 2.8.0 it drew a thick freehand `ink` stroke;
+ *   those stay as they are.)
  */
 /** `area` drags a rectangle that is stored as a highlight (`utils/areaMark`). */
 export type PdfTool = AnnotationKind | 'select' | 'erase' | 'terminology' | 'mask' | 'area';
@@ -162,6 +162,8 @@ export interface Annotation {
   strokeStyle?: StrokeStyle;
   /** `note` only: filled, tinted, or bordered paper. Absent means `outline`, the original look. */
   noteStyle?: NoteStyle;
+  /** `rect` only: solid, covering what is under it (the Mask tool). Absent means an outline. */
+  filled?: true;
   /** `bracket` only: which way the brace opens. Absent means `left`, a `{`. */
   bracketSide?: BracketSide;
   /**

@@ -58,6 +58,8 @@ import type { LinkOption, MarkLinks } from './MarkProperties';
 import { formatQuoteRef } from '../../utils/quoteRef';
 import { linkMarks, linkedIds, unlinkMarks } from '../../utils/markLinks';
 import { isAreaHighlight } from '../../utils/areaMark';
+import { clippedRange } from '../../utils/selectionText';
+import { useSwipeTurn } from '../swipeTurn';
 import {
   deletePage,
   checkpointMarkBackup,
@@ -69,7 +71,9 @@ import {
   saveReadingState,
   PageInsertHeight,
   PageInsertPlacement,
-  ReadingState
+  ReadingState,
+  PDF_VIEW_MODES,
+  type PdfViewMode
 } from '../../utils/documentStorage';
 
 // pdf.js parses off the main thread. Resolving the worker through `import.meta.url` lets the
@@ -126,7 +130,7 @@ function loadDocState(docId: string): StoredDocState | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (typeof parsed.scale === 'number' && typeof parsed.page === 'number') {
-      return { scale: parsed.scale, page: parsed.page, viewMode: parsed.viewMode === 'spread' ? 'spread' : 'single' };
+      return { scale: parsed.scale, page: parsed.page, viewMode: PDF_VIEW_MODES.includes(parsed.viewMode) ? parsed.viewMode : 'single' };
     }
   } catch {
     /* ignore */
@@ -192,7 +196,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [scale, setScale] = useState(DEFAULT_ZOOM);
   /** Single page per row, or two side by side like an open book. */
-  const [viewMode, setViewMode] = useState<'single' | 'spread'>('single');
+  const [viewMode, setViewMode] = useState<PdfViewMode>('single');
   /** Guards the one-time fit, so re-rendering never overrides a zoom the reader chose. */
   const fittedRef = useRef<string | null>(null);
   /** Guards the one-time restore of the last page read, the same way `fittedRef` guards zoom. */
@@ -576,42 +580,27 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     const selection = window.getSelection();
     if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
     const range = selection.getRangeAt(0);
-    const quote = selection.toString().trim();
-    if (!quote) return null;
-
-    // Each page's box, measured once. Selection rectangles are then matched to a page
-    // GEOMETRICALLY rather than with `elementFromPoint`, which only sees what is currently on
-    // screen — so a selection running past the bottom of the window, or made while the document
-    // is part-scrolled, silently lost the rectangles that fell outside the viewport.
-    const pageBoxes = Array.from(document.querySelectorAll<HTMLElement>('[data-page-number]')).map((el) => ({
-      page: Number(el.dataset.pageNumber),
-      box: el.getBoundingClientRect()
-    }));
-
-
-    const byPageMap = new Map<number, { pageBox: DOMRect; rects: DOMRect[] }>();
-    for (const rect of Array.from(range.getClientRects())) {
+    /*
+     * Read page by page, from each page's text layer only. `Selection.toString()` and the range's
+     * own rects run between the two ends in document order, so a drag begun just left of a line,
+     * over the sidebar or the toolbar, used to put their labels in the quote (and a toolbar
+     * scrolled over a page could add rects). Clipping the range to each text layer keeps exactly
+     * the page's words and their boxes, one mark per page for a drag across a page break.
+     */
+    const groups: { page: number; rects: FractionRect[]; quote: string }[] = [];
+    for (const pageEl of Array.from(document.querySelectorAll<HTMLElement>('[data-page-number]'))) {
+      const layer = pageEl.querySelector('.marginalia-text-layer');
+      const clip = layer ? clippedRange(range, layer) : null;
+      if (!clip) continue;
+      const quote = clip.toString().replace(/\s+/g, ' ').trim();
       // Zero-area rects are emitted for collapsed line ends and would render as invisible slivers
       // that are impossible to click or erase.
-      if (rect.width < 0.5 || rect.height < 0.5) continue;
-      const cx = rect.left + rect.width / 2;
-      const cy = rect.top + rect.height / 2;
-      const owner = pageBoxes.find(
-        ({ box }) => cx >= box.left && cx <= box.right && cy >= box.top && cy <= box.bottom
-      );
-      if (!owner?.page) continue;
-      const entry = byPageMap.get(owner.page);
-      if (entry) entry.rects.push(rect);
-      else byPageMap.set(owner.page, { pageBox: owner.box, rects: [rect] });
+      const rects = Array.from(clip.getClientRects()).filter((r) => r.width >= 0.5 && r.height >= 0.5);
+      if (!quote || rects.length === 0) continue;
+      const pageBox = pageEl.getBoundingClientRect();
+      groups.push({ page: Number(pageEl.dataset.pageNumber), rects: mergeRectsIntoLines(rects).map((r) => rectToFraction(r, pageBox)), quote });
     }
-
-    if (byPageMap.size === 0) return null;
-
-    const groups: { page: number; rects: FractionRect[]; quote: string }[] = [];
-    byPageMap.forEach(({ pageBox, rects }, page) => {
-      groups.push({ page, rects: mergeRectsIntoLines(rects).map((r) => rectToFraction(r, pageBox)), quote });
-    });
-    return groups;
+    return groups.length ? groups : null;
   }, []);
 
   /**
@@ -649,9 +638,17 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
    * already-terminology-tagged passage (or vice versa) must not read as "already marked."
    */
   const isAlreadyMarked = useCallback(
-    (group: { page: number; rects: FractionRect[] }, kind: AnnotationKind, isTerminology = false) => {
+    (group: { page: number; rects: FractionRect[] }, kind: AnnotationKind, isTerminology = false, themeId: string | null = null) => {
+      // Under another theme the same words can be marked again (one passage, several themes).
       const existing = annotations
-        .filter((a) => a.kind === kind && Boolean(a.isTerminology) === isTerminology && a.page === group.page && a.rects?.length)
+        .filter(
+          (a) =>
+            a.kind === kind &&
+            Boolean(a.isTerminology) === isTerminology &&
+            (a.themeId ?? null) === themeId &&
+            a.page === group.page &&
+            a.rects?.length
+        )
         .flatMap((a) => a.rects!);
       if (existing.length === 0) return false;
       // Every line has to be substantially covered. A little slack, because a selection's
@@ -812,7 +809,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       const isTerminology = tool === 'terminology';
       const kind: AnnotationKind = isTerminology ? 'highlight' : (tool as AnnotationKind);
       const additions = groups
-        .filter((g) => !isAlreadyMarked(g, kind, isTerminology))
+        .filter((g) => !isAlreadyMarked(g, kind, isTerminology, activeThemeId))
         .map<Annotation>((g) => ({
           id: newAnnotationId(),
           page: g.page,
@@ -1256,7 +1253,11 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       cover: (dir === 1 ? L : R) ? snapshotPage((dir === 1 ? L : R)!) : null,
       back: () => {
         const el = pageEl(dir === 1 ? 2 * to + 1 : 2 * to + 2);
-        return el ? snapshotPage(el) : null;
+        if (!el) return null;
+        const copy = snapshotPage(el);
+        // Drawn offstage until now: the copy takes the face's place, not the offstage spot.
+        for (const p of ['position', 'left', 'top', 'visibility', 'pointer-events']) copy.style.removeProperty(p);
+        return copy;
       },
       reduced: Boolean(reduceMotion)
     });
@@ -1281,6 +1282,17 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [bookOn, pageCount]);
+
+  // A sideways swipe (finger, pen, trackpad) turns the book too.
+  const swipeTurn = useCallback(
+    (step: 1 | -1) => {
+      const pair = Math.floor((pageRef.current - 1) / 2) + step;
+      const page = Math.min(pageCount, Math.max(1, pair * 2 + 1));
+      if (page !== pageRef.current) bookTurnRef.current?.(page, true);
+    },
+    [pageCount]
+  );
+  useSwipeTurn(scrollRef, swipeTurn, bookOn);
 
   const goToPage = useCallback((page: number, animate = true) => {
     if (bookTurnRef.current) return bookTurnRef.current(page, animate);
@@ -1429,7 +1441,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
    * gap between them actually fit at, and apply it the moment the mode is switched on.
    */
   const handleViewModeChange = useCallback(
-    (mode: 'single' | 'spread') => {
+    (mode: PdfViewMode) => {
       zoomTouchedRef.current = true;
       setViewMode(mode);
       if (!pdf || !scrollRef.current) return;
@@ -1441,10 +1453,16 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         // the window, and the reader had to zoom back by hand.
         const usable = container.clientWidth - 48;
         // The book shows one pair at a time, so the pair fits the height too (40: the area's padding).
+        // A grid fits its columns across and its two rows down, so the whole set is in view.
+        const cols = mode === 'grid6' ? 3 : mode === 'grid4' || mode === 'spread' ? 2 : 1;
+        const rows = mode === 'grid4' || mode === 'grid6' ? 2 : 1;
         const fit =
-          mode === 'spread'
-            ? Math.min((usable - SPREAD_GAP_PX) / (2 * unscaled.width), (container.clientHeight - 40) / unscaled.height)
-            : usable / unscaled.width;
+          mode === 'single'
+            ? usable / unscaled.width
+            : Math.min(
+                (usable - (cols - 1) * SPREAD_GAP_PX) / (cols * unscaled.width),
+                (container.clientHeight - 40 - (rows - 1) * SPREAD_GAP_PX) / (rows * unscaled.height)
+              );
         setScale(Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, fit)));
       });
     },
@@ -2027,9 +2045,10 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
             </div>
           ) : (() => {
             const pageNumbers = Array.from({ length: pageCount }, (_, i) => i + 1);
-            const renderPage = (pageNumber: number) => (
+            const renderPage = (pageNumber: number, offstage = false) => (
               <PdfPage
                 key={pageNumber}
+                offstage={offstage}
                 pdf={pdf}
                 pageNumber={pageNumber}
                 scale={scale}
@@ -2067,6 +2086,9 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
             if (bookOn) {
               const first = Math.floor((currentPage - 1) / 2) * 2 + 1;
               const pair = [first, first + 1].filter((n) => n <= pageCount);
+              // The pairs either side, drawn ahead and kept offstage in the same parent, so a turn
+              // shows finished pages and React keeps each page (and its canvas) as it moves into view.
+              const near = [first - 2, first - 1, first + 2, first + 3].filter((n) => n >= 1 && n <= pageCount);
               return (
                 <div className="flex items-center justify-center gap-1 min-h-full">
                   <button
@@ -2080,8 +2102,8 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
                   >
                     <ChevronLeft className="w-5 h-5" />
                   </button>
-                  <div ref={bookRef} className="spread-book flex items-start" style={{ marginInline: 0 }}>
-                    {pair.map(renderPage)}
+                  <div ref={bookRef} className="spread-book relative flex items-start" style={{ marginInline: 0 }}>
+                    {[...near.filter((n) => n < first), ...pair, ...near.filter((n) => n > first)].map((n) => renderPage(n, !pair.includes(n)))}
                     {pair.length === 2 && <div className="spread-gutter" aria-hidden />}
                   </div>
                   <button
@@ -2099,6 +2121,16 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
               );
             }
 
+            // Four or six pages in view: a grid of two or three columns, every page still its own
+            // annotation surface; scrolling moves on through the document.
+            if (viewMode === 'grid4' || viewMode === 'grid6') {
+              return (
+                <div className={`grid gap-5 justify-center items-start ${viewMode === 'grid6' ? 'grid-cols-[repeat(3,max-content)]' : 'grid-cols-[repeat(2,max-content)]'}`}>
+                  {pageNumbers.map((n) => renderPage(n))}
+                </div>
+              );
+            }
+
             if (viewMode === 'spread') {
               const pairs: number[][] = [];
               for (let i = 0; i < pageNumbers.length; i += 2) pairs.push(pageNumbers.slice(i, i + 2));
@@ -2106,14 +2138,14 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
                 <div className="space-y-5">
                   {pairs.map((pair) => (
                     <div key={pair[0]} className="flex flex-wrap items-start justify-center gap-5">
-                      {pair.map(renderPage)}
+                      {pair.map((n) => renderPage(n))}
                     </div>
                   ))}
                 </div>
               );
             }
 
-            return <div className="space-y-5">{pageNumbers.map(renderPage)}</div>;
+            return <div className="space-y-5">{pageNumbers.map((n) => renderPage(n))}</div>;
           })()}
         </div>
 

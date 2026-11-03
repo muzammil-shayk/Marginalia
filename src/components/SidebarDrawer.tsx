@@ -77,7 +77,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               className={link(currentScreen === 'home' || currentScreen === 'reader')}
             >
               <BookOpen className={icon(currentScreen === 'home' || currentScreen === 'reader')} />
-              <span className="caps">My Collections</span>
+              <span className="caps spine-type">My Collections</span>
             </button>
 
             <button
@@ -89,7 +89,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               className={link(currentScreen === 'upload')}
             >
               <PlusCircle className={icon(currentScreen === 'upload')} />
-              <span className="caps">Scan / Upload</span>
+              <span className="caps spine-type">Add Document</span>
             </button>
 
             <button
@@ -101,7 +101,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               className={link(currentScreen === 'settings')}
             >
               <Settings className={icon(currentScreen === 'settings')} />
-              <span className="caps">Settings</span>
+              <span className="caps spine-type">Settings</span>
             </button>
 
             <button
@@ -113,14 +113,14 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
               className={link(false)}
             >
               <Feedback className={icon(false)} />
-              <span className="caps">Send feedback</span>
+              <span className="caps spine-type">Send feedback</span>
             </button>
           </nav>
         </div>
 
         {/* Footer info */}
-        <div className="pt-4 border-t border-stone-200 dark:border-stone-800 text-[11px] text-muted space-y-1">
-          <p className="title-hand text-[15px] text-gold">Marginalia</p>
+        <div className="pt-4 border-t border-stone-200 dark:border-stone-800 text-[11px] text-muted space-y-1 spine-type">
+          <p className="text-[14px] text-gold">Marginalia</p>
           <p>Mindful reading, kept in the margins</p>
           <p className="italic pt-1">
             For close readers,
