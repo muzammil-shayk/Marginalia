@@ -1,11 +1,11 @@
 import React, { useState, useRef } from 'react';
-import { Upload, FileText, BookOpen, Clock, CheckCircle2, Loader2, AlertCircle } from './icons';
+import { Upload, FileText, BookOpen, Clock, CheckCircle2, Loader2, AlertCircle, Student } from './icons';
 import { Screen, TransitionType } from '../types';
 import type { LibraryDocument } from '../App';
 import { parseFile } from '../utils/fileParser';
 import { filesFromDrop, pickDocumentAndSiblings } from '../utils/fileDrop';
 import { isAnnotatableFormat } from '../utils/annotatableFormats';
-import { storeUploadedDocument, storePastedDocument, storeHtmlDocument } from '../utils/documentStorage';
+import { storeUploadedDocument, storePastedDocument, storeHtmlDocument, openClassPack, type OpenedClassPack } from '../utils/documentStorage';
 import { ErrorDialog } from './ErrorDialog';
 import { plural } from '../utils/plural';
 
@@ -19,6 +19,8 @@ interface UploadDocumentScreenProps {
   /** Signals that something new was written to disk, so the library panel can refresh. */
   onDocumentStored?: () => void;
   onOpenLibrary?: () => void;
+  /** A teacher's class pack was opened as a new document. */
+  onClassPackOpened?: (opened: OpenedClassPack) => void;
 }
 
 export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
@@ -28,8 +30,22 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
   onOpenLibraryDocument,
   uploadedLibrary = [],
   onDocumentStored,
-  onOpenLibrary
+  onOpenLibrary,
+  onClassPackOpened
 }) => {
+  const packInputRef = useRef<HTMLInputElement>(null);
+  const [packBusy, setPackBusy] = useState(false);
+  const [packNote, setPackNote] = useState<string | null>(null);
+  const openPack = async (file: File) => {
+    setPackBusy(true);
+    const opened = await openClassPack(await file.text());
+    setPackBusy(false);
+    if ('error' in opened) return setParseError(opened.error);
+    setPackNote(
+      `Opened “${opened.meta.title}” with ${opened.marks} of ${opened.teacher}’s marks.${opened.message ? ` ${opened.teacher} says: “${opened.message}”` : ''}`
+    );
+    onClassPackOpened?.(opened);
+  };
   const [pastedText, setPastedText] = useState('');
   /** The name a pasted excerpt is filed under; blank files it as "Custom Annotations". */
   const [pastedName, setPastedName] = useState('');
@@ -317,6 +333,7 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
           id="paste-text"
           rows={4}
           placeholder="Annotations for excerpts… paste text here"
+          dir="auto"
           value={pastedText}
           onPaste={(e) => {
             const html = e.clipboardData.getData('text/html');
@@ -363,6 +380,40 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Class packs: a teacher's document and marks, opened with no account or internet. */}
+      <section aria-labelledby="class-pack-heading" className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center gap-3 ${isDark ? 'border-stone-800 bg-night-2' : 'border-stone-200 bg-white'}`}>
+        <Student className="w-6 h-6 text-gold shrink-0" />
+        <div className="flex-1 min-w-0">
+          <h3 id="class-pack-heading" className="font-semibold text-[13px] text-stone-900 dark:text-paper">Open a class pack</h3>
+          <p className="text-[12px] text-muted leading-snug">
+            A teacher’s reading with their marks, from a USB stick or shared folder. It is added to My Collections; your own marks go on top.
+          </p>
+          {packNote && <p role="status" className="mt-1 text-[12px] text-stone-800 dark:text-paper">{packNote}</p>}
+        </div>
+        <input
+          ref={packInputRef}
+          type="file"
+          accept=".marginalia-class,application/json"
+          className="hidden"
+          tabIndex={-1}
+          aria-hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            e.target.value = '';
+            if (f) void openPack(f);
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => packInputRef.current?.click()}
+          disabled={packBusy}
+          className="flex items-center justify-center gap-1.5 px-4 py-2 rounded-full caps text-[12px] border border-stone-300 dark:border-stone-600 hover:border-gold hover:bg-gold/10 cursor-pointer disabled:opacity-50 shrink-0"
+        >
+          {packBusy && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+          Choose file…
+        </button>
+      </section>
 
       {/* Recent Documents Section */}
       <section id="recent-documents-section" className="space-y-3">

@@ -28,7 +28,8 @@ import {
   List,
   Compass,
   ArrowUpDown,
-  BookMarked
+  BookMarked,
+  MotifPath
 } from './icons';
 import { motion, AnimatePresence } from 'motion/react';
 import { AnnotationFocus, Screen, TransitionType, UserSettings } from '../types';
@@ -77,6 +78,8 @@ interface HomeScreenProps {
   onDocumentDeleted?: (id: string) => void;
   onDocumentRenamed?: (id: string, title: string) => void;
   refreshToken?: number;
+  /** Opens the motif tracer (across every document). */
+  onOpenMotifTracer?: () => void;
 }
 
 /**
@@ -222,7 +225,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
   canAnnotateActive = false,
   onDocumentDeleted,
   onDocumentRenamed,
-  refreshToken = 0
+  refreshToken = 0,
+  onOpenMotifTracer
 }) => {
   const hasActiveDoc = Boolean(activeDocument?.text?.trim());
 
@@ -871,7 +875,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap justify-end">
+            {onOpenMotifTracer && (
+              <button
+                type="button"
+                onClick={onOpenMotifTracer}
+                title="Follow an image or idea across every document"
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full border caps caps-sm text-[11.5px] cursor-pointer transition-colors ${
+                  isDark ? 'border-stone-800 bg-night-2 text-stone-300 hover:border-gold' : 'border-stone-200 bg-white text-stone-700 hover:border-gold'
+                }`}
+              >
+                <MotifPath className="w-3.5 h-3.5 text-gold" />
+                Trace a motif
+              </button>
+            )}
             {!isStudioCollapsed && (
               <div
                 role="tablist"

@@ -19,8 +19,18 @@ import {
   BookOpen,
   Maximize2,
   Minimize2,
-  Search
+  Search,
+  Feather,
+  Board as BoardIcon
 } from './icons';
+import { paragraphTypeface, hasRtlText } from '../utils/scriptDirection';
+import { analysePoem } from '../utils/poetry';
+import { paragraphHits } from '../utils/motifTrace';
+import { DEFAULT_POETRY, PoetryPanel, PROSODY_THEMES, usePoemOverlay } from './PoetryView';
+import { paintHighlight, rangeFor, readPieces } from './findHighlight';
+import { ExcerptBoard } from './ExcerptBoard';
+import { printNotesPdf } from '../utils/documentStorage';
+import nastaliqFontUrl from '@fontsource/noto-nastaliq-urdu/files/noto-nastaliq-urdu-arabic-400-normal.woff2?url';
 import { TextSpread, MIN_SPREAD_WIDTH, type TextSpreadHandle } from './TextSpread';
 import { ArchivePanel, archiveRows, copyText, excerpt, useMarksArchive } from './MarksArchive';
 import { FindBar, FIND_SHORTCUT, useDocumentFind } from './FindBar';
@@ -29,7 +39,7 @@ import { formatQuoteRef, markLocation } from '../utils/quoteRef';
 import { linkMarks, linkedIds, unlinkMarks } from '../utils/markLinks';
 import { FocusChrome, FocusExit, FOCUS_HOTKEY } from './FocusMode';
 import type { ThemeStore } from './themeStore';
-import { AnnotationFocus, Screen, TransitionType, UserSettings } from '../types';
+import { AnnotationFocus, PoetryPrefs, ReaderJump, Screen, TransitionType, UserSettings } from '../types';
 import { HoverTooltip } from './HoverTooltip';
 import { ParagraphRange, rangesFromSelectionParts, selectionParagraphParts, selectionState } from '../utils/textFormatting';
 import { noteTimeLabel } from '../hooks/noteTimestamp';
@@ -54,6 +64,7 @@ import { escapeConsumes, isTypingTarget, resolveWorkspaceKey, TOOL_HOTKEYS, with
 
 import {
   exportToPDF,
+  notesPrintHtml,
   generateMarkdown,
   generatePlainText,
   downloadTextFile,
@@ -84,6 +95,10 @@ interface ReaderScreenProps {
   onAddThemes?: (themes: UserSettings['activeThemes']) => void;
   /** Opened from the library to step through one theme's (or terminology's) marks. */
   focus?: AnnotationFocus;
+  /** Opened from a motif trace: the passage to show and the words to paint. */
+  jump?: ReaderJump;
+  /** Saves reader preferences kept per document (the poetry view). */
+  onUpdateSettings?: (update: (prev: UserSettings) => UserSettings) => void;
 }
 
 const PARA_TEXT_ID_PREFIX = 'reader-para-text-';
@@ -107,8 +122,8 @@ const isReactionKind = (kind: TextMarkKind) => (REACTION_KINDS as readonly strin
 /** PDF weights are fractions of page width; the properties strip draws them at 620 px a unit. */
 const weightPx = (w: number | undefined) => (w ? Math.max(1, w * 620) : 2);
 
-type Tab = 'notes' | 'export';
-const TAB_INDEXES: Record<Tab, number> = { notes: 0, export: 1 };
+type Tab = 'notes' | 'board' | 'export';
+const TAB_INDEXES: Record<Tab, number> = { notes: 0, board: 1, export: 2 };
 
 const tabVariants = {
   enter: (dir: number) => ({ x: dir > 0 ? 80 : -80, opacity: 0, scale: 0.98 }),
@@ -161,6 +176,9 @@ interface ParagraphProps {
   terminologyColor: string;
   fontFamily: string;
   fontSize: number;
+  /** From the paragraph's own script: right-to-left text runs right to left, Urdu is set in Nastaliq. */
+  dir: 'rtl' | 'ltr';
+  lineHeight: string;
   /** Minute tick for the notes' relative times; 0 for paragraphs without notes. */
   clock: number;
   actions: ParagraphActions;
@@ -214,7 +232,7 @@ const NoteCard: React.FC<{
     <div className="flex items-start justify-between gap-2 mb-1">
       <div className="flex items-center gap-1.5 min-w-0">
         <StickyNoteIcon className="w-3.5 h-3.5 shrink-0" style={{ color }} />
-        <h4 className="font-semibold text-[12.5px] tracking-tight truncate">{label}</h4>
+        <h4 dir="auto" className="font-semibold text-[12.5px] tracking-tight truncate">{label}</h4>
       </div>
       <div className="flex items-center gap-0.5 shrink-0 -mr-1 -mt-0.5">
         <button
@@ -244,13 +262,18 @@ const NoteCard: React.FC<{
       </div>
     </div>
     {quote && (
-      <div className="text-[11px] italic text-stone-600 dark:text-stone-400 border-l-2 pl-2 my-1.5 leading-snug line-clamp-3" style={{ borderLeftColor: color }}>
+      <div dir="auto" className="text-[11px] italic text-stone-600 dark:text-stone-400 border-s-2 ps-2 my-1.5 leading-snug line-clamp-3" style={{ borderInlineStartColor: color }}>
         &ldquo;{quote}&rdquo;
       </div>
     )}
-    {note.text && <p className="text-[12px] leading-relaxed whitespace-pre-wrap break-words">{note.text}</p>}
-    {/* Only the time: every note here is the reader's own, so a name added nothing. */}
-    {time && <p className="mt-1 text-right text-[10px] text-muted">{time}</p>}
+    {note.text && <p dir="auto" className="text-[12px] leading-relaxed whitespace-pre-wrap break-words">{note.text}</p>}
+    {/* Only the time on the reader's own notes; a teacher's (from a class pack) is signed. */}
+    {(time || note.fromClassPack) && (
+      <p className="mt-1 text-right text-[10px] text-muted">
+        {note.fromClassPack && note.author ? `${note.author}${time ? ' · ' : ''}` : ''}
+        {time}
+      </p>
+    )}
   </div>
 );
 
@@ -276,6 +299,8 @@ const Paragraph = React.memo(function Paragraph({
   terminologyColor,
   fontFamily,
   fontSize,
+  dir,
+  lineHeight,
   clock,
   actions
 }: ParagraphProps) {
@@ -403,8 +428,9 @@ const Paragraph = React.memo(function Paragraph({
     >
       <p
         id={`${PARA_TEXT_ID_PREFIX}${idx}`}
+        dir={dir}
         className="leading-relaxed text-stone-800 dark:text-stone-200"
-        style={{ fontFamily, fontSize: `${fontSize}px`, lineHeight: '1.75', whiteSpace: verbatim ? 'pre-wrap' : undefined }}
+        style={{ fontFamily, fontSize: `${fontSize}px`, lineHeight, whiteSpace: verbatim ? 'pre-wrap' : undefined }}
       >
         {renderText()}
       </p>
@@ -494,7 +520,9 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
   onToggleFocus,
   themeStore,
   onSpreadChange,
-  onAddThemes
+  onAddThemes,
+  jump,
+  onUpdateSettings
 }) => {
   const { marks, selectedIds, canUndo, canRedo, addMarks, updateMarks, deleteMarks, select, clearSelection, undo, redo } =
     annotations;
@@ -533,6 +561,19 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     for (const st of content?.textStyles ?? []) (map.get(st.anchor.paragraphIndex) ?? map.set(st.anchor.paragraphIndex, []).get(st.anchor.paragraphIndex)!).push(st);
     return map;
   }, [content?.textStyles]);
+
+  // ── Poetry view: per document, kept with the settings ──
+  const poetry: PoetryPrefs = (docId && settings.poetry?.[docId]) || DEFAULT_POETRY;
+  const [poetryOpen, setPoetryOpen] = useState(false);
+  const setPoetry = (next: PoetryPrefs) => {
+    if (!docId) return;
+    onUpdateSettings?.((prev) => ({ ...prev, poetry: { ...prev.poetry, [docId]: next } }));
+  };
+  const poem = useMemo(() => (poetry.on ? analysePoem(paragraphs) : null), [poetry.on, paragraphs]);
+  const missingProsody = PROSODY_THEMES.filter((p) => !settings.activeThemes.some((t) => t.name.toLowerCase() === p.name.toLowerCase()));
+  const addProsodyThemes = () => {
+    for (const p of missingProsody) themeStore?.create(p.name, p.color);
+  };
 
   // How far through the text the reader has got: the last paragraph in view, of all of them.
   const reportProgress = useReadingProgress(docId);
@@ -1095,6 +1136,9 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [activeControlTab, reduceMotion]
   );
+  // The latest one, for retries started from a tab that is about to unmount (the excerpt board).
+  const scrollToMarkRef = useRef(scrollToMark);
+  scrollToMarkRef.current = scrollToMark;
 
   /**
    * What a paragraph can do, as one object that never changes: each call reads the latest
@@ -1313,6 +1357,16 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     return { obstacles, lane, dock };
   }, [flow, marginMode]);
 
+  // Line or sher numbers in the gutter, radif and rhyme underlined (poetry view only).
+  const poemTextId = useCallback((i: number) => `${PARA_TEXT_ID_PREFIX}${i}`, []);
+  usePoemOverlay({
+    analysis: activeControlTab === 'notes' ? poem : null,
+    prefs: poetry,
+    flow,
+    textId: poemTextId,
+    layoutKey: `${settings.fontSize}|${settings.typography}|${settings.arabicScript}|${spreadOn}|${marginMode}|${marks.length}`
+  });
+
   const paragraphFont = settings.typography.includes('Newsreader')
     ? 'Newsreader, Georgia, serif'
     : settings.typography.includes('Sans')
@@ -1331,7 +1385,25 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
       format,
       includeQuotes: true
     };
-    if (format === 'pdf') exportToPDF(exportable, opts);
+    if (format === 'pdf') {
+      // jsPDF has no right-to-left glyphs or Nastaliq shaping; such notes print through the desktop app's renderer.
+      if (hasRtlText([displayTitle, ...exportable.flatMap((e) => [e.quote, e.content, e.title])])) {
+        void (async () => {
+          const font = await fetch(nastaliqFontUrl)
+            .then((r) => r.blob())
+            .then((b) => new Promise<string>((res) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result)); fr.readAsDataURL(b); }))
+            .catch(() => undefined);
+          const pdf = await printNotesPdf(notesPrintHtml(exportable, opts, font?.replace(/^data:[^;]*;/, 'data:font/woff2;'), settings.arabicScript));
+          if (!pdf) return exportToPDF(exportable, opts);
+          const url = URL.createObjectURL(pdf);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `marginalia-annotations-${displayTitle.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'document'}.pdf`;
+          a.click();
+          window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
+        })();
+      } else exportToPDF(exportable, opts);
+    }
     else if (format === 'markdown') downloadTextFile(generateMarkdown(exportable, opts), `${displayTitle}-annotations.md`, 'text/markdown');
     else downloadTextFile(generatePlainText(exportable, opts), `${displayTitle}-annotations.txt`, 'text/plain');
   };
@@ -1408,8 +1480,59 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     saver: annotations.saver,
     reset: annotations.reset,
     onAddThemes: (t) => onAddThemes?.(t),
-    isDark
+    isDark,
+    teacher: settings.name
   });
+
+  // ── Excerpt board ──
+  const boardItems = useMemo(
+    () =>
+      heads
+        .filter((m) => !isReactionKind(m.kind))
+        .map((m) => ({ mark: m, quote: viewById.get(m.id)?.quote ?? '', color: colorOf(m) })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [heads, viewById, settings.terminologyColor]
+  );
+
+  // ── Arriving from a motif trace: show the passage and paint the traced words ──
+  const [activeJump, setActiveJump] = useState<ReaderJump | null>(jump ?? null);
+  const jumpDone = useRef(false);
+  useEffect(() => {
+    if (!activeJump || paragraphs.length === 0 || activeControlTab !== 'notes') {
+      paintHighlight('motif-hit', []);
+      return;
+    }
+    const paint = () => {
+      const ranges: Range[] = [];
+      paragraphs.forEach((text, i) => {
+        const hits = paragraphHits(text, activeJump.terms ?? []);
+        if (!hits.length) return;
+        const el = document.getElementById(`${PARA_TEXT_ID_PREFIX}${i}`);
+        if (!el) return;
+        const pieces = readPieces(el);
+        for (const h of hits) {
+          const r = rangeFor(pieces, h.start, h.end);
+          if (r) ranges.push(r);
+        }
+      });
+      paintHighlight('motif-hit', ranges);
+    };
+    const t = window.setTimeout(() => {
+      paint();
+      if (jumpDone.current) return;
+      jumpDone.current = true;
+      const el = document.getElementById(`reader-para-${activeJump.paragraphIndex}`);
+      if (!el) return;
+      if (spreadHandle.current) spreadHandle.current.showElement(el);
+      else el.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
+      setActiveParagraphIndex(activeJump.paragraphIndex);
+    }, 350);
+    return () => {
+      window.clearTimeout(t);
+      paintHighlight('motif-hit', []);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeJump, paragraphs, activeControlTab, marks, spreadOn]);
 
   // Popovers stay below the sticky header and control bar.
   // In focus mode the bar slides over the page when called, so menus keep clear of where it lands.
@@ -1461,6 +1584,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
   );
   const paragraphNodes = paragraphs.map((text, idx) => {
     const notes = paraData.notes.get(idx) ?? EMPTY_NOTES;
+    const face = paragraphTypeface(text, paragraphFont, settings.arabicScript);
     return (
       <Paragraph
         key={idx}
@@ -1474,11 +1598,13 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
         isActive={activeParagraphIndex === idx}
         isDark={isDark}
         margin={marginMode}
-        verbatim={verbatim}
+        verbatim={verbatim || poetry.on}
         styles={stylesByPara.get(idx) ?? EMPTY_STYLES}
         openPin={openPin && notes.some((n) => n.mark.id === openPin) ? openPin : ''}
         terminologyColor={settings.terminologyColor}
-        fontFamily={paragraphFont}
+        fontFamily={face.fontFamily}
+        dir={face.dir}
+        lineHeight={face.lineHeight}
         fontSize={settings.fontSize}
         clock={notes.length ? clock : 0}
         actions={paragraphActions}
@@ -1615,6 +1741,29 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
             <Download className="w-4 h-4" />
             {activeControlTab === 'export' && <span className="whitespace-nowrap animate-in fade-in duration-150">Export Notes</span>}
           </button>
+          <button
+            type="button"
+            onClick={() => handleSwitchTab(activeControlTab === 'board' ? 'notes' : 'board')}
+            className={pillClass(activeControlTab === 'board')}
+            title="Excerpt board: arrange your marked passages side by side"
+            aria-pressed={activeControlTab === 'board'}
+          >
+            <BoardIcon className="w-4 h-4" />
+            {activeControlTab === 'board' && <span className="whitespace-nowrap animate-in fade-in duration-150">Excerpt board</span>}
+          </button>
+          {docId && (
+            <button
+              type="button"
+              onClick={() => setPoetryOpen((o) => !o)}
+              className={pillClass(poetry.on)}
+              title="Poetry view: line and sher numbers, radif and rhyme"
+              aria-label="Poetry view"
+              aria-expanded={poetryOpen}
+            >
+              <Feather className="w-4 h-4" />
+              {poetry.on && <span className="whitespace-nowrap animate-in fade-in duration-150">Poem</span>}
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-0.5 shrink-0">
@@ -1713,6 +1862,26 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
           )}
         </div>
         <FindBar find={find} isDark={isDark} className="basis-full w-full" />
+        <PoetryPanel
+          open={poetryOpen}
+          prefs={poetry}
+          analysis={poem}
+          isDark={isDark}
+          onChange={setPoetry}
+          onClose={() => setPoetryOpen(false)}
+          onAddProsodyThemes={themeStore && missingProsody.length ? addProsodyThemes : undefined}
+        />
+        {activeJump && (
+          <div role="status" className="basis-full flex items-center gap-2 text-[12px]">
+            <span className="w-2.5 h-2.5 rounded-full bg-violet-500/60 shrink-0" />
+            <span className="text-muted truncate">
+              Tracing <strong className="text-stone-800 dark:text-paper">{activeJump.label ?? activeJump.terms?.join(', ')}</strong>, painted in the text
+            </span>
+            <button type="button" onClick={() => setActiveJump(null)} className="ml-auto caps caps-sm px-3 py-1 rounded-full border border-stone-300 dark:border-stone-600 hover:border-gold cursor-pointer">
+              Clear
+            </button>
+          </div>
+        )}
       </div>
       </FocusChrome>
       {focusMode && onToggleFocus && <FocusExit onExit={onToggleFocus} isDark={isDark} />}
@@ -1725,7 +1894,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
           data-zoom-target
           data-annotation-surface
           tabIndex={-1}
-          className={`flex-1 min-w-0 mx-auto w-full px-5 space-y-6 ${spreadOn ? 'pt-5 pb-0' : 'py-6 pb-8'}`}
+          className={`flex-1 min-w-0 mx-auto w-full ${poetry.on ? 'pl-12 pr-5' : 'px-5'} space-y-6 ${spreadOn ? 'pt-5 pb-0' : 'py-6 pb-8'}`}
           style={{
             maxWidth: spreadOn ? undefined : `calc(42rem + ${marginMode === 'cards' ? MARGIN_CARDS_PX : marginMode === 'pins' ? MARGIN_PINS_PX : 0}px)`
           }}
@@ -1774,6 +1943,49 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
                     </div>
                   </>
                 )}
+              </motion.div>
+            )}
+
+            {activeControlTab === 'board' && (
+              <motion.div
+                key="board-tab"
+                custom={slideDirection}
+                variants={tabVariants}
+                initial="enter"
+                animate="center"
+                exit="exit"
+                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                className="py-2 space-y-4"
+              >
+                <div className="flex items-center justify-between border-b pb-3 border-stone-200 dark:border-stone-800">
+                  <div className="flex items-center gap-2">
+                    <BoardIcon className="w-5 h-5 text-gold" />
+                    <h3 className="title-hand text-[26px] text-stone-900 dark:text-paper">Excerpt board</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleSwitchTab('notes')}
+                    className="text-[12px] font-medium text-muted hover:text-stone-800 dark:hover:text-stone-200 flex items-center gap-1 cursor-pointer"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    <span>Back to Reading</span>
+                  </button>
+                </div>
+                <ExcerptBoard
+                  items={boardItems}
+                  marks={marks}
+                  isDark={isDark}
+                  onPlace={(id, at) => updateMarks([id], { board: at })}
+                  onLink={(a, b) => annotations.commit((prev) => linkMarks(prev, a, b))}
+                  onJump={(id) => {
+                    select([id]);
+                    handleSwitchTab('notes');
+                    // The text tab mounts on the next frames; the navigator's retry does the same.
+                    let tries = 0;
+                    const go = () => !scrollToMarkRef.current(id) && ++tries < 20 && window.setTimeout(go, 60);
+                    window.setTimeout(go, 260);
+                  }}
+                />
               </motion.div>
             )}
 

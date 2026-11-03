@@ -568,7 +568,12 @@ export interface DesktopBridge {
   /** Optional: absent on a shell older than 2.6.0. */
   getTutorialSeen?(): Promise<boolean>;
   setTutorialSeen?(seen: boolean): Promise<boolean>;
+  /** Optional: absent on a shell older than 2.7.0. */
+  getFeedbackPrompt?(): Promise<{ sessions: number; due: boolean }>;
+  setFeedbackPrompt?(answer: FeedbackAnswer): Promise<boolean>;
 }
+
+export type FeedbackAnswer = 'sent' | 'later' | 'never';
 
 export function desktopBridge(): DesktopBridge | null {
   return (window as unknown as { marginaliaDesktop?: DesktopBridge }).marginaliaDesktop ?? null;
@@ -668,5 +673,105 @@ export async function checkpointMarkBackup(id: string): Promise<boolean> {
     return (await res.json()).kept === true;
   } catch {
     return false;
+  }
+}
+
+// ── 2.7.0: feedback prompt, motif tracing, class packs, right-to-left PDF export ──
+
+/**
+ * Whether to offer the occasional "Send feedback" prompt (from the 5th launch, again 15 launches
+ * after a "Later", never after "Don't ask again" or once sent). False without a desktop shell.
+ */
+export async function getFeedbackDue(): Promise<boolean> {
+  try {
+    return (await desktopBridge()?.getFeedbackPrompt?.())?.due === true;
+  } catch {
+    return false;
+  }
+}
+
+/** Records the reader's answer to the prompt (or that they sent feedback from the sidebar). */
+export async function answerFeedbackPrompt(answer: FeedbackAnswer): Promise<void> {
+  try {
+    await desktopBridge()?.setFeedbackPrompt?.(answer);
+  } catch {
+    /* the prompt simply comes back */
+  }
+}
+
+export interface MotifTraceResponse {
+  results: import('./motifTrace').MotifDocResult[];
+  total: number;
+  truncated: boolean;
+}
+
+/** Every passage across My Collections where the motif's words appear. Null on failure. */
+export async function traceMotif(terms: string[], docIds?: string[]): Promise<MotifTraceResponse | { error: string }> {
+  try {
+    const res = await fetch('/api/motifs/trace', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ terms, ...(docIds ? { docIds } : {}) })
+    });
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) return { error: typeof body.error === 'string' ? body.error : 'The motif could not be traced.' };
+    return body as MotifTraceResponse;
+  } catch {
+    return { error: 'The motif could not be traced.' };
+  }
+}
+
+/** The class pack for a document, as text to save. Null on failure. */
+export async function fetchClassPack(id: string, teacher: string, message: string): Promise<string | null> {
+  try {
+    const q = new URLSearchParams({ teacher, ...(message.trim() ? { message } : {}) });
+    const res = await fetch(`/api/documents/${encodeURIComponent(id)}/class-pack?${q}`);
+    return res.ok ? await res.text() : null;
+  } catch {
+    return null;
+  }
+}
+
+export interface OpenedClassPack {
+  meta: StoredDocumentMeta;
+  themes: { id: string; name: string; color: string }[];
+  teacher: string;
+  message: string | null;
+  marks: number;
+}
+
+/** Opens a class pack file as a new document in My Collections. */
+export async function openClassPack(fileText: string): Promise<OpenedClassPack | { error: string }> {
+  let body: unknown;
+  try {
+    body = JSON.parse(fileText);
+  } catch {
+    return { error: 'This file is not a Marginalia class pack.' };
+  }
+  try {
+    const res = await fetch('/api/class-packs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok) return { error: typeof out.error === 'string' ? out.error : 'This class pack could not be opened.' };
+    return out as OpenedClassPack;
+  } catch {
+    return { error: 'This class pack could not be opened.' };
+  }
+}
+
+/** A printable page as a PDF, via the desktop app's renderer. Null when there is none (501) or it failed. */
+export async function printNotesPdf(html: string): Promise<Blob | null> {
+  try {
+    const res = await fetch('/api/export/notes-pdf', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ html })
+    });
+    return res.ok ? await res.blob() : null;
+  } catch {
+    return null;
   }
 }

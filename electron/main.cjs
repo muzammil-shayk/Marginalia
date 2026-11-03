@@ -24,6 +24,7 @@ const { RENDER_PARTITION, guardRenderWindow } = require('./renderGuard.cjs');
 const { requestFlush, createExitGuard, flushThenCheckpoint } = require('./flushOnExit.cjs');
 const { aiEnabledIn, registerAiSetting } = require('./aiSetting.cjs');
 const { registerTutorialSetting } = require('./tutorialSetting.cjs');
+const { registerFeedbackSetting, countSession } = require('./feedbackSetting.cjs');
 
 /**
  * Where the app remembers the user's chosen library folder.
@@ -321,7 +322,9 @@ function createWindow() {
     } catch {
       return;
     }
-    if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+    // mailto: only to the app's own feedback address (Send feedback), never any other.
+    const feedbackMail = parsed.protocol === 'mailto:' && parsed.pathname.toLowerCase() === 'marginaliaannotator@gmail.com';
+    if (parsed.protocol === 'http:' || parsed.protocol === 'https:' || feedbackMail) {
       shell.openExternal(url);
     }
   };
@@ -461,6 +464,9 @@ registerAiSetting({
 // ── First-run tutorial: config.json `tutorialSeen` (see electron/tutorialSetting.cjs) ──
 registerTutorialSetting({ ipcMain, readConfig, updateConfig });
 
+// ── Occasional feedback prompt: config.json sessionCount / feedbackAnswer (see electron/feedbackSetting.cjs) ──
+registerFeedbackSetting({ ipcMain, readConfig, updateConfig });
+
 // ── App info, for the About section in Settings ───────────────────────────────
 ipcMain.handle('marginalia:app-info', () => ({
   version: app.getVersion(),
@@ -599,6 +605,7 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(async () => {
     try {
+      countSession({ readConfig, updateConfig });
       serverPort = await startEmbeddedServer();
       createWindow();
       scheduleAutoUpdateChecks();

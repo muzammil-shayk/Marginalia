@@ -236,7 +236,7 @@ const TOO_BIG = `This export is too large to import (the limit is ${MAX_IMPORTED
 const isRect = (r: unknown) => isObj(r) && isNum(r.x) && isNum(r.y) && isNum(r.w) && isNum(r.h);
 
 /** A stored mark we can place: a known kind, a page (PDF) or text anchor (new or older shape), sane rects. */
-function isImportableEntry(e: unknown): e is StoredEntry {
+export function isImportableEntry(e: unknown): e is StoredEntry {
   if (!isObj(e) || typeof e.id !== 'string' || typeof e.kind !== 'string' || !STORED_KINDS.has(e.kind)) return false;
   const a = e.anchor;
   const placed = isNum(e.page) || (isObj(a) && isNum(a.paragraphIndex) && isNum(a.start) && isNum(a.end)) || isNum(e.paragraphIndex);

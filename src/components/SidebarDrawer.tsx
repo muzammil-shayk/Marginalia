@@ -1,5 +1,6 @@
 import React from 'react';
-import { X, BookOpen, PlusCircle, Settings } from './icons';
+import { X, BookOpen, PlusCircle, Settings, Feedback } from './icons';
+import { sendFeedback } from './Feedback';
 import { Screen, TransitionType } from '../types';
 import { AnimatePresence, motion } from 'motion/react';
 import logo from '../assets/images/marginalia-logo.png';
@@ -101,6 +102,18 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
             >
               <Settings className={icon(currentScreen === 'settings')} />
               <span className="caps">Settings</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                void sendFeedback();
+              }}
+              className={link(false)}
+            >
+              <Feedback className={icon(false)} />
+              <span className="caps">Send feedback</span>
             </button>
           </nav>
         </div>

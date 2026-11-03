@@ -15,6 +15,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { History, Loader2, X } from './icons';
 import {
   fetchAnnotations,
+  fetchClassPack,
   fetchMarkBackups,
   restoreMarkBackup,
   saveAnnotations,
@@ -37,6 +38,7 @@ import { runPageOperation, type DebouncedSaver } from '../hooks/debouncedSaver';
 import { useDialogFocus } from '../hooks/useDialogFocus';
 import { plural } from '../utils/plural';
 import { backupTimeLabel, fileStem, importSummary } from './marksArchiveFormat';
+import { classPackFilename } from '../utils/classPack';
 
 export interface MarksArchiveOptions {
   /** Absent for a document that was never saved: exports only, no import or backups. */
@@ -52,6 +54,8 @@ export interface MarksArchiveOptions {
   /** Adds themes an import brought along (saved with the settings). */
   onAddThemes: (themes: Theme[]) => void;
   isDark: boolean;
+  /** Signs a class pack (the reader's name from Settings). */
+  teacher?: string;
 }
 
 export interface MarksArchive {
@@ -61,6 +65,8 @@ export interface MarksArchive {
   commonplace: (as: 'md' | 'txt' | 'copy') => void;
   importJson: () => void;
   openRestore: () => void;
+  /** Saves the document and its marks as one file for students (see utils/classPack). */
+  classPack: () => void;
   /** The restore dialog, the file picker and the status toast. Render once. */
   ui: React.ReactNode;
 }
@@ -150,6 +156,17 @@ export function useMarksArchive(o: MarksArchiveOptions): MarksArchive {
     return null;
   };
 
+  const classPack = async () => {
+    const { docId, saver, doc, teacher } = opts.current;
+    if (!docId) return;
+    // The pack is read from disk, so the latest marks are written first.
+    if (saver && !(await saver.flush())) return setStatus('Your latest marks could not be saved yet, so no class pack was made. Try again in a moment.');
+    const body = await fetchClassPack(docId, teacher ?? '', '');
+    if (!body) return setStatus('The class pack could not be made.');
+    downloadTextFile(body, classPackFilename(doc.title), 'application/json');
+    setStatus('Class pack saved. Students open it from Add Document, with no account or internet.');
+  };
+
   const canImport = !!o.docId && !!o.saver;
   const ui = (
     <>
@@ -185,6 +202,7 @@ export function useMarksArchive(o: MarksArchiveOptions): MarksArchive {
     commonplace,
     importJson: () => canImport && fileRef.current?.click(),
     openRestore: () => canImport && setRestoreOpen(true),
+    classPack: () => void classPack(),
     ui
   };
 }
@@ -371,6 +389,11 @@ export function archiveRows(a: MarksArchive, markCount: number): ArchiveRow[] {
         { label: 'Markdown', onSelect: a.exportMarkdown, disabled: none },
         { label: 'JSON', onSelect: a.exportJson, disabled: none }
       ]
+    },
+    {
+      title: 'Class pack',
+      sub: 'This document with your marks as one file for students, shared by USB stick or folder. No accounts, no internet.',
+      actions: [{ label: 'Save class pack', onSelect: a.classPack, disabled: !a.canImport, hint: noStore }]
     },
     {
       title: 'Bring marks back',

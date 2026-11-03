@@ -22,9 +22,54 @@ export interface ReleaseNote {
   highlights: ChangelogItem[];
 }
 
-export const CURRENT_APP_VERSION = '2.6.0';
+export const CURRENT_APP_VERSION = '2.7.0';
 
 export const CHANGELOG_RELEASES: ReleaseNote[] = [
+  {
+    version: '2.7.0',
+    title: 'Urdu, Poetry and Motifs',
+    date: 'November 2026',
+    summary:
+      'Right-to-left text in Nastaliq, a poetry view with sher numbers, radif and rhyme, motif tracing across your collections, an excerpt board, class packs and a way to send feedback.',
+    highlights: [
+      {
+        category: 'feature',
+        title: 'Urdu and right-to-left text',
+        description:
+          'Urdu, Persian, Arabic and Hebrew passages read right to left. Urdu and Persian are set in Nastaliq (or Naskh, in Settings), and PDF exports keep the script.'
+      },
+      {
+        category: 'feature',
+        title: 'Poetry view',
+        description:
+          'Read a text as a poem: lines kept as written, line or couplet (sher) numbers, and the radif and rhyme (qafiya) underlined. Note the metre, and add Metre, Rhyme and Radif themes to mark them yourself.'
+      },
+      {
+        category: 'feature',
+        title: 'Trace a motif',
+        description:
+          'Follow an image or idea across every document in My Collections, or the ones you pick. Each passage opens at its place with the words painted, and the trace saves as Markdown.'
+      },
+      {
+        category: 'feature',
+        title: 'Excerpt board',
+        description:
+          'Pull your marked passages onto a board, arrange them side by side, see links as lines, and jump back to any one in the text.'
+      },
+      {
+        category: 'feature',
+        title: 'Class packs',
+        description:
+          'Save a document with your marks as one file for students. They open it from Add Document, with no account and no internet, and see your notes signed with your name.'
+      },
+      {
+        category: 'feature',
+        title: 'Send feedback',
+        description:
+          'A Send feedback item in the sidebar opens an email to the Marginalia team. After a few sessions Marginalia asks once, and you can say Later or never.'
+      }
+    ]
+  },
   {
     version: '2.6.0',
     title: 'Read in Spreads, Find Anything',

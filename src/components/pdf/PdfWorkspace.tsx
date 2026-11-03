@@ -168,6 +168,8 @@ interface PdfWorkspaceProps {
   themeStore?: ThemeStore;
   /** Adds the themes a marks import brought with it. */
   onAddThemes?: (themes: UserSettings['activeThemes']) => void;
+  /** Opened from a motif trace: the page to show first (1-based). */
+  jumpToPage?: number;
 }
 
 export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
@@ -181,7 +183,8 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   focusMode = false,
   onToggleFocus,
   themeStore,
-  onAddThemes
+  onAddThemes,
+  jumpToPage
 }) => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
@@ -1332,6 +1335,10 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   useEffect(() => {
     if (!pdf || pageCount === 0 || restoredPageRef.current === docId) return;
     restoredPageRef.current = docId;
+    if (jumpToPage && jumpToPage >= 1 && jumpToPage <= pageCount) {
+      requestAnimationFrame(() => goToPage(jumpToPage, false));
+      return;
+    }
     if (!resumeReading) return;
     const stored = loadDocState(docId);
     if (stored && stored.page > 1 && stored.page <= pageCount) {
@@ -1339,7 +1346,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       // moment to settle before `scrollIntoView` measures it.
       requestAnimationFrame(() => goToPage(stored.page, false));
     }
-  }, [pdf, pageCount, docId, goToPage, resumeReading]);
+  }, [pdf, pageCount, docId, goToPage, resumeReading, jumpToPage]);
 
   /**
    * Fetches the server's saved reading position once per document — the durable copy, since it
@@ -1694,7 +1701,8 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
     saver,
     reset: (entries) => resetAnnotations(entries as unknown as Annotation[]),
     onAddThemes: (t) => onAddThemes?.(t),
-    isDark
+    isDark,
+    teacher: settings.name
   });
 
   // ── Insert page ──

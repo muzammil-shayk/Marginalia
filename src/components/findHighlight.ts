@@ -92,3 +92,12 @@ export function paintFindHits(all: Range[], current: Range | null): void {
   if (current) reg.set('find-current', new H(current));
   else reg.delete('find-current');
 }
+
+/** Paints ranges under a named highlight (poem-radif, poem-rhyme, motif-hit). An empty list clears it. */
+export function paintHighlight(name: string, ranges: Range[]): void {
+  const reg = registry();
+  const H = (globalThis as unknown as { Highlight?: new (...r: Range[]) => unknown }).Highlight;
+  if (!reg || !H) return;
+  if (ranges.length) reg.set(name, new H(...ranges));
+  else reg.delete(name);
+}

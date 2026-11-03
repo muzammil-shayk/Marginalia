@@ -117,5 +117,12 @@ export {
   ChatText as MessageSquare,
   Lightning as Zap,
   LockSimple as Lock,
-  LockSimpleOpen as Unlock
+  LockSimpleOpen as Unlock,
+
+  // ── 2.7.0: feedback, poetry, motifs, excerpt board, class packs ──
+  ChatCircleText as Feedback,
+  Feather,
+  Path as MotifPath,
+  Kanban as Board,
+  Student
 } from '@phosphor-icons/react';

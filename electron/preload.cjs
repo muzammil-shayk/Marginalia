@@ -69,6 +69,12 @@ contextBridge.exposeInMainWorld('marginaliaDesktop', {
   /** Records it; resolves with the value actually saved. */
   setTutorialSeen: (seen) => ipcRenderer.invoke('marginalia:tutorial-set', seen === true),
 
+  // ── Occasional feedback prompt (kept in config.json) ──────────────────────
+  /** { sessions, due }: whether to offer the Send feedback prompt this launch. */
+  getFeedbackPrompt: () => ipcRenderer.invoke('marginalia:feedback-get'),
+  /** Records 'sent', 'later' or 'never'. */
+  setFeedbackPrompt: (answer) => ipcRenderer.invoke('marginalia:feedback-set', String(answer)),
+
   /**
    * Registers the renderer's "save everything pending now" handler. Main calls it before a window
    * closes or the app quits (see electron/flushOnExit.cjs) and waits up to 3 s for the answer.

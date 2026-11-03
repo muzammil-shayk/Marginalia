@@ -94,6 +94,37 @@ export interface UserSettings {
    * seen again — the dialog simply reappears on every launch.
    */
   lastSeenVersion?: string;
+  /** How Urdu, Persian and Arabic text is set in the reader and in exports. Absent means Nastaliq. */
+  arabicScript?: 'nastaliq' | 'naskh';
+  /** Poetry-aware reading, per text document id. Absent means prose. */
+  poetry?: Record<string, PoetryPrefs>;
+  /** Motifs the reader traces across My Collections: a name and the words that stand for it. */
+  motifs?: Motif[];
+}
+
+/** One document's poetry view: numbering, radif and rhyme marks, and the metre the reader names. */
+export interface PoetryPrefs {
+  on: boolean;
+  numbering: 'lines' | 'couplets';
+  /** Underline the radif and the rhyme (qafiya). */
+  prosody: boolean;
+  /** The reader's own note of the metre (bahr), e.g. "hazaj musamman saalim". */
+  metre?: string;
+}
+
+export interface Motif {
+  id: string;
+  name: string;
+  /** Words or phrases, matched as whole words with their plurals (see utils/motifTrace). */
+  terms: string[];
+}
+
+/** Where the reader is sent inside a text document: a passage to show, and words to paint there. */
+export interface ReaderJump {
+  paragraphIndex: number;
+  /** Words painted wherever they occur (a traced motif). */
+  terms?: string[];
+  label?: string;
 }
 
 /**

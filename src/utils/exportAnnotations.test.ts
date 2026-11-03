@@ -92,3 +92,16 @@ test('an untitled text-reader note exports as "Reader Note", like its card; a ti
   assert.equal(titled.title, 'Mine');
   assert.match(generateMarkdown([untitled], options), /### 1\. Reader Note\n/);
 });
+
+test('the printable notes page sets each block by its own direction and inlines the font', async () => {
+  const { notesPrintHtml } = await import('./exportAnnotations');
+  const html = notesPrintHtml(
+    [{ id: 'n', paragraphIndex: 0, color: '', title: 'غزل <1>', content: 'A note', author: '', timestamp: '', themeId: null, quote: 'دل ہی تو ہے', kind: 'highlight' }],
+    { bookTitle: 'Ghalib', bookAuthor: 'Reader', themes: [], format: 'pdf', includeQuotes: true },
+    'data:font/woff2;base64,AAAA'
+  );
+  assert.match(html, /@font-face\{font-family:'Noto Nastaliq Urdu';src:url\(data:font\/woff2;base64,AAAA\)/);
+  assert.match(html, /<blockquote dir="auto">“دل ہی تو ہے”<\/blockquote>/);
+  assert.match(html, /غزل &lt;1&gt;/);
+  assert.doesNotMatch(html, /<script/);
+});

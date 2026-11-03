@@ -38,6 +38,24 @@
   unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
 }
 
+/* Noto Nastaliq Urdu (2.7.0), Arabic script only: Urdu and Persian text in the reader and in exports. */
+@font-face {
+  font-family: 'Noto Nastaliq Urdu';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url('../node_modules/@fontsource/noto-nastaliq-urdu/files/noto-nastaliq-urdu-arabic-400-normal.woff2') format('woff2');
+  unicode-range: U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC;
+}
+@font-face {
+  font-family: 'Noto Nastaliq Urdu';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url('../node_modules/@fontsource/noto-nastaliq-urdu/files/noto-nastaliq-urdu-arabic-700-normal.woff2') format('woff2');
+  unicode-range: U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC;
+}
+
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ── App palette: the shelf's night-and-paper world, app-wide ──────────────
@@ -1765,4 +1783,59 @@ main[data-annotation-surface] ::selection {
 }
 .dark ::highlight(find-current) {
   background-color: rgb(251 176 36 / 0.58);
+}
+
+/* ── Poetry mode (utils/poetry.ts): radif and rhyme, painted the same way ── */
+::highlight(poem-radif) {
+  text-decoration: underline dotted rgb(161 120 40 / 0.9);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
+}
+::highlight(poem-rhyme) {
+  text-decoration: underline solid rgb(91 128 112 / 0.85);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 6px;
+}
+.dark ::highlight(poem-radif) {
+  text-decoration-color: rgb(226 190 110 / 0.9);
+}
+.dark ::highlight(poem-rhyme) {
+  text-decoration-color: rgb(150 196 176 / 0.9);
+}
+
+/* ── Motif tracing (MotifTracer.tsx): the traced words, painted in the reader ── */
+::highlight(motif-hit) {
+  background-color: rgb(139 92 246 / 0.22);
+}
+.dark ::highlight(motif-hit) {
+  background-color: rgb(167 139 250 / 0.3);
+}
+
+/* Poetry mode: line and sher numbers in the gutter beside each line (PoetryView.tsx). */
+.poem-num {
+  position: absolute;
+  left: -1.6rem;
+  width: 1.4rem;
+  transform: translateY(-50%);
+  text-align: right;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  color: var(--muted);
+  pointer-events: none;
+  user-select: none;
+}
+.poem-num-rtl {
+  left: auto;
+  right: -1.6rem;
+  text-align: left;
+}
+.poem-key-radif {
+  text-decoration: underline dotted rgb(161 120 40 / 0.9) 2px;
+  text-underline-offset: 3px;
+}
+.poem-key-rhyme {
+  text-decoration: underline solid rgb(91 128 112 / 0.85) 2px;
+  text-underline-offset: 3px;
 }

@@ -24,6 +24,7 @@ import { publicSettings, nextReadingProgress, cleanTitle } from "./src/services/
 import { documentParamsFromBody } from "./src/services/documentInput";
 import geminiConfigRouter from "./src/services/geminiConfig";
 import markBackupRouter from "./src/services/markBackupRoutes";
+import libraryRouter from "./src/services/libraryRoutes";
 import { setAiEnabled } from "./src/services/aiGate";
 import { wordWindow, markSearchHits } from "./searchSnippet";
 
@@ -111,6 +112,38 @@ app.use(express.json({ limit: "200mb" }));
 /** Gemini key settings, refused while the AI opt-in is off. See `src/services/geminiConfig.ts`. */
 app.use("/api", geminiConfigRouter);
 app.use("/api", markBackupRouter);
+app.use("/api", libraryRouter);
+
+/**
+ * Notes exported as a PDF through the page renderer, for text jsPDF cannot set: right-to-left
+ * scripts and Nastaliq need a real shaping engine. The client builds the page (fonts inlined as
+ * data: URIs); it is sanitised like an import and printed by the desktop app's Chromium.
+ */
+app.post("/api/export/notes-pdf", async (req, res) => {
+  const html = req.body?.html;
+  if (typeof html !== "string" || !html.trim()) {
+    res.status(400).json({ error: "The page to print is required." });
+    return;
+  }
+  if (!htmlToPdfRenderer) {
+    res.status(501).json({ error: "Printing this export needs the desktop app." });
+    return;
+  }
+  try {
+    const pdf = await htmlToPdfRenderer({
+      html: sanitizeImportHtml(html),
+      displayHeaderFooter: false,
+      headerTemplate: "",
+      footerTemplate: "",
+      marginsMm: { top: 18, right: 18, bottom: 18, left: 18 }
+    });
+    res.setHeader("Content-Type", "application/pdf");
+    res.send(pdf);
+  } catch (error) {
+    console.error("Notes PDF export failed:", error);
+    res.status(500).json({ error: "The PDF could not be made." });
+  }
+});
 
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });

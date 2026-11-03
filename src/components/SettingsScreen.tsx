@@ -544,6 +544,30 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
           </div>
         </div>
 
+        {/* Urdu, Persian and Arabic text: read right to left; Nastaliq or Naskh. */}
+        <div className="space-y-1.5 pt-1 border-t border-stone-200 dark:border-stone-700/50">
+          <label htmlFor="arabic-script" className="text-[13px] font-medium text-stone-700 dark:text-stone-300">
+            Urdu, Persian and Arabic text
+          </label>
+          <div className="relative">
+            <select
+              id="arabic-script"
+              value={settings.arabicScript ?? 'nastaliq'}
+              onChange={(e) => onUpdateSettings((p) => ({ ...p, arabicScript: e.target.value as 'nastaliq' | 'naskh' }))}
+              className={`w-full border rounded-xl px-4 py-3 text-[14px] appearance-none cursor-pointer focus:outline-none focus:ring-1 focus:ring-gold ${
+                isDark ? 'bg-night-5 border-stone-700/80 text-paper' : 'bg-stone-50 border-stone-300/80 text-stone-900'
+              }`}
+            >
+              <option value="nastaliq">Nastaliq (نستعلیق)</option>
+              <option value="naskh">Naskh (نسخ)</option>
+            </select>
+            <ChevronDown className="w-4 h-4 text-stone-400 absolute right-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+          </div>
+          <p className="text-[12px] text-muted leading-snug">
+            Right-to-left passages always read right to left, in the reader and in exports.
+          </p>
+        </div>
+
         {/* Font Size Slider */}
         <div className="space-y-2 pt-1 border-t border-stone-200 dark:border-stone-700/50">
           <div className="flex justify-between items-center text-[13px]">

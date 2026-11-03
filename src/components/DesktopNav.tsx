@@ -1,5 +1,6 @@
 import React from 'react';
-import { BookOpen, Settings as SettingsIcon, PlusCircle, PanelLeftClose, PanelLeftOpen, Search } from './icons';
+import { BookOpen, Settings as SettingsIcon, PlusCircle, PanelLeftClose, PanelLeftOpen, Search, Feedback } from './icons';
+import { sendFeedback } from './Feedback';
 import { Screen, TransitionType } from '../types';
 import logo from '../assets/images/marginalia-logo.png';
 
@@ -164,6 +165,20 @@ export const DesktopNav: React.FC<DesktopNavProps> = ({
             {!collapsed && <span className="caps">Search</span>}
           </button>
         )}
+
+        <button
+          type="button"
+          onClick={() => void sendFeedback()}
+          title={collapsed ? 'Send feedback' : 'Opens an email to the Marginalia team'}
+          className={`w-full flex items-center rounded-xl text-[13px] font-medium transition-[color,background-color,transform] duration-150 ease-out active:scale-[0.97] cursor-pointer ${
+            collapsed ? 'justify-center px-0 py-2.5' : 'gap-3 px-3.5 py-2.5'
+          } ${
+            isDark ? 'text-stone-400' : 'text-stone-600'
+          } hover:text-nav-active-fg hover:bg-nav-hover`}
+        >
+          <Feedback className={`shrink-0 ${collapsed ? 'w-5.5 h-5.5' : 'w-4 h-4'}`} />
+          {!collapsed && <span className="caps">Send feedback</span>}
+        </button>
 
       </nav>
 

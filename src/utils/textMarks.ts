@@ -63,6 +63,10 @@ export interface TextMark {
   /** ISO times. Absent on marks made before times were recorded. */
   createdAt?: string;
   updatedAt?: string;
+  /** Where the reader put this excerpt on the excerpt board (px from its top left). Absent: in the tray. */
+  board?: { x: number; y: number };
+  /** Came in a teacher's class pack (signed with `author`). */
+  fromClassPack?: true;
 }
 
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
@@ -153,7 +157,7 @@ export type NewTextMark = Pick<TextMark, 'kind' | 'themeId'> &
  * note cites; `''` means it cites none (absent would fall back to the anchored passage).
  */
 export type TextMarkPatch = Partial<
-  Pick<TextMark, 'kind' | 'color' | 'themeId' | 'isTerminology' | 'strokeStyle' | 'noteStyle' | 'title' | 'text' | 'quote' | 'thickness' | 'weight' | 'fontSize'>
+  Pick<TextMark, 'kind' | 'color' | 'themeId' | 'isTerminology' | 'strokeStyle' | 'noteStyle' | 'title' | 'text' | 'quote' | 'thickness' | 'weight' | 'fontSize' | 'board'>
 >;
 
 /** Ids only have to be unique within one document. */

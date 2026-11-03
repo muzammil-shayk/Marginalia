@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { AnnotationFocus, Screen, TransitionType, UserSettings, StickyNote } from './types';
+import { AnnotationFocus, ReaderJump, Screen, TransitionType, UserSettings, StickyNote } from './types';
 import { initialSettings } from './data/mockData';
 import { fetchDocumentText, fetchRemoteSettings, saveRemoteSettings, StoredDocumentMeta, desktopBridge, getTutorialSeen, setTutorialSeen } from './utils/documentStorage';
 import { CustomFormat } from './utils/documentExporter';
@@ -29,6 +29,9 @@ import { ErrorDialog } from './components/ErrorDialog';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { FOCUS_HOTKEY } from './components/FocusMode';
 import { Tutorial } from './components/Tutorial';
+import { FeedbackPrompt } from './components/Feedback';
+import { MotifTracer } from './components/MotifTracer';
+import type { OpenedClassPack } from './utils/documentStorage';
 import { localThemeStore } from './components/themeStore';
 import { themesToAdd } from './utils/marksExport';
 import { isTypingTarget } from './components/pdf/workspaceKeys';
@@ -172,6 +175,9 @@ export default function App() {
       cancelled = true;
     };
   }, []);
+  /** Where a motif trace sent the reader inside the document it opened. */
+  const [readerJump, setReaderJump] = useState<ReaderJump | null>(null);
+  const [motifOpen, setMotifOpen] = useState(false);
   /** Focus mode: the page alone (reader and PDF workspace only). See `FocusMode.tsx`. */
   const [focusMode, setFocusMode] = useState(false);
   const readingScreen = currentScreen === 'reader' || currentScreen === 'workspace';
@@ -531,11 +537,12 @@ export default function App() {
    * analyze even though the viewer renders the original file.
    */
   const handleOpenStoredDocument = useCallback(
-    async (meta: StoredDocumentMeta, focus?: AnnotationFocus) => {
+    async (meta: StoredDocumentMeta, focus?: AnnotationFocus, jump?: ReaderJump) => {
       const text = (await fetchDocumentText(meta.id)) || '';
       setDocumentLoadError(null);
       setResumeAnnotating(false);
       setAnnotationFocus(focus ?? null);
+      setReaderJump(jump ?? null);
       setAnalysisDoc({ title: meta.title, text, format: meta.format, docId: meta.id });
       setUploadedLibrary((prev) => [
         {
@@ -668,6 +675,20 @@ export default function App() {
 
         <UpdatePrompt isDark={isDark} onOpenChangelog={handleOpenChangelog} changelogOpen={isChangelogOpen} />
 
+        <MotifTracer
+          open={motifOpen}
+          onClose={() => setMotifOpen(false)}
+          isDark={isDark}
+          settings={settings}
+          onUpdateSettings={setSettings}
+          onOpen={(meta, jump) => void handleOpenStoredDocument(meta, undefined, jump)}
+        />
+
+        <FeedbackPrompt
+          isDark={isDark}
+          blocked={isChangelogOpen || tutorialRequested || (!tutorialSeen && currentScreen === 'home') || isSearchOpen || motifOpen}
+        />
+
         <Tutorial
           open={!isChangelogOpen && (tutorialRequested || (!tutorialSeen && currentScreen === 'home'))}
           onClose={() => {
@@ -700,6 +721,7 @@ export default function App() {
               onToggleFocus={() => setFocusMode((on) => !on)}
               themeStore={themeStore}
               onAddThemes={addImportedThemes}
+              jumpToPage={readerJump ? readerJump.paragraphIndex + 1 : undefined}
             />
           </ErrorBoundary>
         ) : currentScreen === 'reader' ? (
@@ -720,6 +742,8 @@ export default function App() {
             themeStore={themeStore}
             onSpreadChange={(on) => setSettings((prev) => ({ ...prev, readerSpread: on }))}
             onAddThemes={addImportedThemes}
+            jump={readerJump ?? undefined}
+            onUpdateSettings={setSettings}
           />
         ) : (
           <div className="relative flex-1 flex flex-col min-h-screen">
@@ -789,6 +813,7 @@ export default function App() {
                         onDocumentDeleted={handleStoredDocumentDeleted}
                         onDocumentRenamed={handleStoredDocumentRenamed}
                         refreshToken={libraryRefreshToken}
+                        onOpenMotifTracer={() => setMotifOpen(true)}
                       />
                     )}
 
@@ -813,6 +838,11 @@ export default function App() {
                         onOpenLibraryDocument={handleOpenLibraryDocument}
                         onDocumentStored={() => setLibraryRefreshToken((n) => n + 1)}
                         onOpenLibrary={() => setIsLibraryOpen(true)}
+                        onClassPackOpened={(opened: OpenedClassPack) => {
+                          if (opened.themes.length) addImportedThemes(opened.themes);
+                          setLibraryRefreshToken((n) => n + 1);
+                          void handleOpenStoredDocument(opened.meta);
+                        }}
                       />
                     )}
                   </ErrorBoundary>

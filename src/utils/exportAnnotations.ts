@@ -364,3 +364,45 @@ export function textMarksForExport(marks: TextMark[], paragraphs: string[]): Exp
     return entry;
   });
 }
+
+const escapeHtml = (s: string) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/**
+ * The notes export as a printable page, for the desktop app's renderer (`/api/export/notes-pdf`).
+ * Used instead of `exportToPDF` when any entry has right-to-left text: jsPDF's built-in fonts
+ * have no Arabic or Hebrew glyphs and it cannot shape Nastaliq. Each block takes its direction
+ * from its own words (`dir="auto"`), so an Urdu quote under an English note reads right.
+ * `nastaliqFont` is a data: URI for the bundled font (the print window loads nothing remote).
+ */
+export function notesPrintHtml(notes: ExportEntry[], options: ExportOptions, nastaliqFont?: string, scriptStyle: 'nastaliq' | 'naskh' = 'nastaliq'): string {
+  const face = nastaliqFont
+    ? `@font-face{font-family:'Noto Nastaliq Urdu';src:url(${nastaliqFont}) format('woff2');unicode-range:U+0600-06FF,U+0750-077F,U+08A0-08FF,U+FB50-FDFF,U+FE70-FEFC;}`
+    : '';
+  const arabic = scriptStyle === 'naskh' ? "'Noto Naskh Arabic','Segoe UI'" : "'Noto Nastaliq Urdu'";
+  const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  const cards = notes
+    .map((note, i) => {
+      const quote = showsQuote(note, options) ? `<blockquote dir="auto">“${escapeHtml(note.quote!)}”</blockquote>` : '';
+      const body = showsBody(note) && note.content ? `<p dir="auto">${escapeHtml(note.content).replace(/\n/g, '<br>')}</p>` : '';
+      const meta = [`Theme: ${themeName(note.themeId, options.themes)}`, note.author ? `Author: ${note.author}` : '', noteDateLabel(note)]
+        .filter(Boolean)
+        .map(escapeHtml)
+        .join(' • ');
+      return `<section><h2 dir="auto">${i + 1}. ${escapeHtml(note.title)}</h2><div class="meta">${meta}</div>${quote}${body}</section>`;
+    })
+    .join('');
+  return `<!doctype html><html><head><meta charset="utf-8"><style>${face}
+body{font-family:Georgia,${arabic},serif;color:#1c2321;font-size:11pt;line-height:1.6}
+:lang(ur),[dir=rtl]{font-family:${arabic},Georgia,serif;line-height:2.3}
+h1{font-size:20pt;margin:0 0 4pt}.sub{color:#555;margin:0 0 2pt}.meta{color:#777;font-size:8.5pt;margin-bottom:6pt}
+hr{border:0;border-top:2px solid #435c52;margin:8pt 0 14pt}
+section{border:1px solid #d2cdc3;padding:8pt 10pt;margin-bottom:10pt;break-inside:avoid}
+h2{font-size:12pt;margin:0 0 3pt}
+blockquote{margin:0 0 6pt;padding:4pt 8pt;background:#ebe9e3;border-inline-start:3px solid #435c52;font-style:italic}
+p{margin:0}</style></head><body>
+<h1 dir="auto">${escapeHtml(options.bookTitle)}</h1><p class="sub" dir="auto">By ${escapeHtml(options.bookAuthor)}</p>
+<div class="meta">Exported: ${escapeHtml(date)} | Total Notes: ${notes.length}</div><hr>
+${notes.length ? cards : '<p><em>No annotations match the selected export filter.</em></p>'}
+</body></html>`;
+}
