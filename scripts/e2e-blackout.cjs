@@ -86,11 +86,14 @@ async function main() {
     item.once('done', () => (saved = file));
   });
   const js = (code) => win.webContents.executeJavaScript(`(async () => { ${code} })()`);
-  /** Polls until the tool and page 1's text are there, up to 20 s (slow runners outlast a fixed sleep). */
+  /**
+   * Polls until the tool and page 1's text are there, up to 20 s (slow runners outlast a fixed
+   * sleep). The text layer div is mounted empty; its spans come after the page paints.
+   */
   const ready = async () => {
     const ok = await js(`
       for (const t0 = performance.now(); performance.now() - t0 < 20000; await new Promise((r) => setTimeout(r, 100)))
-        if (document.querySelector('button[aria-label^="Black it out"]') && document.querySelector('[data-page-number="1"] .marginalia-text-layer')) return true;
+        if (document.querySelector('button[aria-label^="Black it out"]') && document.querySelector('[data-page-number="1"] .marginalia-text-layer span')) return true;
       return false;
     `);
     if (!ok) throw new Error('the workspace never showed Black it out and page 1');

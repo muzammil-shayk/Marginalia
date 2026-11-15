@@ -60,7 +60,8 @@ async function main() {
   await fetch(`${base}/api/documents/${pdf.id}/original?filename=ozymandias.pdf`, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: await samplePdf() });
   const txt = await api('/documents', 'POST', { title: 'Sonnet', text: 'Look on my works, ye Mighty, and despair!\nNothing beside remains.', format: 'TXT', layout: 'verbatim' });
 
-  const win = new BrowserWindow({ width: 1280, height: 800, show: false, webPreferences: { offscreen: true } });
+  // E2E_WIDTH=1024 matches the Windows runner, whose offscreen window is clamped to 1024 wide.
+  const win = new BrowserWindow({ width: Number(process.env.E2E_WIDTH) || 1280, height: 800, show: false, webPreferences: { offscreen: true } });
   const js = (code) => win.webContents.executeJavaScript(`(async () => { ${code} })()`);
   /** Polls the page until `selector` matches, up to `ms`; true if it did. */
   const waitFor = (selector, ms = 20000) =>
@@ -75,15 +76,28 @@ async function main() {
     await win.loadURL(base);
     await js(`sessionStorage.setItem('marginalia_session', ${JSON.stringify(JSON.stringify(session))}); return true;`);
     await win.loadURL(base);
-    if (!(await waitFor(ready))) throw new Error(`${screen} never showed ${ready}`);
+    if (!(await waitFor(ready))) throw new Error(`${screen} never showed ${ready}: ${await js(`return JSON.stringify({ layers: document.querySelectorAll('.marginalia-text-layer').length, spans: document.querySelectorAll('.marginalia-text-layer span').length, painted: document.querySelectorAll('[data-page-number][data-painted]').length, pages: document.querySelectorAll('[data-page-number]').length, innerWidth, innerHeight });`)}`);
   };
   const marksOf = async (id) => (await api(`/documents/${id}/annotations`)).annotations;
-  /** Selects from (startSel, offset) to the end of `word` in the text under endSel, as a mouse drag ends. */
+  /**
+   * Selects from (startSel, offset) to the end of `word` in the text under endSel, as a mouse drag
+   * ends. Polls up to 20 s for the word: pdf.js fills the text layer after the page paints, so the
+   * layer can exist (and even hold spans) before this word is in it on a slow runner.
+   */
   const select = (startSel, endSel, word) => js(`
-    const end = document.querySelector(${JSON.stringify(endSel)});
-    const walker = document.createTreeWalker(end, NodeFilter.SHOW_TEXT);
-    let node; for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.data.includes(${JSON.stringify(word)})) { node = n; break; }
-    if (!node) throw new Error('word not found');
+    const find = () => {
+      const end = document.querySelector(${JSON.stringify(endSel)});
+      if (!end) return null;
+      const walker = document.createTreeWalker(end, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) if (n.data.includes(${JSON.stringify(word)})) return n;
+      return null;
+    };
+    let node = find();
+    for (const t0 = performance.now(); !node && performance.now() - t0 < 20000; node = find()) await new Promise((r) => setTimeout(r, 100));
+    if (!node) {
+      const end = document.querySelector(${JSON.stringify(endSel)});
+      throw new Error('word not found: ' + JSON.stringify({ word: ${JSON.stringify(word)}, under: ${JSON.stringify(endSel)}, found: Boolean(end), spans: end ? end.querySelectorAll('span').length : 0, text: end ? end.textContent.slice(0, 120) : null, painted: document.querySelectorAll('[data-page-number][data-painted]').length, pages: document.querySelectorAll('[data-page-number]').length, innerWidth, innerHeight }));
+    }
     const r = document.createRange();
     const start = ${startSel ? `document.querySelector(${JSON.stringify(startSel)})` : 'null'};
     if (start) r.setStartBefore(start); else r.setStart(node, node.data.indexOf(${JSON.stringify(word)}));
@@ -105,7 +119,8 @@ async function main() {
   `);
 
   // 1. PDF selection begun over the sidebar.
-  await open('workspace', pdf, 'PDF', '.marginalia-text-layer');
+  // The layer div is mounted empty; its spans come after the page paints.
+  await open('workspace', pdf, 'PDF', '[data-page-number="1"][data-painted] .marginalia-text-layer span');
   await select('#desktop-sidebar-nav', '.marginalia-text-layer', 'antique land');
   await menuButton('Highlight');
   await sleep(1500);
