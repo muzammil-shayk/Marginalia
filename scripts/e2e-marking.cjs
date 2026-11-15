@@ -62,12 +62,20 @@ async function main() {
 
   const win = new BrowserWindow({ width: 1280, height: 800, show: false, webPreferences: { offscreen: true } });
   const js = (code) => win.webContents.executeJavaScript(`(async () => { ${code} })()`);
-  const open = async (screen, doc, format) => {
+  /** Polls the page until `selector` matches, up to `ms`; true if it did. */
+  const waitFor = (selector, ms = 20000) =>
+    js(`
+      for (const t0 = performance.now(); performance.now() - t0 < ${ms}; await new Promise((r) => setTimeout(r, 100)))
+        if (document.querySelector(${JSON.stringify(selector)})) return true;
+      return false;
+    `);
+  /** Opens a document and waits (not a fixed sleep: slow runners need longer) for `ready`. */
+  const open = async (screen, doc, format, ready) => {
     const session = { currentScreen: screen, analysisDoc: { title: doc.title, text: '', format, docId: doc.id }, uploadedLibrary: [], documentNotes: {}, documentFormats: {} };
     await win.loadURL(base);
     await js(`sessionStorage.setItem('marginalia_session', ${JSON.stringify(JSON.stringify(session))}); return true;`);
     await win.loadURL(base);
-    await sleep(3500);
+    if (!(await waitFor(ready))) throw new Error(`${screen} never showed ${ready}`);
   };
   const marksOf = async (id) => (await api(`/documents/${id}/annotations`)).annotations;
   /** Selects from (startSel, offset) to the end of `word` in the text under endSel, as a mouse drag ends. */
@@ -97,7 +105,7 @@ async function main() {
   `);
 
   // 1. PDF selection begun over the sidebar.
-  await open('workspace', pdf, 'PDF');
+  await open('workspace', pdf, 'PDF', '.marginalia-text-layer');
   await select('#desktop-sidebar-nav', '.marginalia-text-layer', 'antique land');
   await menuButton('Highlight');
   await sleep(1500);
@@ -128,7 +136,7 @@ async function main() {
   check('PDF: a mark under two themes shows a dot for its second theme', dots === 1, String(dots));
 
   // 3. Text reader.
-  await open('reader', txt, 'TXT');
+  await open('reader', txt, 'TXT', '#reader-para-text-0');
   await select(null, '#reader-para-text-0', 'Mighty');
   await menuButton('Highlight');
   await sleep(1500);

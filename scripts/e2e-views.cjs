@@ -50,26 +50,43 @@ async function main() {
   const pdf = await api('/documents', 'POST', { title: 'Sands', text: 'Page 1', format: 'PDF', filename: 'sands.pdf' });
   await fetch(`${base}/api/documents/${pdf.id}/original?filename=sands.pdf`, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: await samplePdf(8) });
 
-  const win = new BrowserWindow({ width: 1366, height: 768, show: false, webPreferences: { offscreen: true } });
+  // E2E_WIDTH=1024 reproduces Windows CI, where the toolbar folds its views into the More menu.
+  const win = new BrowserWindow({ width: Number(process.env.E2E_WIDTH) || 1366, height: 768, show: false, webPreferences: { offscreen: true } });
   const js = (code) => win.webContents.executeJavaScript(`(async () => { ${code} })()`);
+  /** Polls the page until every selector matches, up to `ms`; true if they all did. */
+  const waitFor = (selectors, ms = 20000) =>
+    js(`
+      const all = ${JSON.stringify(selectors)};
+      for (const t0 = performance.now(); performance.now() - t0 < ${ms}; await new Promise((r) => setTimeout(r, 100)))
+        if (all.every((s) => document.querySelector(s))) return true;
+      return false;
+    `);
+  // The toolbar's views sit inline, or in the More menu when the window is narrow.
+  const TOOLBAR = '[role="radiogroup"][aria-label="Pages in view"], [aria-label^="More:"]';
   const open = async () => {
     const session = { currentScreen: 'workspace', analysisDoc: { title: pdf.title, text: '', format: 'PDF', docId: pdf.id }, uploadedLibrary: [], documentNotes: {}, documentFormats: {} };
     await win.loadURL(base);
     await js(`sessionStorage.setItem('marginalia_session', ${JSON.stringify(JSON.stringify(session))}); return true;`);
     await win.loadURL(base);
-    await sleep(3500);
+    // Slow runners (Windows CI) take longer than any fixed wait; a missing toolbar shows up in press().
+    await waitFor([TOOLBAR, '[data-page-number][data-painted]']);
   };
-  /** Clicks a toolbar button by its label's start; on a narrower window it sits in the More menu. */
+  /**
+   * Clicks a toolbar button by its label's start; on a narrower window it sits in the More menu.
+   * Retries for ~8 s: the toolbar may mount late, and it folds or unfolds as its width settles.
+   */
   const press = (label, role = '') =>
     js(`
-      const find = () => [...document.querySelectorAll('button${role ? `[role="${role}"]` : ''}')].find((x) => (x.getAttribute('aria-label') || '').startsWith(${JSON.stringify(label)}));
+      const sel = 'button${role ? `[role="${role}"]` : ''}';
+      const find = () => [...document.querySelectorAll(sel)].find((x) => (x.getAttribute('aria-label') || '').startsWith(${JSON.stringify(label)}));
+      const more = () => document.querySelector('[aria-label^="More:"]');
       let b = find();
-      if (!b) {
-        document.querySelector('[aria-label^="More:"]')?.click();
-        await new Promise((r) => setTimeout(r, 300));
-        b = find();
+      for (const t0 = performance.now(); !b && performance.now() - t0 < 8000; b = find()) {
+        // More is a toggle: open it only when it is shut.
+        if (more() && more().getAttribute('aria-expanded') !== 'true') more().click();
+        await new Promise((r) => setTimeout(r, 200));
       }
-      if (!b) throw new Error('no button ' + ${JSON.stringify(label)});
+      if (!b) throw new Error('no button ' + ${JSON.stringify(label)} + ' ' + JSON.stringify({ buttons: document.querySelectorAll(sel).length, more: Boolean(more()), moreOpen: more()?.getAttribute('aria-expanded') ?? null, innerWidth }));
       b.click();
       await new Promise((r) => setTimeout(r, 150));
       // Closed the way a click elsewhere closes it.

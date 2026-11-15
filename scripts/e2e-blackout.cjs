@@ -86,11 +86,20 @@ async function main() {
     item.once('done', () => (saved = file));
   });
   const js = (code) => win.webContents.executeJavaScript(`(async () => { ${code} })()`);
+  /** Polls until the tool and page 1's text are there, up to 20 s (slow runners outlast a fixed sleep). */
+  const ready = async () => {
+    const ok = await js(`
+      for (const t0 = performance.now(); performance.now() - t0 < 20000; await new Promise((r) => setTimeout(r, 100)))
+        if (document.querySelector('button[aria-label^="Black it out"]') && document.querySelector('[data-page-number="1"] .marginalia-text-layer')) return true;
+      return false;
+    `);
+    if (!ok) throw new Error('the workspace never showed Black it out and page 1');
+  };
   const session = { currentScreen: 'workspace', analysisDoc: { title: pdf.title, text: '', format: 'PDF', docId: pdf.id }, uploadedLibrary: [], documentNotes: {}, documentFormats: {} };
   await win.loadURL(base);
   await js(`sessionStorage.setItem('marginalia_session', ${JSON.stringify(JSON.stringify(session))}); return true;`);
   await win.loadURL(base);
-  await sleep(3500);
+  await ready();
 
   // 1. Words mode.
   await js(`
@@ -159,7 +168,7 @@ async function main() {
   const over = { id: 'over1', page: 1, kind: 'highlight', color: '#b5527a', themeIds: ['love'], themeId: 'love', rects: [{ ...bar.box }], quote: `My name is ${SECRET}`, text: 'teacher note', createdAt: new Date().toISOString() };
   await fetch(`${base}/api/documents/${pdf.id}/annotations`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ annotations: [...marks, over] }) });
   await win.loadURL(base);
-  await sleep(3500);
+  await ready();
   saved = null;
   const clicked = await js(`
     const open = document.querySelector('button[aria-label="Export"]');
