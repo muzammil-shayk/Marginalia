@@ -22,9 +22,28 @@ export interface ReleaseNote {
   highlights: ChangelogItem[];
 }
 
-export const CURRENT_APP_VERSION = '2.9.1';
+export const CURRENT_APP_VERSION = '2.9.2';
 
 export const CHANGELOG_RELEASES: ReleaseNote[] = [
+  {
+    version: '2.9.2',
+    title: 'Steadier Behind the Scenes',
+    date: 'November 2026',
+    summary: 'A small update to the checks that test the app before each release. Nothing in the app itself changes.',
+    highlights: [
+      {
+        category: 'improvement',
+        title: 'Checks no longer fail at random',
+        description:
+          'The automatic checks wait for the screen to be ready instead of pausing for a fixed time, so they no longer fail at random on slower machines.'
+      },
+      {
+        category: 'improvement',
+        title: 'Checks run to the end',
+        description: 'The checks now keep going when one of them fails, so every result is reported.'
+      }
+    ]
+  },
   {
     version: '2.9.1',
     title: 'Safer Files, Safer Data, Faster Start',
