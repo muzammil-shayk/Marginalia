@@ -22,9 +22,63 @@ export interface ReleaseNote {
   highlights: ChangelogItem[];
 }
 
-export const CURRENT_APP_VERSION = '2.9.0';
+export const CURRENT_APP_VERSION = '2.9.1';
 
 export const CHANGELOG_RELEASES: ReleaseNote[] = [
+  {
+    version: '2.9.1',
+    title: 'Safer Files, Safer Data, Faster Start',
+    date: 'November 2026',
+    summary:
+      'Black it out now cleans what you share and export, files you open can no longer reach the internet, deleting and moving documents is safer, and the app opens faster.',
+    highlights: [
+      {
+        category: 'fix',
+        title: 'Black it out holds in shared files',
+        description:
+          'Sharing a class pack from a document with blacked-out marks now sends a cleaned copy: blacked-out pages become pictures, their words are gone, and hidden quotes are removed. Markdown, JSON and commonplace exports leave out quoted text under a black-out.'
+      },
+      {
+        category: 'fix',
+        title: 'Safer files and imports',
+        description:
+          'Imported marks and class packs with odd colours or values are rejected. The app now sets a content security policy, so files you open cannot make it contact the internet. EPUB and DOCX files that unpack to an absurd size are refused with a clear message.'
+      },
+      {
+        category: 'fix',
+        title: 'Deleting and moving documents',
+        description:
+          'Deleting a document now removes every copy of it, including the older-version copy kept from the themes upgrade. Move My Documents carries the mark backups along and never overwrites a different file.'
+      },
+      {
+        category: 'fix',
+        title: 'Older versions and settings',
+        description:
+          'If you go back to an older version and change a mark’s theme there, the change is kept when you update again. A setting removed while the app starts stays removed.'
+      },
+      {
+        category: 'fix',
+        title: 'Sideways scroll',
+        description: 'A sideways trackpad scroll is no longer swallowed while a tool is armed or text is selected.'
+      },
+      {
+        category: 'improvement',
+        title: 'Dialog notes',
+        description:
+          'The close buttons in two dialogs now have labels for screen readers. The black-out export dialog says the PDF’s bookmarks are left out. One wording fix: “a picture of itself”.'
+      },
+      {
+        category: 'improvement',
+        title: 'A faster start',
+        description: 'The app’s starting code is about six times smaller (3.1 MB down to 0.5 MB), so it opens faster.'
+      },
+      {
+        category: 'improvement',
+        title: 'Behind the scenes',
+        description: 'Large screens were reorganised into smaller parts, with more tests.'
+      }
+    ]
+  },
   {
     version: '2.9.0',
     title: 'Several Themes, Smooth Turns, Black It Out',

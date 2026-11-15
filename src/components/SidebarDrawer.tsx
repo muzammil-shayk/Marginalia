@@ -60,6 +60,7 @@ export const SidebarDrawer: React.FC<SidebarDrawerProps> = ({
             <button
               type="button"
               onClick={onClose}
+              aria-label="Close menu"
               className="p-1 rounded-lg text-muted hover:text-stone-600 dark:hover:text-stone-200"
             >
               <X className="w-5 h-5" />

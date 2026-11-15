@@ -21,18 +21,18 @@ import { Bookshelf, progressLabel } from '../Bookshelf';
 import { StoredDocumentMeta } from '../../utils/documentStorage';
 
 export interface ReadingsShelfProps {
-  busyId: string;
+  busyId: string | null;
   commitDelete: (id: string) => Promise<boolean>;
   commitRename: (id: string, title: string) => Promise<void>;
-  confirmingDeleteId: string;
+  confirmingDeleteId: string | null;
   formatFilter: "all" | "pdf" | "epub" | "docx" | "txt";
   isDark: boolean;
   isLoadingLibrary: boolean;
   onNavigate: (screen: Screen, transition?: TransitionType) => void;
-  onOpenStoredDocument: (meta: StoredDocumentMeta, focus?: AnnotationFocus) => void;
+  onOpenStoredDocument: ((meta: StoredDocumentMeta, focus?: AnnotationFocus) => void) | undefined;
   query: string;
-  searchInputRef: React.RefObject<HTMLInputElement>;
-  setConfirmingDeleteId: React.Dispatch<React.SetStateAction<string>>;
+  searchInputRef: React.RefObject<HTMLInputElement | null>;
+  setConfirmingDeleteId: React.Dispatch<React.SetStateAction<string | null>>;
   setFormatFilter: React.Dispatch<React.SetStateAction<"all" | "pdf" | "epub" | "docx" | "txt">>;
   setQuery: React.Dispatch<React.SetStateAction<string>>;
   setSortOrder: React.Dispatch<React.SetStateAction<"recent" | "title" | "marks" | "words">>;
@@ -111,7 +111,7 @@ export const ReadingsShelf: React.FC<ReadingsShelfProps> = ({ busyId, commitDele
               <ArrowUpDown className="w-3 h-3 text-stone-400" />
               <select
                 value={sortOrder}
-                onChange={(e) => setSortOrder(e.target.value as any)}
+                onChange={(e) => setSortOrder(e.target.value as ReadingsShelfProps['sortOrder'])}
                 aria-label="Sort documents"
                 className="bg-transparent border-none text-[12px] outline-none focus-visible:ring-1 focus-visible:ring-gold rounded-sm cursor-pointer"
               >

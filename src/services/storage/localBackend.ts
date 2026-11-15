@@ -561,7 +561,7 @@ export class LocalDocumentBackend implements DocumentBackend {
       }
     };
     const record = this.docPath(id);
-    for (const file of [record, `${record}.bak`, `${record}.legacy`]) await unlink(file);
+    for (const file of [record, `${record}.bak`, `${record}.legacy`, `${record}.pre-themes`]) await unlink(file);
     // Every quarantined copy (`.corrupt`, `.corrupt-<time>`).
     const corrupt = (await fs.readdir(this.docsDir).catch(() => [] as string[])).filter((n) => n.startsWith(`${id}.json.corrupt`));
     for (const name of corrupt) await unlink(path.join(this.docsDir, name));
@@ -590,8 +590,15 @@ export class LocalDocumentBackend implements DocumentBackend {
     // Remove originals whose record is entirely gone, so a delete interrupted halfway through
     // can't leave the originals directory growing invisibly. ANY file for the id in documents/
     // (.json, .json.bak, .json.legacy, .json.corrupt) keeps its original: a record that failed to parse is not
-    // a deleted document, and its original may be the only copy left.
-    const liveIds = new Set((await fs.readdir(this.docsDir)).map((name) => name.split('.')[0]));
+    // a deleted document, and its original may be the only copy left. A `.pre-themes` copy is not:
+    // it is a one-time snapshot, so alone it keeps nothing and is removed with the rest.
+    const names = await fs.readdir(this.docsDir);
+    const liveIds = new Set(names.filter((name) => !name.endsWith('.pre-themes')).map((name) => name.split('.')[0]));
+    for (const name of names) {
+      if (name.endsWith('.pre-themes') && !liveIds.has(name.split('.')[0])) {
+        await fs.unlink(path.join(this.docsDir, name)).catch(() => {});
+      }
+    }
     try {
       for (const name of await fs.readdir(this.originalsDir)) {
         if (!liveIds.has(name.split('.')[0])) {

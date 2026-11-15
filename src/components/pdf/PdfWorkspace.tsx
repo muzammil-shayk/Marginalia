@@ -7,21 +7,16 @@
  * third party's permission.
  */
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useReadingProgress } from '../../hooks/useReadingProgress';
-import { GlobalWorkerOptions, type PDFDocumentProxy } from 'pdfjs-dist';
+import React, { useMemo } from 'react';
+import { GlobalWorkerOptions } from 'pdfjs-dist';
 import { Loader2, ArrowLeft, Check } from '../icons';
 import type { ThemeStore } from '../themeStore';
 import { AnnotationFocus, Screen, TransitionType, UserSettings } from '../../types';
-import { FractionRect, pageToolFor } from './annotationModel';
+import { pageToolFor } from './annotationModel';
 import { BlackoutExportDialog } from './workspace/BlackoutExportDialog';
-import { useAnnotationHistory } from './useAnnotationHistory';
-import { gateWhileBusy } from '../../hooks/debouncedSaver';
 import { ErrorDialog } from '../ErrorDialog';
-import { SelectionAnchor } from './SelectionPopover';
-import { originalDocumentUrl, type PdfViewMode } from '../../utils/documentStorage';
 import { usePdfToolStyles } from './workspace/usePdfToolStyles';
-import { DEFAULT_ZOOM } from './workspace/docState';
+import { useWorkspaceState } from './workspace/workspaceState';
 import { useMarkGeometry } from './workspace/useMarkGeometry';
 import { usePageEdits } from './workspace/usePageEdits';
 import { useWorkspaceExtras } from './workspace/useWorkspaceExtras';
@@ -85,131 +80,25 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   onAddThemes,
   jumpToPage
 }) => {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
-  const pageCount = pdf?.numPages ?? 0;
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [scale, setScale] = useState(DEFAULT_ZOOM);
-  /** Single page per row, or two side by side like an open book. */
-  const [viewMode, setViewMode] = useState<PdfViewMode>('single');
-  /** Guards the one-time fit, so re-rendering never overrides a zoom the reader chose. */
-  const fittedRef = useRef<string | null>(null);
-  /** Guards the one-time restore of the last page read, the same way `fittedRef` guards zoom. */
-  const restoredPageRef = useRef<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(1);
-  // How far through the PDF the reader has got (page of pages), saved debounced by the hook.
-  const reportProgress = useReadingProgress(docId);
-  useEffect(() => {
-    if (pageCount > 0) reportProgress(currentPage, pageCount);
-  }, [currentPage, pageCount, reportProgress]);
-  const { maskMode, setMaskMode, activeColor, activeThemeId, activeThemeIds, toggleActiveTheme, bracketSide, noteStyle, setActiveThemeId, setBracketSide, setNoteStyle, setTextAlign, setTextBold, setTextFont, setTextItalic, setTextSize, setTool, setToolColor, setToolStrokeStyle, setToolWeight, textAlign, textBold, textFont, textItalic, textSize, tool, toolColors, toolStrokeStyles, toolWeights } = usePdfToolStyles({ settings });
+  // State grouped by concern (marks, selection, view, status); each hook takes and returns groups.
+  const { marks, selection, view, status } = useWorkspaceState(docId, focus);
+  const styles = usePdfToolStyles({ settings });
+  const { tool, maskMode, toolWeights, toolStrokeStyles } = styles;
   // The page acts as the mask's mode (words, box, freehand); the toolbar keeps showing Black it out.
   const pageTool = pageToolFor(tool, maskMode);
   const pageToolWeights = useMemo(() => ({ ...toolWeights, maskPen: toolWeights.mask }), [toolWeights]);
   const pageToolStrokeStyles = useMemo(() => ({ ...toolStrokeStyles, maskPen: toolStrokeStyles.mask }), [toolStrokeStyles]);
 
-  /**
-   * The marks, behind an undo history.
-   *
-   * `commit` replaces `setAnnotations` everywhere below, which is what makes every tool undoable
-   * without each one having to opt in — see `useAnnotationHistory`. `reset` is used only when the
-   * stored set is read from disk, so undo can never reach back past the moment the document
-   * opened and erase work from an earlier session.
-   */
-  const {
-    annotations,
-    commit,
-    reset: resetAnnotations,
-    undo: undoHistory,
-    redo: redoHistory,
-    canUndo,
-    canRedo
-  } = useAnnotationHistory();
-  /**
-   * True while a page insert/delete runs. Marks drawn then would carry pre-renumbering page
-   * numbers and be dropped, so every mark change (tools, undo, redo) is ignored meanwhile.
-   */
-  const pageOpBusyRef = useRef(false);
-  const setAnnotations = useMemo(() => gateWhileBusy(() => pageOpBusyRef.current, commit), [commit]);
-  const undo = useMemo(() => gateWhileBusy(() => pageOpBusyRef.current, undoHistory), [undoHistory]);
-  const redo = useMemo(() => gateWhileBusy(() => pageOpBusyRef.current, redoHistory), [redoHistory]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [draftText, setDraftText] = useState('');
-  /**
-   * Whatever last failed in here.
-   *
-   * These operations used to fail into `console.error` or a bare `return`: an export that
-   * produced no file, an inserted page that never appeared, a save that silently did not happen.
-   * The last one is the reason this exists at all — marks the reader believes are on disk and are
-   * not is the only failure in Marginalia that loses work.
-   */
-  const [failure, setFailure] = useState<string | null>(null);
-
-  /**
-   * True once this document's zoom has been decided and applied.
-   *
-   * The instance navigator waits for it. Fitting the zoom re-lays out every page, which throws
-   * away any scroll offset set before it — so jumping to the first mark the moment the marks
-   * loaded landed correctly and was then silently undone, leaving the reader on page 1 of a
-   * 180-page book with a pill claiming to be showing them mark 1 of 2.
-   */
-  const [layoutSettled, setLayoutSettled] = useState(false);
-
-  /** Cleared when the reader dismisses the navigator; re-seeded if they arrive with a new focus. */
-  const [activeFocus, setActiveFocus] = useState(focus ?? null);
-  useEffect(() => setActiveFocus(focus ?? null), [focus]);
-
-  const [isPanelOpen, setIsPanelOpen] = useState(false);
-  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved'>('idle');
-  const [isExporting, setIsExporting] = useState(false);
-  const [isLoaded, setIsLoaded] = useState(false);
-
-  /**
-   * The text the reader has selected, remembered independently of which tool is active.
-   *
-   * This is what makes both orders of operation work. Selecting text and THEN tapping Highlight
-   * has to apply to that selection, so the selection cannot be discarded just because no marking
-   * tool was active when it was made. It is held until the reader selects something else or
-   * clicks away, which also lets the same tool be tapped repeatedly to toggle the mark on and off.
-   *
-   * A selection can cross a page break, so it is stored as one group per page.
-   */
-  const [pendingSelection, setPendingSelection] = useState<
-    { page: number; rects: FractionRect[]; quote: string }[] | null
-  >(null);
-  /** Where to put the selection menu, in viewport coordinates. */
-  const [selectionAnchor, setSelectionAnchor] = useState<SelectionAnchor | null>(null);
-  /** Which tool's colour/thickness submenu to open next — see the selection menu below. */
-  const [openSubmenuFor, setOpenSubmenuFor] = useState<string | null>(null);
-  /**
-   * When a tool's options panel last closed, and which tool's it was.
-   *
-   * A press on the tool button lands outside the panel, so the panel dismisses itself on
-   * `pointerdown` — before the button's `click` handler has run. By the time the handler asks
-   * "is this panel open?" the answer is already no, and it would dutifully open it again: the
-   * panel would flicker shut and back, and could never be closed by tapping the tool. Recording
-   * the moment it closed is how the handler tells "the press I am handling closed it" from "it
-   * was closed long before this press".
-   */
-  const submenuClosedAt = useRef<{ tool: string; at: number } | null>(null);
-
-  /**
-   * Bumped after a page is inserted, to force the PDF to be refetched. `fileUrl` is otherwise a
-   * stable string keyed only on `docId`, and the browser (and pdf.js's own cache) would
-   * otherwise keep serving the pre-insertion bytes it already has for that exact URL.
-   */
-  const [fileVersion, setFileVersion] = useState(0);
-  const fileUrl = `${originalDocumentUrl(docId, 'inline')}&v=${fileVersion}`;
-  const { saver, zoomTouchedRef } = usePdfDocument({ annotations, docId, fileUrl, isLoaded, pdf, resetAnnotations, saveState, setAnnotations, setFailure, setIsLoaded, setLoadError, setPdf, setSaveState, settings });
-  const { createAnnotation, deleteAnnotation, retagAnnotation, saveEditing, startEditing, startEditingId, updateAnnotation } = useMarkMutations({ annotations, draftText, editingId, setAnnotations, setDraftText, setEditingId, setSelectedId, settings });
-  const { applyTextMark, createNoteForSelection, createReactionForSelection, handleBracketSideChange, handleNoteStyleChange, handleTextAlignChange, handleTextBoldChange, handleTextFontChange, handleTextItalicChange, handleTextSizeChange, handleToolColorChange, handleToolStrokeStyleChange, handleToolTap, handleToolWeightChange } = useTextMarking({ maskMode, activeThemeId, activeThemeIds, annotations, pendingSelection, scrollRef, selectedId, setAnnotations, setBracketSide, setNoteStyle, setOpenSubmenuFor, setPendingSelection, setSelectedId, setSelectionAnchor, setTextAlign, setTextBold, setTextFont, setTextItalic, setTextSize, setTool, setToolColor, setToolStrokeStyle, setToolWeight, settings, startEditingId, submenuClosedAt, tool, toolColors, toolWeights });
-  const { chooseSelectionTheme, createSelectionTheme } = useWorkspaceKeys({ activeThemeIds, toggleActiveTheme, createNoteForSelection, deleteAnnotation, editingId, handleToolTap, pendingSelection, redo, retagAnnotation, selectedId, selectionAnchor, setActiveThemeId, setSelectedId, setSelectionAnchor, setTool, setToolColor, settings, themeStore, tool, undo });
-  const { bookOn, bookRef, bookTurnRef, fitPage, openPage, fitWidth, goToPage, handleViewModeChange, pageRef, reduceMotion, scrollAnimation } = usePdfNavigation({ tool, currentPage, docId, fittedRef, jumpToPage, pageCount, pdf, restoredPageRef, resumeReading, scale, scrollRef, setCurrentPage, setLayoutSettled, setScale, setViewMode, viewMode, zoomTouchedRef });
-  const { askRedact, setAskRedact, exportPdf, blackoutPages, archive, find, handleExport, markLinksFor, scrollToAnnotation } = useWorkspaceExtras({ annotations, bookTurnRef, currentPage, docId, documentTitle, editingId, fileUrl, goToPage, isDark, onAddThemes, pageRef, pdf, reduceMotion, resetAnnotations, saver, scrollAnimation, scrollRef, setAnnotations, setFailure, setIsExporting, setSelectedId, settings });
-  const { handleDeletePage, handleInsertPage, insertHeight, insertPageMenuOpen, insertPlacement, isDeletingPage, isInsertingPage, setInsertHeight, setInsertPageMenuOpen, setInsertPlacement } = usePageEdits({ currentPage, docId, goToPage, pageCount, pageOpBusyRef, resetAnnotations, saver, setFailure, setFileVersion });
-  const { byPage, editing, markRect, popoverTopInset, selectedMark } = useMarkGeometry({ annotations, editingId, focusMode, scale, scrollRef, selectedId });
+  const { saver, zoomTouchedRef } = usePdfDocument({ docId, settings, marks, view, status });
+  const mutations = useMarkMutations({ settings, marks, selection });
+  const marking = useTextMarking({ settings, styles, marks, selection, scrollRef: view.scrollRef, startEditingId: mutations.startEditingId });
+  const themePicker = useWorkspaceKeys({ settings, themeStore, styles, marks, selection, mutations, marking });
+  const nav = usePdfNavigation({ tool, docId, jumpToPage, resumeReading, zoomTouchedRef, view });
+  const extras = useWorkspaceExtras({ docId, documentTitle, isDark, onAddThemes, saver, settings, marks, selection, view, status, nav });
+  const pageEdits = usePageEdits({ docId, goToPage: nav.goToPage, saver, marks, view, status });
+  const geometry = useMarkGeometry({ focusMode, marks, selection, view });
+  const { saveState, failure, setFailure } = status;
+  const { archive, askRedact, setAskRedact, exportPdf, blackoutPages } = extras;
 
   return (
     <div
@@ -253,16 +142,16 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         </span>
       </header>
 
-      <WorkspaceToolbar maskMode={maskMode} setMaskMode={setMaskMode} activeThemeId={activeThemeId} annotations={annotations} archive={archive} bracketSide={bracketSide} canRedo={canRedo} canUndo={canUndo} currentPage={currentPage} find={find} fitPage={fitPage} fitWidth={fitWidth} focusMode={focusMode} goToPage={goToPage} handleBracketSideChange={handleBracketSideChange} handleExport={handleExport} handleNoteStyleChange={handleNoteStyleChange} handleTextAlignChange={handleTextAlignChange} handleTextBoldChange={handleTextBoldChange} handleTextFontChange={handleTextFontChange} handleTextItalicChange={handleTextItalicChange} handleTextSizeChange={handleTextSizeChange} handleToolColorChange={handleToolColorChange} handleToolStrokeStyleChange={handleToolStrokeStyleChange} handleToolTap={handleToolTap} handleToolWeightChange={handleToolWeightChange} handleViewModeChange={handleViewModeChange} isDark={isDark} isDeletingPage={isDeletingPage} isExporting={isExporting} isInsertingPage={isInsertingPage} isPanelOpen={isPanelOpen} noteStyle={noteStyle} onToggleFocus={onToggleFocus} openSubmenuFor={openSubmenuFor} pageCount={pageCount} pendingSelection={pendingSelection} redo={redo} scale={scale} selectedId={selectedId} setActiveThemeId={setActiveThemeId} setInsertPageMenuOpen={setInsertPageMenuOpen} setIsPanelOpen={setIsPanelOpen} setOpenSubmenuFor={setOpenSubmenuFor} setScale={setScale} settings={settings} submenuClosedAt={submenuClosedAt} textAlign={textAlign} textBold={textBold} textFont={textFont} textItalic={textItalic} textSize={textSize} tool={tool} toolColors={toolColors} toolStrokeStyles={toolStrokeStyles} toolWeights={toolWeights} undo={undo} viewMode={viewMode} zoomTouchedRef={zoomTouchedRef} />
+      <WorkspaceToolbar settings={settings} isDark={isDark} focusMode={focusMode} onToggleFocus={onToggleFocus} zoomTouchedRef={zoomTouchedRef} styles={styles} marking={marking} marks={marks} selection={selection} view={view} status={status} nav={nav} extras={extras} pageEdits={pageEdits} />
 
-      <WorkspaceBody openPage={openPage} activeColor={activeColor} activeThemeIds={activeThemeIds} annotations={annotations} bookOn={bookOn} bookRef={bookRef} bracketSide={bracketSide} byPage={byPage} createAnnotation={createAnnotation} currentPage={currentPage} deleteAnnotation={deleteAnnotation} goToPage={goToPage} handleDeletePage={handleDeletePage} hoveredId={hoveredId} isDark={isDark} isPanelOpen={isPanelOpen} loadError={loadError} noteStyle={noteStyle} pageCount={pageCount} pdf={pdf} retagAnnotation={retagAnnotation} scale={scale} scrollRef={scrollRef} scrollToAnnotation={scrollToAnnotation} selectedId={selectedId} setCurrentPage={setCurrentPage} setHoveredId={setHoveredId} setSelectedId={setSelectedId} settings={settings} startEditing={startEditing} textAlign={textAlign} textBold={textBold} textFont={textFont} textItalic={textItalic} textSize={textSize} tool={pageTool} toolStrokeStyles={pageToolStrokeStyles} toolWeights={pageToolWeights} updateAnnotation={updateAnnotation} viewMode={viewMode} />
+      <WorkspaceBody settings={settings} isDark={isDark} styles={styles} pageTools={{ tool: pageTool, toolStrokeStyles: pageToolStrokeStyles, toolWeights: pageToolWeights }} marks={marks} mutations={mutations} geometry={geometry} selection={selection} view={view} status={status} nav={nav} extras={extras} pageEdits={pageEdits} />
 
       <ErrorDialog open={Boolean(failure)} message={failure ?? ''} onClose={() => setFailure(null)} />
       {archive.ui}
 
-      <WorkspacePopovers activeFocus={activeFocus} activeThemeId={activeThemeId} activeThemeIds={activeThemeIds} annotations={annotations} applyTextMark={applyTextMark} chooseSelectionTheme={chooseSelectionTheme} createNoteForSelection={createNoteForSelection} createReactionForSelection={createReactionForSelection} createSelectionTheme={createSelectionTheme} deleteAnnotation={deleteAnnotation} documentTitle={documentTitle} editing={editing} isDark={isDark} isLoaded={isLoaded} layoutSettled={layoutSettled} markLinksFor={markLinksFor} markRect={markRect} pageCount={pageCount} pendingSelection={pendingSelection} popoverTopInset={popoverTopInset} scrollRef={scrollRef} scrollToAnnotation={scrollToAnnotation} selectedMark={selectedMark} selectionAnchor={selectionAnchor} setActiveFocus={setActiveFocus} setHoveredId={setHoveredId} setSelectedId={setSelectedId} setSelectionAnchor={setSelectionAnchor} setTool={setTool} settings={settings} startEditing={startEditing} themeStore={themeStore} toolColors={toolColors} updateAnnotation={updateAnnotation} />
+      <WorkspacePopovers documentTitle={documentTitle} isDark={isDark} settings={settings} themeStore={themeStore} styles={styles} marking={marking} themePicker={themePicker} marks={marks} mutations={mutations} geometry={geometry} selection={selection} view={view} status={status} extras={extras} />
 
-      <WorkspaceDialogs currentPage={currentPage} deleteAnnotation={deleteAnnotation} draftText={draftText} editing={editing} handleInsertPage={handleInsertPage} insertHeight={insertHeight} insertPageMenuOpen={insertPageMenuOpen} insertPlacement={insertPlacement} isDark={isDark} isInsertingPage={isInsertingPage} saveEditing={saveEditing} setDraftText={setDraftText} setInsertHeight={setInsertHeight} setInsertPageMenuOpen={setInsertPageMenuOpen} setInsertPlacement={setInsertPlacement} />
+      <WorkspaceDialogs isDark={isDark} mutations={mutations} geometry={geometry} selection={selection} view={view} pageEdits={pageEdits} />
       <BlackoutExportDialog open={askRedact} pages={blackoutPages} isDark={isDark} onRedact={() => void exportPdf(true)} onKeep={() => void exportPdf(false)} onCancel={() => setAskRedact(false)} />
     </div>
   );

@@ -52,24 +52,31 @@ export function pageScroller(el: Element): HTMLElement {
   return (document.scrollingElement as HTMLElement) ?? document.documentElement;
 }
 
-export function phases(f: Flight) {
-  if (f.to === 'desk') {
-    const k = f.fast ? 600 / 1000 : 1;
-    const pull = f.fromSlot ? 300 * k : 0;
-    const arc = 550 * k;
-    const land = 150 * k;
-    const open = 400;
-    return { pull, arc, land, open, total: pull + arc + land + open };
-  }
+/** A flight to the desk, in ms: pull out of the slot, arc across, land, open the cover. */
+export function deskPhases(f: Pick<Flight, 'fast' | 'fromSlot'>) {
+  const k = f.fast ? 600 / 1000 : 1;
+  const pull = f.fromSlot ? 300 * k : 0;
+  const arc = 550 * k;
+  const land = 150 * k;
+  const open = 400;
+  return { pull, arc, land, open, total: pull + arc + land + open };
+}
+
+/** A flight back to the shelf, in ms: close the cover (as far as it is open), arc over, push in. */
+export function shelfPhases(f: Pick<Flight, 'fast' | 'from'>) {
   const trip = f.fast ? 600 : 1100;
   const close = (f.fast ? 200 : 300) * (-f.from.leaf / 180);
   return { close, arc: trip * 0.78, push: trip * 0.22, total: close + trip };
 }
 
+export function phases(f: Flight) {
+  return f.to === 'desk' ? deskPhases(f) : shelfPhases(f);
+}
+
 /** Where a flight is `ms` into it, given where it is headed now. */
 export function poseAt(f: Flight, ms: number, target: Pose): Pose {
-  const p = phases(f);
   if (f.to === 'desk') {
+    const p = deskPhases(f);
     const pulled = f.fromSlot ? { ...f.from, y: f.from.y - 14, s: f.from.s * 1.08 } : f.from;
     const preLand = { ...target, y: target.y - 16 };
     if (ms < p.pull) return mixPose(f.from, pulled, inOut(ms / p.pull));
@@ -85,6 +92,7 @@ export function poseAt(f: Flight, ms: number, target: Pose): Pose {
     return { ...target, leaf: -180 * inOut(clamp01((l - p.land) / p.open)) };
   }
   // Back to the shelf: close the cover where it lies, lift up and over, push into the slot.
+  const p = shelfPhases(f);
   const pre = { ...target, y: target.y - 24, s: 1.08 };
   if (ms < p.close) return { ...f.from, leaf: f.from.leaf * (1 - inOut(ms / p.close)) };
   const shut = { ...f.from, leaf: 0 };
@@ -196,6 +204,42 @@ export const ZOOM_PATIENCE = 3;
 export let zooming = false;
 
 export type Box = { x: number; y: number; w: number };
+
+/** The desk page's geometry the zoom starts from (see `zoomIntoReader`). */
+export type ZoomStart = {
+  /** The full page's centre at the desk pose. */
+  from: { x: number; y: number };
+  /** The whole page as printed, at desk scale. */
+  full: { w: number; h: number };
+  /** How much of the full page the desk's 3:4 crop hides at the sides and the bottom. */
+  crop: { x: number; bottom: number };
+  /** The sheet's laid-out width; its height is `bw * ratio`. */
+  bw: number;
+  ratio: number;
+  /** The sheet's scale at the desk. */
+  s0: number;
+};
+
+/**
+ * The sheet `e` (0 desk, 1 reader) of the way from the desk to `a`, the reader's page 1: its centre,
+ * scale, tilt, crop and shadow. Centre and width mix linearly, so every edge moves one way only.
+ */
+export function zoomFrame(e: number, a: Box, z: ZoomStart) {
+  const w = mix(z.full.w, a.w, e);
+  const s = w / z.bw;
+  const k = (1 - e) / z.s0;
+  return {
+    x: mix(z.from.x, a.x, e),
+    y: mix(z.from.y, a.y + (a.w * z.ratio) / 2, e),
+    s,
+    rotate: mix(DESK_TILT, 0, e),
+    clipX: z.crop.x * k,
+    clipBottom: z.crop.bottom * k,
+    radius: 3 / s,
+    shadow: 1 - clamp01(e / 0.5),
+    gutter: 1 - e
+  };
+}
 
 /**
  * Where the reader's first page will be, and whether it has painted. The PDF viewer's page 1 counts
@@ -313,16 +357,12 @@ export function zoomIntoReader(deskBook: HTMLElement, reduced: boolean, open: ()
   // The full page's box moves on straight lines (centre and width mixed linearly), so every edge,
   // the scale and the tilt each travel one way only.
   const draw = (e: number, a: Box) => {
-    const w = mix(full.w, a.w, e);
-    const s = w / bw;
-    const x = mix(from.x, a.x, e);
-    const y = mix(from.y, a.y + (a.w * ratio) / 2, e);
-    const k = (1 - e) / s0;
-    sheet.style.transform = `translate3d(${x - bw / 2}px, ${y - bh / 2}px, 0) rotate(${mix(DESK_TILT, 0, e)}deg) scale(${s})`;
-    sheet.style.clipPath = `inset(0 ${crop.x * k}px ${crop.bottom * k}px round ${3 / s}px)`;
-    shadow.style.opacity = String(1 - clamp01(e / 0.5));
+    const z = zoomFrame(e, a, { from, full, crop, bw, ratio, s0 });
+    sheet.style.transform = `translate3d(${z.x - bw / 2}px, ${z.y - bh / 2}px, 0) rotate(${z.rotate}deg) scale(${z.s})`;
+    sheet.style.clipPath = `inset(0 ${z.clipX}px ${z.clipBottom}px round ${z.radius}px)`;
+    shadow.style.opacity = String(z.shadow);
     // The binding's curve belongs to the book on the desk, not to the reader's page.
-    sheet.style.setProperty('--gutter', String(1 - e));
+    sheet.style.setProperty('--gutter', String(z.gutter));
   };
 
   const finish = () => {

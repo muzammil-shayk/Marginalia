@@ -5,28 +5,27 @@
 
 import React from 'react';
 import { Loader2, X, PanelTop, PanelBottom, FileStack } from '../../icons';
-import { Annotation } from '../annotationModel';
-import { PageInsertHeight, PageInsertPlacement } from '../../../utils/documentStorage';
+import type { WorkspaceSelection, WorkspaceView } from './workspaceState';
+import type { MarkMutations } from './useMarkMutations';
+import type { MarkGeometry } from './useMarkGeometry';
+import type { PageEdits } from './usePageEdits';
 
 export interface WorkspaceDialogsProps {
-  currentPage: number;
-  deleteAnnotation: (id: string) => void;
-  draftText: string;
-  editing: Annotation;
-  handleInsertPage: () => Promise<void>;
-  insertHeight: PageInsertHeight;
-  insertPageMenuOpen: boolean;
-  insertPlacement: PageInsertPlacement;
   isDark: boolean;
-  isInsertingPage: boolean;
-  saveEditing: () => void;
-  setDraftText: React.Dispatch<React.SetStateAction<string>>;
-  setInsertHeight: React.Dispatch<React.SetStateAction<PageInsertHeight>>;
-  setInsertPageMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  setInsertPlacement: React.Dispatch<React.SetStateAction<PageInsertPlacement>>;
+  mutations: Pick<MarkMutations, 'deleteAnnotation' | 'saveEditing'>;
+  geometry: Pick<MarkGeometry, 'editing'>;
+  selection: Pick<WorkspaceSelection, 'draftText' | 'setDraftText'>;
+  view: Pick<WorkspaceView, 'currentPage'>;
+  pageEdits: Pick<PageEdits, 'handleInsertPage' | 'insertHeight' | 'insertPageMenuOpen' | 'insertPlacement' | 'isInsertingPage' | 'setInsertHeight' | 'setInsertPageMenuOpen' | 'setInsertPlacement'>;
 }
 
-export const WorkspaceDialogs: React.FC<WorkspaceDialogsProps> = ({ currentPage, deleteAnnotation, draftText, editing, handleInsertPage, insertHeight, insertPageMenuOpen, insertPlacement, isDark, isInsertingPage, saveEditing, setDraftText, setInsertHeight, setInsertPageMenuOpen, setInsertPlacement }) => (
+export const WorkspaceDialogs: React.FC<WorkspaceDialogsProps> = ({ isDark, mutations, geometry, selection, view, pageEdits }) => {
+  const { deleteAnnotation, saveEditing } = mutations;
+  const { editing } = geometry;
+  const { draftText, setDraftText } = selection;
+  const { currentPage } = view;
+  const { handleInsertPage, insertHeight, insertPageMenuOpen, insertPlacement, isInsertingPage, setInsertHeight, setInsertPageMenuOpen, setInsertPlacement } = pageEdits;
+  return (
   <>
       {/* Comment editor. A small modal rather than an inline field: marks sit at arbitrary points,
           often near a page edge, where an inline editor would be clipped. */}
@@ -121,6 +120,7 @@ export const WorkspaceDialogs: React.FC<WorkspaceDialogsProps> = ({ currentPage,
               <button
                 type="button"
                 onClick={() => setInsertPageMenuOpen(false)}
+                aria-label="Close"
                 className="p-1 rounded-lg text-muted hover:text-stone-700 dark:hover:text-stone-200 cursor-pointer"
               >
                 <X className="w-4 h-4" />
@@ -215,4 +215,5 @@ export const WorkspaceDialogs: React.FC<WorkspaceDialogsProps> = ({ currentPage,
         </div>
       )}
   </>
-);
+  );
+};

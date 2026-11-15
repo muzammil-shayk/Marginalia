@@ -28,26 +28,26 @@ import { DEFAULT_WEIGHT, DEFAULT_BRACKET_WIDTH } from './layerHelpers';
 export interface UseDrawingDeps {
   activeColor: string;
   activeThemeIds: string[];
-  draftEnd: FractionPoint;
-  draftStart: FractionPoint;
+  draftEnd: FractionPoint | null;
+  draftStart: FractionPoint | null;
   drawingRef: React.RefObject<boolean>;
   onCreate: (annotation: Annotation) => void;
   onEdit: (id: string) => void;
   pageBox: () => DOMRect | null;
   pageNumber: number;
-  setDraftEnd: React.Dispatch<React.SetStateAction<FractionPoint>>;
-  setDraftStart: React.Dispatch<React.SetStateAction<FractionPoint>>;
-  setDraftStroke: React.Dispatch<React.SetStateAction<FractionPoint[]>>;
+  setDraftEnd: React.Dispatch<React.SetStateAction<FractionPoint | null>>;
+  setDraftStart: React.Dispatch<React.SetStateAction<FractionPoint | null>>;
+  setDraftStroke: React.Dispatch<React.SetStateAction<FractionPoint[] | null>>;
   tool: PdfTool;
-  toolBracketSide: BracketSide;
-  toolNoteStyle: NoteStyle;
-  toolStrokeStyle: StrokeStyle;
-  toolTextAlign: TextAlign;
-  toolTextBold: boolean;
-  toolTextFont: TextFont;
-  toolTextItalic: boolean;
-  toolTextSize: number;
-  toolWeight: number;
+  toolBracketSide: BracketSide | undefined;
+  toolNoteStyle: NoteStyle | undefined;
+  toolStrokeStyle: StrokeStyle | undefined;
+  toolTextAlign: TextAlign | undefined;
+  toolTextBold: boolean | undefined;
+  toolTextFont: TextFont | undefined;
+  toolTextItalic: boolean | undefined;
+  toolTextSize: number | undefined;
+  toolWeight: number | undefined;
 }
 
 export function useDrawing(deps: UseDrawingDeps) {

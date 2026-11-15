@@ -21,6 +21,8 @@ const path = require('path');
 const fs = require('fs');
 const { tryMigrateLibrary } = require('./storage.cjs');
 const { RENDER_PARTITION, guardRenderWindow } = require('./renderGuard.cjs');
+const { writeRenderTemp } = require('./renderTemp.cjs');
+const { isSafeExternalUrl, isAppNavigation } = require('./linkPolicy.cjs');
 const { requestFlush, createExitGuard, flushThenCheckpoint } = require('./flushOnExit.cjs');
 const { aiEnabledIn, registerAiSetting } = require('./aiSetting.cjs');
 const { registerTutorialSetting } = require('./tutorialSetting.cjs');
@@ -196,8 +198,8 @@ let serverModule = null;
  * document, so the HTML goes through a temp file instead.
  */
 async function renderPdfWithElectron(options) {
-  const tmpFile = path.join(app.getPath('temp'), `marginalia-export-${Date.now()}.html`);
-  await fs.promises.writeFile(tmpFile, options.html, 'utf-8');
+  // Its own private folder per export (see renderTemp.cjs); the guard below allows exactly this file.
+  const { file: tmpFile, dispose } = await writeRenderTemp(app.getPath('temp'), options.html);
 
   const win = new BrowserWindow({
     show: false,
@@ -247,7 +249,7 @@ async function renderPdfWithElectron(options) {
   } finally {
     win.destroy();
     releaseGuard();
-    fs.promises.unlink(tmpFile).catch(() => {});
+    dispose();
   }
 }
 
@@ -319,18 +321,9 @@ function createWindow() {
    * Passing an unvalidated URL there turns any link in the page into a way to launch things
    * outside the app, so the scheme is checked first.
    */
+  // http(s), and mail to the feedback address with only a subject and body (see linkPolicy.cjs).
   const openExternalIfSafe = (url) => {
-    let parsed;
-    try {
-      parsed = new URL(url);
-    } catch {
-      return;
-    }
-    // mailto: only to the app's own feedback address (Send feedback), never any other.
-    const feedbackMail = parsed.protocol === 'mailto:' && parsed.pathname.toLowerCase() === 'marginaliaannotator@gmail.com';
-    if (parsed.protocol === 'http:' || parsed.protocol === 'https:' || feedbackMail) {
-      shell.openExternal(url);
-    }
+    if (isSafeExternalUrl(url)) shell.openExternal(url);
   };
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -346,8 +339,8 @@ function createWindow() {
    * bridge attached. Anything that is not the local app is refused and sent to the browser.
    */
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    const target = new URL(url);
-    if (target.host !== `127.0.0.1:${serverPort}`) {
+    // An unparseable URL is refused too (isAppNavigation is false), never thrown inside the handler.
+    if (!isAppNavigation(url, serverPort)) {
       event.preventDefault();
       openExternalIfSafe(url);
     }

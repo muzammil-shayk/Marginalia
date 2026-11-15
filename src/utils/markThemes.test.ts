@@ -30,8 +30,11 @@ test('an older mark with one theme reads as a list of one; untagged or missing a
   assert.deepEqual(themeIdsOf(null), []);
 });
 
-test('the list wins over the older field, without blanks or repeats, order kept', () => {
-  assert.deepEqual(themeIdsOf({ themeIds: ['ruin', '', 'love', 'ruin', 7], themeId: 'other' }), ['ruin', 'love']);
+// The list is read without blanks or repeats. (It used to win over a different `themeId` too; since
+// the review of 2.9.0 a different `themeId` is an older version's refiling and leads: see below.)
+test('the list is read without blanks or repeats, order kept', () => {
+  assert.deepEqual(themeIdsOf({ themeIds: ['ruin', '', 'love', 'ruin', 7] }), ['ruin', 'love']);
+  assert.deepEqual(themeIdsOf({ themeIds: ['ruin', '', 'love', 'ruin', 7], themeId: 'ruin' }), ['ruin', 'love']);
   assert.equal(mainThemeId({ themeIds: ['ruin', 'love'] }), 'ruin');
   assert.equal(mainThemeId({ themeIds: [] }), null);
   assert.equal(hasTheme({ themeIds: ['ruin', 'love'] }, 'love'), true);
@@ -88,4 +91,14 @@ test('the dots of a mark under several themes: one per theme after the main, up 
   assert.equal(two.label, 'Also filed under B, Untitled');
   const many = extraThemeDots(['a', 'b', 'c', 'd', 'e'], themes);
   assert.deepEqual([many.dots.length, many.more], [3, 1]);
+});
+
+test('themeIdsOf: a themeId changed by an older version (downgrade, then upgrade again) becomes the main theme', () => {
+  // Written by this version as ['love', 'ruin'] + themeId 'love'; an older version then refiled it under 'sea'.
+  assert.deepEqual(themeIdsOf({ themeIds: ['love', 'ruin'], themeId: 'sea' }), ['sea', 'love', 'ruin']);
+  // Refiled under one of its other themes: that one moves first, nothing repeats.
+  assert.deepEqual(themeIdsOf({ themeIds: ['love', 'ruin'], themeId: 'ruin' }), ['ruin', 'love']);
+  // In step: unchanged.
+  assert.deepEqual(themeIdsOf({ themeIds: ['love', 'ruin'], themeId: 'love' }), ['love', 'ruin']);
+  assert.deepEqual(themeIdsOf({ themeIds: ['love'] }), ['love']);
 });

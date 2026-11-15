@@ -3,10 +3,10 @@
  * repair of quotes that picked up app menus (moved verbatim from PdfWorkspace).
  */
 
-import React, { useEffect, useMemo, useRef } from 'react';
-import { getDocument, type PDFDocumentProxy } from 'pdfjs-dist';
+import { useEffect, useMemo, useRef } from 'react';
+import { getDocument } from 'pdfjs-dist';
 import { UserSettings } from '../../../types';
-import { Annotation } from '../annotationModel';
+import { Annotation, asPdfMarks } from '../annotationModel';
 import { createDebouncedSaver } from '../../../hooks/debouncedSaver';
 import { registerUnloadFlush } from '../../../hooks/unloadFlush';
 import {
@@ -22,26 +22,21 @@ import {
   saveAnnotations
 } from '../../../utils/documentStorage';
 import { PDF_WASM_URL, SAVE_DEBOUNCE_MS } from './docState';
+import type { WorkspaceMarks, WorkspaceStatus, WorkspaceView } from './workspaceState';
 
 export interface UsePdfDocumentDeps {
-  annotations: Annotation[];
   docId: string;
-  fileUrl: string;
-  isLoaded: boolean;
-  pdf: PDFDocumentProxy;
-  resetAnnotations: (next: Annotation[]) => void;
-  saveState: "idle" | "saving" | "saved";
-  setAnnotations: (next: Annotation[] | ((prev: Annotation[]) => Annotation[])) => void;
-  setFailure: React.Dispatch<React.SetStateAction<string>>;
-  setIsLoaded: React.Dispatch<React.SetStateAction<boolean>>;
-  setLoadError: React.Dispatch<React.SetStateAction<string>>;
-  setPdf: React.Dispatch<React.SetStateAction<PDFDocumentProxy>>;
-  setSaveState: React.Dispatch<React.SetStateAction<"idle" | "saving" | "saved">>;
   settings: UserSettings;
+  marks: Pick<WorkspaceMarks, 'annotations' | 'resetAnnotations' | 'setAnnotations'>;
+  view: Pick<WorkspaceView, 'pdf' | 'setPdf'>;
+  status: Pick<WorkspaceStatus, 'fileUrl' | 'isLoaded' | 'setIsLoaded' | 'setLoadError' | 'saveState' | 'setSaveState' | 'setFailure'>;
 }
 
 export function usePdfDocument(deps: UsePdfDocumentDeps) {
-  const { annotations, docId, fileUrl, isLoaded, pdf, resetAnnotations, saveState, setAnnotations, setFailure, setIsLoaded, setLoadError, setPdf, setSaveState, settings } = deps;
+  const { docId, settings } = deps;
+  const { annotations, resetAnnotations, setAnnotations } = deps.marks;
+  const { pdf, setPdf } = deps.view;
+  const { fileUrl, isLoaded, setIsLoaded, setLoadError, saveState, setSaveState, setFailure } = deps.status;
 
   // ── Document ──
   useEffect(() => {
@@ -83,7 +78,7 @@ export function usePdfDocument(deps: UsePdfDocumentDeps) {
         );
         return;
       }
-      resetAnnotations((stored.annotations as unknown as Annotation[]) || []);
+      resetAnnotations(asPdfMarks(stored.annotations));
       setIsLoaded(true);
     });
     return () => {
@@ -103,7 +98,7 @@ export function usePdfDocument(deps: UsePdfDocumentDeps) {
   const saver = useMemo(
     () =>
       createDebouncedSaver<Annotation[]>({
-        save: (marks) => saveAnnotations(docId, marks as never),
+        save: (marks) => saveAnnotations(docId, marks),
         delayMs: SAVE_DEBOUNCE_MS,
         onResult: (ok) => {
           setSaveState(ok ? 'saved' : 'idle');
@@ -192,6 +187,7 @@ export function usePdfDocument(deps: UsePdfDocumentDeps) {
     return () => {
       cancelled = true;
     };
+    // Once per open document (quoteRepairDone): it reads the marks, saver and themes as they are then, so mark edits must not re-run it.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdf, isLoaded, docId]);
 
@@ -203,3 +199,5 @@ export function usePdfDocument(deps: UsePdfDocumentDeps) {
 
   return { saver, zoomTouchedRef };
 }
+
+export type PdfDocumentState = ReturnType<typeof usePdfDocument>;

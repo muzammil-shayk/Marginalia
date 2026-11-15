@@ -3,8 +3,8 @@
  * paused, marks renumbered on the server, then reloaded) (moved verbatim from PdfWorkspace).
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { Annotation } from '../annotationModel';
+import { useState, useEffect, useCallback } from 'react';
+import { Annotation, asPdfMarks } from '../annotationModel';
 import { runPageOperation, type DebouncedSaver } from '../../../hooks/debouncedSaver';
 import {
   deletePage,
@@ -13,21 +13,22 @@ import {
   PageInsertHeight,
   PageInsertPlacement
 } from '../../../utils/documentStorage';
+import type { WorkspaceMarks, WorkspaceStatus, WorkspaceView } from './workspaceState';
 
 export interface UsePageEditsDeps {
-  currentPage: number;
   docId: string;
   goToPage: (page: number, animate?: boolean) => void;
-  pageCount: number;
-  pageOpBusyRef: React.RefObject<boolean>;
-  resetAnnotations: (next: Annotation[]) => void;
   saver: DebouncedSaver<Annotation[]>;
-  setFailure: React.Dispatch<React.SetStateAction<string>>;
-  setFileVersion: React.Dispatch<React.SetStateAction<number>>;
+  marks: Pick<WorkspaceMarks, 'pageOpBusyRef' | 'resetAnnotations'>;
+  view: Pick<WorkspaceView, 'currentPage' | 'pageCount'>;
+  status: Pick<WorkspaceStatus, 'setFailure' | 'setFileVersion'>;
 }
 
 export function usePageEdits(deps: UsePageEditsDeps) {
-  const { currentPage, docId, goToPage, pageCount, pageOpBusyRef, resetAnnotations, saver, setFailure, setFileVersion } = deps;
+  const { docId, goToPage, saver } = deps;
+  const { pageOpBusyRef, resetAnnotations } = deps.marks;
+  const { currentPage, pageCount } = deps.view;
+  const { setFailure, setFileVersion } = deps.status;
 
   // ── Insert page ──
   const [insertPageMenuOpen, setInsertPageMenuOpen] = useState(false);
@@ -48,7 +49,7 @@ export function usePageEdits(deps: UsePageEditsDeps) {
   /** Re-reads the marks the server just renumbered. */
   const reloadMarks = useCallback(async () => {
     const stored = await fetchAnnotations(docId);
-    return stored ? ((stored.annotations as unknown as Annotation[]) || []) : null;
+    return stored ? asPdfMarks(stored.annotations) : null;
   }, [docId]);
 
   const handleInsertPage = useCallback(async () => {
@@ -121,3 +122,5 @@ export function usePageEdits(deps: UsePageEditsDeps) {
 
   return { handleDeletePage, handleInsertPage, insertHeight, insertPageMenuOpen, insertPlacement, isDeletingPage, isInsertingPage, setInsertHeight, setInsertPageMenuOpen, setInsertPlacement };
 }
+
+export type PageEdits = ReturnType<typeof usePageEdits>;

@@ -33,3 +33,12 @@ test('fields changed this session keep the reader’s value; a deleted or rename
   assert.equal(out.fontSize, 24);
   assert.deepEqual(out.activeThemes.map((x) => `${x.id}:${x.name}`), ['2:Renamed', '9:9']);
 });
+
+test('a key deleted in memory during launch is not brought back from the disk copy', () => {
+  const atLaunch = { ...launch, poetry: { d1: true } } as Record<string, unknown> & typeof launch;
+  const { poetry: _gone, ...current } = atLaunch;
+  const remote = { name: 'Shama', fontSize: 20, activeThemes: launch.activeThemes, poetry: { d1: true, d2: true } };
+  const out = mergeHydratedSettings(remote, atLaunch, current as typeof atLaunch);
+  assert.equal('poetry' in out, false);
+  assert.equal(out.name, 'Shama');
+});

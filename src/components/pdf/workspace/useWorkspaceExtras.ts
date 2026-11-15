@@ -3,46 +3,40 @@
  * archive (moved verbatim from PdfWorkspace).
  */
 
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { type PDFDocumentProxy } from 'pdfjs-dist';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useDocumentFind } from '../../FindBar';
 import { UserSettings } from '../../../types';
-import { Annotation, annotationBounds } from '../annotationModel';
+import { Annotation, annotationBounds, asPdfMarks } from '../annotationModel';
 import { blackoutsByPage } from '../export/redaction';
-import { exportAnnotatedPdf, downloadBlob } from '../exportAnnotatedPdf';
 import { excerpt, useMarksArchive } from '../../MarksArchive';
 import type { LinkOption, MarkLinks } from '../MarkProperties';
 import { linkMarks, linkedIds, unlinkMarks } from '../../../utils/markLinks';
 import { isAreaHighlight } from '../../../utils/areaMark';
 import type { DebouncedSaver } from '../../../hooks/debouncedSaver';
+import type { WorkspaceMarks, WorkspaceSelection, WorkspaceStatus, WorkspaceView } from './workspaceState';
+import type { PdfNavigation } from './usePdfNavigation';
 
 export interface UseWorkspaceExtrasDeps {
-  annotations: Annotation[];
-  bookTurnRef: React.RefObject<(page: number, animate: boolean) => void>;
-  currentPage: number;
   docId: string;
   documentTitle: string;
-  editingId: string;
-  fileUrl: string;
-  goToPage: (page: number, animate?: boolean) => void;
   isDark: boolean;
-  onAddThemes: (themes: UserSettings["activeThemes"]) => void;
-  pageRef: React.RefObject<number>;
-  pdf: PDFDocumentProxy;
-  reduceMotion: boolean;
-  resetAnnotations: (next: Annotation[]) => void;
+  onAddThemes: ((themes: UserSettings["activeThemes"]) => void) | undefined;
   saver: DebouncedSaver<Annotation[]>;
-  scrollAnimation: React.RefObject<number>;
-  scrollRef: React.RefObject<HTMLDivElement>;
-  setAnnotations: (next: Annotation[] | ((prev: Annotation[]) => Annotation[])) => void;
-  setFailure: React.Dispatch<React.SetStateAction<string>>;
-  setIsExporting: React.Dispatch<React.SetStateAction<boolean>>;
-  setSelectedId: React.Dispatch<React.SetStateAction<string>>;
   settings: UserSettings;
+  marks: Pick<WorkspaceMarks, 'annotations' | 'resetAnnotations' | 'setAnnotations'>;
+  selection: Pick<WorkspaceSelection, 'editingId' | 'setSelectedId'>;
+  view: Pick<WorkspaceView, 'currentPage' | 'pdf' | 'scrollRef'>;
+  status: Pick<WorkspaceStatus, 'fileUrl' | 'setFailure' | 'setIsExporting'>;
+  nav: Pick<PdfNavigation, 'bookTurnRef' | 'goToPage' | 'pageRef' | 'reduceMotion' | 'scrollAnimation'>;
 }
 
 export function useWorkspaceExtras(deps: UseWorkspaceExtrasDeps) {
-  const { annotations, bookTurnRef, currentPage, docId, documentTitle, editingId, fileUrl, goToPage, isDark, onAddThemes, pageRef, pdf, reduceMotion, resetAnnotations, saver, scrollAnimation, scrollRef, setAnnotations, setFailure, setIsExporting, setSelectedId, settings } = deps;
+  const { docId, documentTitle, isDark, onAddThemes, saver, settings } = deps;
+  const { annotations, resetAnnotations, setAnnotations } = deps.marks;
+  const { editingId, setSelectedId } = deps.selection;
+  const { currentPage, pdf, scrollRef } = deps.view;
+  const { fileUrl, setFailure, setIsExporting } = deps.status;
+  const { bookTurnRef, goToPage, pageRef, reduceMotion, scrollAnimation } = deps.nav;
 
   /**
    * Brings a mark into view, reporting whether it could.
@@ -144,6 +138,7 @@ export function useWorkspaceExtras(deps: UseWorkspaceExtrasDeps) {
   const handleExport = useCallback(async () => {
     if (blackoutPages) setAskRedact(true);
     else await exportPdf(false);
+    // `exportPdf` is declared below (naming it here would read it before it exists), so its own inputs are listed instead.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [blackoutPages, fileUrl, annotations, documentTitle, settings.terminologyColor, settings.activeThemes]);
 
@@ -153,6 +148,8 @@ export function useWorkspaceExtras(deps: UseWorkspaceExtrasDeps) {
     try {
       const safe = (documentTitle || 'document').replace(/[^a-z0-9]+/gi, '_').slice(0, 60);
       const name = `${safe}_${redact ? 'redacted' : 'annotated'}.pdf`;
+      // Loaded on first export: pdf-lib and fontkit stay out of the start-up bundle.
+      const { exportAnnotatedPdf, downloadBlob } = await import('../exportAnnotatedPdf');
       const blob = await exportAnnotatedPdf(fileUrl, annotations, name, settings.terminologyColor, settings.activeThemes, { redact });
       downloadBlob(blob, name);
     } catch (err) {
@@ -236,10 +233,10 @@ export function useWorkspaceExtras(deps: UseWorkspaceExtrasDeps) {
   const archive = useMarksArchive({
     docId,
     doc: { id: docId, title: documentTitle || 'document', format: 'PDF' },
-    entries: () => annotationsRef.current as never,
+    entries: () => annotationsRef.current,
     themes: settings.activeThemes,
     saver,
-    reset: (entries) => resetAnnotations(entries as unknown as Annotation[]),
+    reset: (entries) => resetAnnotations(asPdfMarks(entries)),
     onAddThemes: (t) => onAddThemes?.(t),
     isDark,
     teacher: settings.name
@@ -247,3 +244,5 @@ export function useWorkspaceExtras(deps: UseWorkspaceExtrasDeps) {
 
   return { askRedact, setAskRedact, exportPdf, blackoutPages, archive, find, handleExport, markLinksFor, scrollToAnnotation };
 }
+
+export type WorkspaceExtras = ReturnType<typeof useWorkspaceExtras>;

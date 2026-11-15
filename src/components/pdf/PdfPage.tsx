@@ -219,9 +219,9 @@ export const PdfPage: React.FC<PdfPageProps> = ({
 
       try {
         await task.promise;
-      } catch (err: any) {
+      } catch (err) {
         // Cancelling is the normal outcome of zooming or scrolling away mid-render, not a fault.
-        if (err?.name !== 'RenderingCancelledException') console.warn('PDF page render failed:', err);
+        if ((err as { name?: string } | null)?.name !== 'RenderingCancelledException') console.warn('PDF page render failed:', err);
         return;
       }
       // Kept for next time (a turn back, a scroll back). Off the critical path.

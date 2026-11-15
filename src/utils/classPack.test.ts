@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildClassPack, classPackFilename, parseClassPack } from './classPack';
+import { buildClassPack, classPackFilename, classPackHasBlackouts, parseClassPack } from './classPack';
 
 const mark = { id: 'm1', kind: 'highlight', anchor: { paragraphIndex: 0, start: 0, end: 4 }, themeId: 't1', color: '#aa0000' };
 
@@ -62,4 +62,24 @@ test('the original travels as base64 and the file name is safe', () => {
   const parsed = parseClassPack(pack({ document: { title: 'A/B', format: 'PDF', text: 'x', original: Buffer.from('%PDF').toString('base64') } }));
   assert.ok(parsed.ok && parsed.pack.document.original === 'JVBERg==');
   assert.equal(classPackFilename('A/B: odes?'), 'A B odes – class pack.marginalia-class');
+});
+
+test('a pack mark with a url() colour, odd themes or an odd fontSize is dropped', () => {
+  const p = JSON.parse(pack());
+  p.annotations.push(
+    { id: 'beacon', kind: 'highlight', page: 1, color: 'url(https://example.com/p.png)' },
+    { id: 'themes', kind: 'highlight', page: 1, themeIds: [{}] },
+    { id: 'size', kind: 'text', page: 1, fontSize: '9px' }
+  );
+  const parsed = parseClassPack(p);
+  assert.ok(parsed.ok);
+  if (parsed.ok) assert.deepEqual(parsed.pack.annotations.map((a) => a.id), ['m1']);
+});
+
+test('classPackHasBlackouts: true when any mark is a black-out (words, box or freehand), so the UI can warn', () => {
+  assert.equal(classPackHasBlackouts([mark]), false);
+  assert.equal(classPackHasBlackouts([]), false);
+  assert.equal(classPackHasBlackouts([mark, { id: 'b', kind: 'rect', page: 1, filled: true, blackout: true }]), true);
+  assert.equal(classPackHasBlackouts([{ id: 'p', kind: 'ink', page: 1, blackout: true }]), true);
+  assert.equal(classPackHasBlackouts([{ id: 'm', kind: 'rect', page: 1, filled: true }]), true, 'a filled box (Mask) hides words too');
 });

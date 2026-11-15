@@ -36,3 +36,15 @@ export function fitScale(
   const down = (area.height - AREA_PAD_Y - (rows - 1) * PAGE_GAP_PX) / (rows * page.height);
   return Math.min(across, down);
 }
+
+/**
+ * The zoom a document first opens at (nothing remembered yet): `defaultZoom`, unless the page at
+ * that zoom would be under half or over 2.5x the column's width (a tiny scan, an oversized page
+ * box); then the width fit, kept between 0.5 and 3.
+ */
+export function openingZoom(pageWidth: number, columnWidth: number, defaultZoom: number): number {
+  const fit = (columnWidth - 48) / pageWidth;
+  const atDefault = pageWidth * defaultZoom;
+  const badFit = atDefault < columnWidth * 0.5 || atDefault > columnWidth * 2.5;
+  return badFit ? Math.max(0.5, Math.min(3, fit)) : defaultZoom;
+}

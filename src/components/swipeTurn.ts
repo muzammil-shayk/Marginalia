@@ -22,6 +22,36 @@ export function swipeStep(dx: number, dy: number, ms: number): -1 | 0 | 1 {
   return dx < 0 ? 1 : -1;
 }
 
+type WheelLike = Pick<WheelEvent, 'ctrlKey' | 'deltaX' | 'deltaY' | 'preventDefault'>;
+
+/**
+ * Sideways trackpad scrolling summed into one swipe. While `blocked()` (a tool armed, text
+ * selected) the wheel event is left alone, so the page can still scroll sideways.
+ */
+export function createWheelTurn(
+  onStep: (step: 1 | -1) => void,
+  blocked: () => boolean,
+  now: () => number = () => performance.now()
+) {
+  let wheel = 0;
+  let wheelTimer: ReturnType<typeof setTimeout> | undefined;
+  let cooldownUntil = 0;
+  const onWheel = (e: WheelLike) => {
+    if (e.ctrlKey || Math.abs(e.deltaX) <= Math.abs(e.deltaY) || blocked()) return;
+    e.preventDefault();
+    const t = now();
+    if (t < cooldownUntil) return;
+    wheel += e.deltaX;
+    clearTimeout(wheelTimer);
+    wheelTimer = setTimeout(() => (wheel = 0), 200);
+    if (Math.abs(wheel) < WHEEL_SWIPE_PX) return;
+    onStep(wheel > 0 ? 1 : -1);
+    wheel = 0;
+    cooldownUntil = t + WHEEL_COOLDOWN_MS;
+  };
+  return { onWheel, dispose: () => clearTimeout(wheelTimer) };
+}
+
 /**
  * Turns `step` pages when the element under `ref` is swiped. `enabled` false detaches it.
  * `blocked` (read at the moment of the gesture) is true while a swipe must not turn, such as a
@@ -37,9 +67,6 @@ export function useSwipeTurn(
     const el = ref.current;
     if (!el || !enabled) return;
     let start: { x: number; y: number; t: number; id: number } | null = null;
-    let wheel = 0;
-    let wheelTimer = 0;
-    let cooldownUntil = 0;
     const selecting = () => Boolean(window.getSelection()?.toString().trim());
 
     const onDown = (e: PointerEvent) => {
@@ -53,26 +80,14 @@ export function useSwipeTurn(
       if (step && !selecting() && !blocked?.()) onStep(step);
     };
     const onCancel = () => (start = null);
-    const onWheel = (e: WheelEvent) => {
-      if (e.ctrlKey || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-      e.preventDefault();
-      if (blocked?.() || selecting()) return;
-      const now = performance.now();
-      if (now < cooldownUntil) return;
-      wheel += e.deltaX;
-      window.clearTimeout(wheelTimer);
-      wheelTimer = window.setTimeout(() => (wheel = 0), 200);
-      if (Math.abs(wheel) < WHEEL_SWIPE_PX) return;
-      onStep(wheel > 0 ? 1 : -1);
-      wheel = 0;
-      cooldownUntil = now + WHEEL_COOLDOWN_MS;
-    };
+    const wheelTurn = createWheelTurn(onStep, () => Boolean(blocked?.()) || selecting());
+    const onWheel = wheelTurn.onWheel;
     el.addEventListener('pointerdown', onDown);
     el.addEventListener('pointerup', onUp);
     el.addEventListener('pointercancel', onCancel);
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => {
-      window.clearTimeout(wheelTimer);
+      wheelTurn.dispose();
       el.removeEventListener('pointerdown', onDown);
       el.removeEventListener('pointerup', onUp);
       el.removeEventListener('pointercancel', onCancel);

@@ -16,6 +16,7 @@ import { isImportableEntry, MAX_IMPORTED_MARKS } from './marksExport';
 import type { Theme } from './themes';
 import { themeIdsOf, writeAllThemes } from './markThemes';
 import type { TextStyle } from './pastedText';
+import { isBlackout } from '../components/pdf/annotationModel';
 
 export const CLASS_PACK_FORMAT = 'marginalia-class-pack';
 export const CLASS_PACK_VERSION = 1;
@@ -140,4 +141,13 @@ export function parseClassPack(body: unknown): ParsedClassPack {
 export function classPackFilename(title: string): string {
   const stem = title.replace(/[\\/:*?"<>|\u0000-\u001f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'document';
   return `${stem} – class pack${CLASS_PACK_EXTENSION}`;
+}
+
+/**
+ * Whether these marks include black-outs. The server builds the pack from the readable original;
+ * the renderer then swaps in the redacted copy before saving (`pdf/export/classPackRedaction`),
+ * and the export menu says the pack holds the cleaned copy.
+ */
+export function classPackHasBlackouts(marks: StoredEntry[]): boolean {
+  return marks.some((m) => isBlackout(m as unknown as Parameters<typeof isBlackout>[0]));
 }

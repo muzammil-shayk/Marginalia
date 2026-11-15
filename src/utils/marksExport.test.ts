@@ -15,7 +15,9 @@ import {
   mergeImportedMarks,
   themesToAdd,
   commonplaceMarkdown,
-  commonplaceText
+  commonplaceText,
+  isSafeColor,
+  withSafeColors
 } from './marksExport';
 import type { Annotation as StoredEntry } from './documentStorage';
 
@@ -219,4 +221,102 @@ test('commonplace plain text: same content without Markdown syntax', () => {
   assert.match(txt, /MEMORY/);
   assert.match(txt, /"All happy families are alike" \(Anna Karenina, p\. 3\)/);
   assert.doesNotMatch(txt, /^#/m);
+});
+
+// ── Import safety: colours, themes and sizes reach style strings ──────────────
+
+test('parseMarksJson drops marks whose colour is not a plain colour (url(), ;, parentheses)', () => {
+  const p = parseMarksJson(wrap([
+    { id: 'hex', kind: 'highlight', page: 1, color: '#ffd400' },
+    { id: 'short', kind: 'highlight', page: 1, color: '#abc' },
+    { id: 'named', kind: 'highlight', page: 1, color: 'black' },
+    { id: 'none', kind: 'highlight', page: 1 },
+    { id: 'beacon', kind: 'highlight', page: 1, color: 'url(https://example.com/p.png)' },
+    { id: 'gradient', kind: 'highlight', page: 1, color: 'red 50%), url(https://x/y)' },
+    { id: 'semi', kind: 'highlight', page: 1, color: '#000;background:red' },
+    { id: 'num', kind: 'highlight', page: 1, color: 7 }
+  ]));
+  assert.ok(p.ok);
+  if (p.ok) assert.deepEqual(p.annotations.map((e) => e.id), ['hex', 'short', 'named', 'none']);
+});
+
+test('parseMarksJson drops marks whose themes are not short id strings', () => {
+  const p = parseMarksJson(wrap([
+    { id: 'ok', kind: 'star', page: 1, themeIds: ['t1', 't2'], themeId: 't1' },
+    { id: 'old', kind: 'star', page: 1, themeId: null },
+    { id: 'notList', kind: 'star', page: 1, themeIds: 't1' },
+    { id: 'notStr', kind: 'star', page: 1, themeIds: [{ id: 't1' }] },
+    { id: 'long', kind: 'star', page: 1, themeIds: ['x'.repeat(200)] },
+    { id: 'badOld', kind: 'star', page: 1, themeId: 5 }
+  ]));
+  assert.ok(p.ok);
+  if (p.ok) assert.deepEqual(p.annotations.map((e) => e.id), ['ok', 'old']);
+});
+
+test('parseMarksJson drops marks whose fontSize is not a page fraction', () => {
+  const p = parseMarksJson(wrap([
+    { id: 'ok', kind: 'text', page: 1, fontSize: 0.024 },
+    { id: 'str', kind: 'text', page: 1, fontSize: '1px;background:url(x)' },
+    { id: 'huge', kind: 'text', page: 1, fontSize: 5000 },
+    { id: 'neg', kind: 'text', page: 1, fontSize: -1 }
+  ]));
+  assert.ok(p.ok);
+  if (p.ok) assert.deepEqual(p.annotations.map((e) => e.id), ['ok']);
+});
+
+test('isSafeColor: hex and plain colour names only', () => {
+  for (const c of ['#000', '#000f', '#a1b2c3', '#a1b2c3d4', 'black', 'transparent']) assert.equal(isSafeColor(c), true, c);
+  for (const c of ['url(x)', 'rgb(0,0,0)', 'red;', '#12345', '', 'red blue', 'expression(alert(1))', 7, null]) assert.equal(isSafeColor(c), false, String(c));
+});
+
+test('withSafeColors: a mark with an unsafe colour keeps everything but the colour', () => {
+  const out = withSafeColors([
+    { id: 'a', kind: 'highlight', page: 1, color: 'url(https://x/p)', quote: 'q' },
+    { id: 'b', kind: 'highlight', page: 1, color: '#fff' }
+  ]);
+  assert.deepEqual(out, [
+    { id: 'a', kind: 'highlight', page: 1, quote: 'q' },
+    { id: 'b', kind: 'highlight', page: 1, color: '#fff' }
+  ]);
+});
+
+// ── Black it out: words under a black-out never leave in an export ────────────
+
+const blackedOut: StoredEntry[] = [
+  { id: 'bar', page: 1, kind: 'rect', color: '#000000', themeIds: [], box: { x: 0.1, y: 0.1, w: 0.4, h: 0.03 }, filled: true, blackout: true, quote: 'secret name' },
+  { id: 'under', page: 1, kind: 'highlight', color: '#ffd400', themeIds: ['t1'], rects: [{ x: 0.2, y: 0.11, w: 0.2, h: 0.02 }], quote: 'secret name', text: 'my own note' },
+  { id: 'clear', page: 1, kind: 'highlight', color: '#ffd400', themeIds: ['t1'], rects: [{ x: 0.1, y: 0.6, w: 0.2, h: 0.02 }], quote: 'open words' },
+  { id: 'otherPage', page: 2, kind: 'highlight', color: '#ffd400', themeIds: ['t1'], rects: [{ x: 0.2, y: 0.11, w: 0.2, h: 0.02 }], quote: 'page two words' }
+];
+
+test('Markdown export leaves out the words of a black-out and of any mark touching one; other marks keep theirs', () => {
+  const md = marksToMarkdown(blackedOut, pdfDoc, themes);
+  assert.doesNotMatch(md, /secret name/);
+  assert.match(md, /my own note/, 'the reader\'s own note stays');
+  assert.match(md, /open words/);
+  assert.match(md, /page two words/, 'a black-out on another page hides nothing here');
+});
+
+test('JSON export: neither the readable copy nor the stored marks carry words under a black-out', () => {
+  const json = marksToJson(blackedOut, pdfDoc, themes);
+  assert.doesNotMatch(json, /secret name/);
+  const parsed = parseMarksJson(json);
+  assert.ok(parsed.ok);
+  if (!parsed.ok) return;
+  assert.deepEqual(parsed.annotations.map((a) => a.id), ['bar', 'under', 'clear', 'otherPage']);
+  assert.equal(parsed.annotations.find((a) => a.id === 'under')!.text, 'my own note');
+  assert.equal(parsed.annotations.find((a) => a.id === 'clear')!.quote, 'open words');
+});
+
+test('commonplace book (Markdown and text) leaves out words under a black-out', () => {
+  for (const out of [commonplaceMarkdown(blackedOut, pdfDoc, themes), commonplaceText(blackedOut, pdfDoc, themes)]) {
+    assert.doesNotMatch(out, /secret name/);
+    assert.match(out, /my own note/);
+    assert.match(out, /open words/);
+  }
+});
+
+test('the stored marks given to an export are not changed', () => {
+  marksToJson(blackedOut, pdfDoc, themes);
+  assert.equal(blackedOut[1].quote, 'secret name');
 });

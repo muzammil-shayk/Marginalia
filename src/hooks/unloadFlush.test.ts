@@ -43,7 +43,7 @@ test('on unload a small pending save goes out as a keepalive request and the unl
 });
 
 test('nothing pending means nothing is sent and the unload proceeds', () => {
-  const saver = createDebouncedSaver({ save: async () => true, delayMs: 700 });
+  const saver = createDebouncedSaver<string>({ save: async () => true, delayMs: 700 });
   const off = registerUnloadFlush(saver, toRequest('doc-a'));
   try {
     const sent: UnloadRequest[] = [];
@@ -74,7 +74,7 @@ test('pending saves over the keepalive budget cancel the unload and are saved no
 });
 
 test('a paused saver (mid page operation) sends nothing on unload', () => {
-  const saver = createDebouncedSaver({ save: async () => true, delayMs: 700 });
+  const saver = createDebouncedSaver<string>({ save: async () => true, delayMs: 700 });
   const off = registerUnloadFlush(saver, toRequest('doc-a'));
   try {
     saver.pause();
@@ -114,7 +114,7 @@ test('an unregistered saver is left alone', async () => {
 });
 
 test('second call lets the unload through: a save that keeps failing cannot block closing forever', async () => {
-  const saver = createDebouncedSaver({ save: async () => false, delayMs: 700 });
+  const saver = createDebouncedSaver<string>({ save: async () => false, delayMs: 700 });
   const off = registerUnloadFlush(saver, toRequest('doc-failing'));
   try {
     saver.schedule('y'.repeat(70_000));

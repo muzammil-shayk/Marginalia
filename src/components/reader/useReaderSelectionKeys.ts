@@ -4,48 +4,38 @@
  */
 
 import React, { useEffect } from 'react';
-import { type CreatedTheme } from '../pdf/themeField';
 import { UserSettings } from '../../types';
 import {
-  ParagraphRange,
   rangesFromSelectionParts,
   selectionParagraphParts,
   selectionState
 } from '../../utils/textFormatting';
 import { inputKindOf, selectionTrigger, type InputKind } from '../../utils/selectionTrigger';
-import { SelectionAnchor } from '../pdf/SelectionPopover';
 import { escapeConsumes, isTypingTarget, resolveWorkspaceKey } from '../pdf/workspaceKeys';
-import { PARA_TEXT_ID_PREFIX, TextTool } from './readerParts';
-import type { TextMark, TextMarkPatch } from '../../utils/textMarks';
+import { PARA_TEXT_ID_PREFIX } from './readerParts';
 import { pickTheme } from '../../utils/markThemes';
+import type { ReaderSelection, ReaderThemes } from './readerState';
+import type { PlainTextAnnotations } from '../../hooks/usePlainTextAnnotations';
+import type { ReaderMarkViews } from './useReaderMarkViews';
+import type { ReaderMarking } from './useReaderMarking';
 
 export interface UseReaderSelectionKeysDeps {
-  applyMark: (next: Exclude<TextTool, "select">, ranges: ParagraphRange[], themeOverride?: CreatedTheme | null) => void;
-  clearSelection: () => void;
-  createNoteForSelection: () => void;
-  deleteMarks: (ids: Iterable<string>) => void;
-  dropSelection: () => void;
-  editorOpen: boolean;
-  handleToolTap: (next: TextTool) => void;
-  pendingSelection: ParagraphRange[];
-  redo: () => void;
-  selectedIds: string[];
-  selectionAnchor: SelectionAnchor;
-  setActiveThemeId: (id: string | null) => void;
-  toggleActiveTheme: (id: string) => void;
-  marks: TextMark[];
-  setPendingSelection: React.Dispatch<React.SetStateAction<ParagraphRange[]>>;
-  setSelectionAnchor: React.Dispatch<React.SetStateAction<SelectionAnchor>>;
-  setTool: React.Dispatch<React.SetStateAction<TextTool>>;
   settings: UserSettings;
-  textRef: React.RefObject<HTMLElement>;
-  tool: TextTool;
-  undo: () => void;
-  updateMarks: (ids: Iterable<string>, patch: TextMarkPatch) => void;
+  textRef: React.RefObject<HTMLElement | null>;
+  annotations: Pick<PlainTextAnnotations, 'clearSelection' | 'deleteMarks' | 'marks' | 'redo' | 'selectedIds' | 'undo' | 'updateMarks'>;
+  marking: Pick<ReaderMarking, 'applyMark' | 'createNoteForSelection' | 'dropSelection' | 'handleToolTap'>;
+  views: Pick<ReaderMarkViews, 'editorOpen'>;
+  themes: Pick<ReaderThemes, 'setActiveThemeId' | 'toggleActiveTheme'>;
+  selection: Pick<ReaderSelection, 'pendingSelection' | 'selectionAnchor' | 'setPendingSelection' | 'setSelectionAnchor' | 'setTool' | 'tool'>;
 }
 
 export function useReaderSelectionKeys(deps: UseReaderSelectionKeysDeps) {
-  const { applyMark, clearSelection, createNoteForSelection, deleteMarks, dropSelection, editorOpen, handleToolTap, pendingSelection, redo, selectedIds, selectionAnchor, setActiveThemeId, toggleActiveTheme, marks, setPendingSelection, setSelectionAnchor, setTool, settings, textRef, tool, undo, updateMarks } = deps;
+  const { settings, textRef } = deps;
+  const { clearSelection, deleteMarks, marks, redo, selectedIds, undo, updateMarks } = deps.annotations;
+  const { applyMark, createNoteForSelection, dropSelection, handleToolTap } = deps.marking;
+  const { editorOpen } = deps.views;
+  const { setActiveThemeId, toggleActiveTheme } = deps.themes;
+  const { pendingSelection, selectionAnchor, setPendingSelection, setSelectionAnchor, setTool, tool } = deps.selection;
 
   /**
    * Reads the live selection, the same rules as the PDF workspace: the menu acts on exactly this

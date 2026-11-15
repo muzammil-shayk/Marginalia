@@ -118,3 +118,5 @@ export function usePdfToolStyles(deps: UsePdfToolStylesDeps) {
 
   return { maskMode, setMaskMode, activeColor, activeThemeId, activeThemeIds, toggleActiveTheme, bracketSide, noteStyle, setActiveThemeId, setBracketSide, setNoteStyle, setTextAlign, setTextBold, setTextFont, setTextItalic, setTextSize, setTool, setToolColor, setToolStrokeStyle, setToolWeight, textAlign, textBold, textFont, textItalic, textSize, tool, toolColors, toolStrokeStyles, toolWeights };
 }
+
+export type PdfToolStyles = ReturnType<typeof usePdfToolStyles>;

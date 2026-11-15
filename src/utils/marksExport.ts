@@ -20,6 +20,9 @@ import { pruneLinks } from './markLinks';
 import { themeIdsOf } from './markThemes';
 import { plural } from './plural';
 import type { ParagraphLayout } from './pastedText';
+import { isBlackout } from '../components/pdf/annotationModel';
+import { blackoutsByPage, touchesBlackout } from '../components/pdf/export/redaction';
+import type { Annotation as PdfMark } from '../components/pdf/annotationModel';
 
 export interface ExportDocument {
   id?: string;
@@ -151,8 +154,28 @@ function pdfEntries(entries: StoredEntry[], themes: Theme[]): ExportMark[] {
     });
 }
 
+/**
+ * The marks with no words under a black-out: a black-out's own quote and the quote of every mark
+ * touching one on its page are left out (as in a redacted PDF export, `pdf/export/redaction.ts`).
+ * The reader's own note stays. Copies; the stored marks are not changed. Text documents have no
+ * black-out tool, so only PDF marks (with a page) are affected.
+ */
+export function withoutHiddenWords(annotations: StoredEntry[]): StoredEntry[] {
+  const pdf = annotations.filter((a) => isNum(a.page)) as unknown as PdfMark[];
+  const byPage = blackoutsByPage(pdf);
+  if (!byPage.size) return annotations;
+  return annotations.map((a) => {
+    if (!isNum(a.page) || a.quote === undefined) return a;
+    const mark = a as unknown as PdfMark;
+    if (!isBlackout(mark) && !touchesBlackout(mark, byPage.get(a.page) ?? [])) return a;
+    const { quote: _hidden, ...rest } = a;
+    return rest as StoredEntry;
+  });
+}
+
 /** A document's stored marks as export entries: text marks in reading order, then PDF marks by page. */
-export function collectExportMarks(annotations: StoredEntry[], doc: ExportDocument, themes: Theme[]): ExportMark[] {
+export function collectExportMarks(stored: StoredEntry[], doc: ExportDocument, themes: Theme[]): ExportMark[] {
+  const annotations = withoutHiddenWords(stored);
   const { marks, others } = migrateTextEntries(annotations);
   return [...textEntries(marks, doc, themes), ...pdfEntries(others, themes)];
 }
@@ -215,7 +238,7 @@ export function marksToJson(
       document,
       themes: themes.filter((t) => used.has(t.id)),
       marks,
-      annotations
+      annotations: withoutHiddenWords(annotations)
     },
     null,
     2
@@ -242,12 +265,36 @@ const TOO_BIG = `This export is too large to import (the limit is ${MAX_IMPORTED
 
 const isRect = (r: unknown) => isObj(r) && isNum(r.x) && isNum(r.y) && isNum(r.w) && isNum(r.h);
 
-/** A stored mark we can place: a known kind, a page (PDF) or text anchor (new or older shape), sane rects. */
+/**
+ * A mark colour safe to put in a style string: hex (#rgb, #rgba, #rrggbb, #rrggbbaa) or a plain
+ * colour name. A mark's colour is written into `background` and gradient strings, so anything with
+ * `url(`, `;` or parentheses would let an imported file fetch from the network or restyle the page.
+ */
+const SAFE_COLOR = /^(?:#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})|[a-z]{3,20})$/i;
+export const isSafeColor = (v: unknown): v is string => typeof v === 'string' && SAFE_COLOR.test(v);
+
+/** The marks, any whose colour is unsafe stored without it (it then draws in its default colour). */
+export function withSafeColors<T>(list: T[]): T[] {
+  return list.map((m) => {
+    if (!isObj(m) || m.color === undefined || isSafeColor(m.color)) return m;
+    const { color: _unsafe, ...rest } = m;
+    return rest as T;
+  });
+}
+
+const isThemeId = (v: unknown) => typeof v === 'string' && v.length > 0 && v.length <= 100;
+
+/** A stored mark we can place: a known kind, a page (PDF) or text anchor (new or older shape), sane rects, safe style values. */
 export function isImportableEntry(e: unknown): e is StoredEntry {
   if (!isObj(e) || typeof e.id !== 'string' || typeof e.kind !== 'string' || !STORED_KINDS.has(e.kind)) return false;
   const a = e.anchor;
   const placed = isNum(e.page) || (isObj(a) && isNum(a.paragraphIndex) && isNum(a.start) && isNum(a.end)) || isNum(e.paragraphIndex);
   if (!placed) return false;
+  if (e.color !== undefined && !isSafeColor(e.color)) return false;
+  if (e.themeIds !== undefined && !(Array.isArray(e.themeIds) && e.themeIds.every(isThemeId))) return false;
+  if (e.themeId !== undefined && e.themeId !== null && !isThemeId(e.themeId)) return false;
+  // A page-width fraction (see annotationModel DEFAULT_TEXT_SIZE).
+  if (e.fontSize !== undefined && !(isNum(e.fontSize) && e.fontSize > 0 && e.fontSize <= 1)) return false;
   return e.rects === undefined || (Array.isArray(e.rects) && e.rects.every(isRect));
 }
 

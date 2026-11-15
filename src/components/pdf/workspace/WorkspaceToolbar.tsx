@@ -10,86 +10,44 @@ import { HoverTooltip } from '../../HoverTooltip';
 import { Maximize2, Minimize2, Search } from '../../icons';
 import { FindBar, FIND_SHORTCUT } from '../../FindBar';
 import { UserSettings } from '../../../types';
-import {
-  Annotation,
-  BracketSide,
-  FractionRect,
-  NoteStyle,
-  PdfTool,
-  StrokeStyle,
-  TextAlign,
-  TextFont,
-  type MaskMode
-} from '../annotationModel';
 import { PdfToolbar } from '../PdfToolbar';
 import { archiveRows } from '../../MarksArchive';
-import { type PdfViewMode } from '../../../utils/documentStorage';
-import type { MarksArchive } from '../../MarksArchive';
-import type { DocumentFind } from '../../FindBar';
+import { classPackHasBlackouts } from '../../../utils/classPack';
+import type { WorkspaceMarks, WorkspaceSelection, WorkspaceStatus, WorkspaceView } from './workspaceState';
+import type { PdfToolStyles } from './usePdfToolStyles';
+import type { TextMarking } from './useTextMarking';
+import type { PdfNavigation } from './usePdfNavigation';
+import type { WorkspaceExtras } from './useWorkspaceExtras';
+import type { PageEdits } from './usePageEdits';
 
 export interface WorkspaceToolbarProps {
-  activeThemeId: string;
-  annotations: Annotation[];
-  archive: MarksArchive;
-  bracketSide: BracketSide;
-  maskMode: MaskMode;
-  setMaskMode: (mode: MaskMode) => void;
-  canRedo: boolean;
-  canUndo: boolean;
-  currentPage: number;
-  find: DocumentFind;
-  fitWidth: () => Promise<void>;
-  fitPage: () => Promise<void>;
-  focusMode: boolean;
-  goToPage: (page: number, animate?: boolean) => void;
-  handleBracketSideChange: (side: BracketSide) => void;
-  handleExport: () => Promise<void>;
-  handleNoteStyleChange: (style: NoteStyle) => void;
-  handleTextAlignChange: (align: TextAlign) => void;
-  handleTextBoldChange: (bold: boolean) => void;
-  handleTextFontChange: (font: TextFont) => void;
-  handleTextItalicChange: (italic: boolean) => void;
-  handleTextSizeChange: (fontSize: number) => void;
-  handleToolColorChange: (which: string, color: string) => void;
-  handleToolStrokeStyleChange: (which: string, strokeStyle: StrokeStyle) => void;
-  handleToolTap: (next: PdfTool) => void;
-  handleToolWeightChange: (which: string, weight: number) => void;
-  handleViewModeChange: (mode: PdfViewMode) => void;
-  isDark: boolean;
-  isDeletingPage: boolean;
-  isExporting: boolean;
-  isInsertingPage: boolean;
-  isPanelOpen: boolean;
-  noteStyle: NoteStyle;
-  onToggleFocus: () => void;
-  openSubmenuFor: string;
-  pageCount: number;
-  pendingSelection: { page: number; rects: FractionRect[]; quote: string; }[];
-  redo: () => void;
-  scale: number;
-  selectedId: string;
-  setActiveThemeId: React.Dispatch<React.SetStateAction<string>>;
-  setInsertPageMenuOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  setIsPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  setOpenSubmenuFor: React.Dispatch<React.SetStateAction<string>>;
-  setScale: React.Dispatch<React.SetStateAction<number>>;
   settings: UserSettings;
-  submenuClosedAt: React.RefObject<{ tool: string; at: number; }>;
-  textAlign: TextAlign;
-  textBold: boolean;
-  textFont: TextFont;
-  textItalic: boolean;
-  textSize: number;
-  tool: PdfTool;
-  toolColors: Record<string, string>;
-  toolStrokeStyles: Record<string, StrokeStyle>;
-  toolWeights: Record<string, number>;
-  undo: () => void;
-  viewMode: PdfViewMode;
+  isDark: boolean;
+  focusMode: boolean;
+  onToggleFocus: (() => void) | undefined;
   zoomTouchedRef: React.RefObject<boolean>;
+  styles: Pick<PdfToolStyles, 'maskMode' | 'setMaskMode' | 'activeThemeId' | 'setActiveThemeId' | 'bracketSide' | 'noteStyle' | 'textAlign' | 'textBold' | 'textFont' | 'textItalic' | 'textSize' | 'tool' | 'toolColors' | 'toolStrokeStyles' | 'toolWeights'>;
+  marking: Pick<TextMarking, 'handleBracketSideChange' | 'handleNoteStyleChange' | 'handleTextAlignChange' | 'handleTextBoldChange' | 'handleTextFontChange' | 'handleTextItalicChange' | 'handleTextSizeChange' | 'handleToolColorChange' | 'handleToolStrokeStyleChange' | 'handleToolTap' | 'handleToolWeightChange'>;
+  marks: Pick<WorkspaceMarks, 'annotations' | 'canUndo' | 'canRedo' | 'undo' | 'redo'>;
+  selection: Pick<WorkspaceSelection, 'openSubmenuFor' | 'setOpenSubmenuFor' | 'submenuClosedAt' | 'pendingSelection' | 'selectedId'>;
+  view: Pick<WorkspaceView, 'currentPage' | 'pageCount' | 'scale' | 'setScale' | 'viewMode'>;
+  status: Pick<WorkspaceStatus, 'isExporting' | 'isPanelOpen' | 'setIsPanelOpen'>;
+  nav: Pick<PdfNavigation, 'fitPage' | 'fitWidth' | 'goToPage' | 'handleViewModeChange'>;
+  extras: Pick<WorkspaceExtras, 'archive' | 'find' | 'handleExport'>;
+  pageEdits: Pick<PageEdits, 'isDeletingPage' | 'isInsertingPage' | 'setInsertPageMenuOpen'>;
 }
 
-export const WorkspaceToolbar: React.FC<WorkspaceToolbarProps> = ({ maskMode, setMaskMode, activeThemeId, annotations, archive, bracketSide, canRedo, canUndo, currentPage, find, fitPage, fitWidth, focusMode, goToPage, handleBracketSideChange, handleExport, handleNoteStyleChange, handleTextAlignChange, handleTextBoldChange, handleTextFontChange, handleTextItalicChange, handleTextSizeChange, handleToolColorChange, handleToolStrokeStyleChange, handleToolTap, handleToolWeightChange, handleViewModeChange, isDark, isDeletingPage, isExporting, isInsertingPage, isPanelOpen, noteStyle, onToggleFocus, openSubmenuFor, pageCount, pendingSelection, redo, scale, selectedId, setActiveThemeId, setInsertPageMenuOpen, setIsPanelOpen, setOpenSubmenuFor, setScale, settings, submenuClosedAt, textAlign, textBold, textFont, textItalic, textSize, tool, toolColors, toolStrokeStyles, toolWeights, undo, viewMode, zoomTouchedRef }) => (
+export const WorkspaceToolbar: React.FC<WorkspaceToolbarProps> = ({ settings, isDark, focusMode, onToggleFocus, zoomTouchedRef, styles, marking, marks, selection, view, status, nav, extras, pageEdits }) => {
+  const { maskMode, setMaskMode, activeThemeId, setActiveThemeId, bracketSide, noteStyle, textAlign, textBold, textFont, textItalic, textSize, tool, toolColors, toolStrokeStyles, toolWeights } = styles;
+  const { handleBracketSideChange, handleNoteStyleChange, handleTextAlignChange, handleTextBoldChange, handleTextFontChange, handleTextItalicChange, handleTextSizeChange, handleToolColorChange, handleToolStrokeStyleChange, handleToolTap, handleToolWeightChange } = marking;
+  const { annotations, canUndo, canRedo, undo, redo } = marks;
+  const { openSubmenuFor, setOpenSubmenuFor, submenuClosedAt, pendingSelection, selectedId } = selection;
+  const { currentPage, pageCount, scale, setScale, viewMode } = view;
+  const { isExporting, isPanelOpen, setIsPanelOpen } = status;
+  const { fitPage, fitWidth, goToPage, handleViewModeChange } = nav;
+  const { archive, find, handleExport } = extras;
+  const { isDeletingPage, isInsertingPage, setInsertPageMenuOpen } = pageEdits;
+  return (
   <>
       <FocusChrome focus={focusMode} selecting={Boolean(pendingSelection?.length || selectedId)}>
       <PdfToolbar
@@ -197,7 +155,7 @@ export const WorkspaceToolbar: React.FC<WorkspaceToolbarProps> = ({ maskMode, se
         markCount={annotations.length}
         onExport={() => void handleExport()}
         isExporting={isExporting}
-        archiveRows={archiveRows(archive, annotations.length)}
+        archiveRows={archiveRows(archive, annotations.length, classPackHasBlackouts(annotations))}
         isDark={isDark}
       />
       {find.open && (
@@ -208,4 +166,5 @@ export const WorkspaceToolbar: React.FC<WorkspaceToolbarProps> = ({ maskMode, se
       </FocusChrome>
       {focusMode && onToggleFocus && <FocusExit onExit={onToggleFocus} isDark={isDark} />}
   </>
-);
+  );
+};

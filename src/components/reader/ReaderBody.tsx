@@ -7,67 +7,55 @@ import React from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { ArrowLeft, X, Download, Board as BoardIcon } from '../icons';
 import { ExcerptBoard } from '../ExcerptBoard';
-import { TextSpread, type TextSpreadHandle } from '../TextSpread';
+import { TextSpread } from '../TextSpread';
 import { ArchivePanel, archiveRows } from '../MarksArchive';
 import { linkMarks } from '../../utils/markLinks';
-import { PoetryPrefs, UserSettings } from '../../types';
+import { UserSettings } from '../../types';
 import type { PlainTextAnnotations } from '../../hooks/usePlainTextAnnotations';
-import { type TextMark } from '../../utils/textMarks';
-import { SelectionAnchor } from '../pdf/SelectionPopover';
 import { NotesList } from '../pdf/NotesList';
-import { ExportOptions } from '../../utils/exportAnnotations';
 import { plural } from '../../utils/plural';
-import { Tab, tabVariants, MarginMode, MARGIN_CARDS_PX, MARGIN_PINS_PX } from './readerParts';
-import type { MarksArchive } from '../MarksArchive';
-import type { ExportEntry } from '../../utils/exportAnnotations';
-import type { Annotation } from '../pdf/annotationModel';
-import type { TextMarkPatch } from '../../utils/textMarks';
+import { tabVariants, MARGIN_CARDS_PX, MARGIN_PINS_PX } from './readerParts';
 import { pickTheme } from '../../utils/markThemes';
+import type { ReaderDoc, ReaderPanels, ReaderPoetry, ReaderRefs, ReaderSelection } from './readerState';
+import type { ReaderMarkViews } from './useReaderMarkViews';
+import type { ReaderMarking } from './useReaderMarking';
+import type { ReaderMarkUi } from './useReaderMarkUi';
+import type { ReaderLayout } from './useReaderLayout';
+import type { ReaderExtras } from './useReaderExtras';
+import { iconBtn } from './readerParts';
 
 export interface ReaderBodyProps {
-  activeControlTab: Tab;
-  annotations: PlainTextAnnotations;
-  archive: MarksArchive;
-  boardItems: { mark: TextMark; quote: string; color: string; }[];
-  bodyRef: React.RefObject<HTMLDivElement>;
-  clearSelection: () => void;
-  deleteMark: (id: string) => void;
-  displayTitle: string;
-  exportEntries: ExportEntry[];
-  exportable: ExportEntry[];
-  handleSwitchTab: (newTab: Tab) => void;
-  hoveredId: string;
-  iconBtn: "p-2 rounded-lg text-muted hover:bg-black/5 dark:hover:bg-white/5 hover:text-stone-800 dark:hover:text-stone-200 disabled:opacity-30 cursor-pointer disabled:cursor-default shrink-0";
-  isDark: boolean;
-  isPanelOpen: boolean;
-  marginMode: MarginMode;
-  marks: TextMark[];
-  paragraphNodes: React.JSX.Element[];
-  poetry: PoetryPrefs;
-  reduceMotion: boolean;
-  runExport: (format: ExportOptions["format"]) => void;
-  scrollToMark: (id: string) => boolean;
-  scrollToMarkRef: React.RefObject<(id: string) => boolean>;
-  select: (ids: Iterable<string>, opts?: { additive?: boolean; }) => void;
-  selectedThemeFilter: string;
-  setFlow: React.Dispatch<React.SetStateAction<HTMLDivElement>>;
-  setHoveredId: React.Dispatch<React.SetStateAction<string>>;
-  setIsPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  setSelectedThemeFilter: React.Dispatch<React.SetStateAction<string>>;
-  setSelectionAnchor: React.Dispatch<React.SetStateAction<SelectionAnchor>>;
   settings: UserSettings;
-  slideDirection: number;
-  spreadHandle: React.RefObject<TextSpreadHandle>;
-  spreadOn: boolean;
-  spreadStartId: React.RefObject<string>;
-  startEditing: (id: string) => void;
-  textRef: React.RefObject<HTMLElement>;
-  titleBlock: React.JSX.Element;
-  updateMarks: (ids: Iterable<string>, patch: TextMarkPatch) => void;
-  views: Annotation[];
+  isDark: boolean;
+  reduceMotion: boolean | null;
+  annotations: PlainTextAnnotations;
+  page: { titleBlock: React.JSX.Element; paragraphNodes: React.JSX.Element[] };
+  doc: Pick<ReaderDoc, 'displayTitle'>;
+  poetryView: Pick<ReaderPoetry, 'poetry'>;
+  panels: Pick<ReaderPanels, 'activeControlTab' | 'handleSwitchTab' | 'isPanelOpen' | 'setIsPanelOpen' | 'selectedThemeFilter' | 'setSelectedThemeFilter' | 'slideDirection'>;
+  selection: Pick<ReaderSelection, 'hoveredId' | 'setHoveredId' | 'setSelectionAnchor'>;
+  refs: Pick<ReaderRefs, 'spreadHandle' | 'textRef'>;
+  markViews: Pick<ReaderMarkViews, 'views'>;
+  marking: Pick<ReaderMarking, 'deleteMark' | 'startEditing'>;
+  markUi: Pick<ReaderMarkUi, 'scrollToMark' | 'scrollToMarkRef'>;
+  layout: Pick<ReaderLayout, 'bodyRef' | 'marginMode' | 'setFlow' | 'spreadOn' | 'spreadStartId'>;
+  extras: Pick<ReaderExtras, 'archive' | 'boardItems' | 'exportEntries' | 'exportable' | 'runExport'>;
 }
 
-export const ReaderBody: React.FC<ReaderBodyProps> = ({ activeControlTab, annotations, archive, boardItems, bodyRef, clearSelection, deleteMark, displayTitle, exportEntries, exportable, handleSwitchTab, hoveredId, iconBtn, isDark, isPanelOpen, marginMode, marks, paragraphNodes, poetry, reduceMotion, runExport, scrollToMark, scrollToMarkRef, select, selectedThemeFilter, setFlow, setHoveredId, setIsPanelOpen, setSelectedThemeFilter, setSelectionAnchor, settings, slideDirection, spreadHandle, spreadOn, spreadStartId, startEditing, textRef, titleBlock, updateMarks, views }) => (
+export const ReaderBody: React.FC<ReaderBodyProps> = ({ settings, isDark, reduceMotion, annotations, page, doc, poetryView, panels, selection, refs, markViews, marking, markUi, layout, extras }) => {
+  const { displayTitle } = doc;
+  const { poetry } = poetryView;
+  const { activeControlTab, handleSwitchTab, isPanelOpen, setIsPanelOpen, selectedThemeFilter, setSelectedThemeFilter, slideDirection } = panels;
+  const { hoveredId, setHoveredId, setSelectionAnchor } = selection;
+  const { spreadHandle, textRef } = refs;
+  const { views } = markViews;
+  const { deleteMark, startEditing } = marking;
+  const { scrollToMark, scrollToMarkRef } = markUi;
+  const { bodyRef, marginMode, setFlow, spreadOn, spreadStartId } = layout;
+  const { archive, boardItems, exportEntries, exportable, runExport } = extras;
+  const { clearSelection, marks, select, updateMarks } = annotations;
+  const { titleBlock, paragraphNodes } = page;
+  return (
   <>
       {/* Body: the text column, and the notes panel beside it (an overlay on a narrow window). */}
       <div ref={bodyRef} className="flex-1 flex max-w-6xl mx-auto w-full overflow-x-clip">
@@ -298,4 +286,5 @@ export const ReaderBody: React.FC<ReaderBodyProps> = ({ activeControlTab, annota
         </aside>
       </div>
   </>
-);
+  );
+};

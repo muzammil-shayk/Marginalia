@@ -499,6 +499,33 @@ test('if the .pre-themes copy cannot be written, the save does not happen', asyn
   assert.equal(await fs.readFile(file, 'utf-8'), raw);
 });
 
+test('deleting a document updated from the old theme shape leaves nothing with its id in documents/', async (t) => {
+  const { root, backend } = await tempStore(t);
+  const { id, file } = await oldRecord(root, backend);
+  const fresh = new LocalDocumentBackend(root);
+  await fresh.updateDocument(id, { title: 'Renamed' });
+  await fs.access(`${file}.pre-themes`);
+  assert.equal(await fresh.deleteDocument(id), true);
+  assert.deepEqual((await fs.readdir(path.join(root, 'documents'))).filter((n) => n.startsWith(id)), []);
+});
+
+test('the sweeper removes a .pre-themes left by a deleted record, and does not let it keep the original', async (t) => {
+  const { root, backend } = await tempStore(t);
+  const docs = path.join(root, 'documents');
+  const id = await makeDoc(backend);
+  const kept = await makeDoc(backend);
+  await fs.writeFile(path.join(docs, `${id}.json.pre-themes`), '{}');
+  await fs.writeFile(path.join(docs, `${kept}.json.pre-themes`), '{}');
+  // A delete made by an older build, which left the .pre-themes behind.
+  for (const name of [`${id}.json`, `${id}.json.bak`]) await fs.rm(path.join(docs, name), { force: true });
+  await backend.sweepExpiredDocuments();
+  await assert.rejects(fs.access(path.join(docs, `${id}.json.pre-themes`)));
+  await assert.rejects(fs.access(path.join(root, 'originals', `${id}.pdf`)));
+  // A live record keeps its copy and its original.
+  await fs.access(path.join(docs, `${kept}.json.pre-themes`));
+  await fs.access(path.join(root, 'originals', `${kept}.pdf`));
+});
+
 test('a mark backup kept before the change comes back with themeIds when restored', async (t) => {
   const { root, backend } = await tempStore(t);
   const meta = await backend.saveDocument({ title: 'B', text: 'Words', format: 'PDF', filename: 'b.pdf' });

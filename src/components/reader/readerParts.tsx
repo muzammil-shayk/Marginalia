@@ -99,7 +99,7 @@ export interface ParagraphProps {
    */
   margin: MarginMode;
   /** The pinned note open in the narrow gutter, if it belongs to this paragraph. */
-  openPin: string;
+  openPin: string | null;
   /** Pasted custom text keeps its own line breaks and indentation. */
   verbatim: boolean;
   /** Pasted base formatting for this paragraph (bold, italic, underline), drawn under the marks. */
@@ -454,3 +454,14 @@ export const Paragraph = React.memo(function Paragraph({
     </div>
   );
 });
+
+/** The control bar's tab pills: filled when active (moved verbatim from ReaderScreen). */
+export const pillClass = (active: boolean) =>
+  `flex items-center gap-1.5 transition-all duration-200 cursor-pointer shrink-0 ${
+    active
+      ? 'bg-accent text-on-accent px-3 py-1.5 rounded-xl font-semibold shadow-xs animate-in fade-in zoom-in-95'
+      : 'p-2 rounded-xl bg-black/5 dark:bg-white/5 hover:bg-black/10 text-stone-700 dark:text-stone-300'
+  }`;
+/** The reader's plain icon buttons (moved verbatim from ReaderScreen). */
+export const iconBtn =
+  'p-2 rounded-lg text-muted hover:bg-black/5 dark:hover:bg-white/5 hover:text-stone-800 dark:hover:text-stone-200 disabled:opacity-30 cursor-pointer disabled:cursor-default shrink-0';

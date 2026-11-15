@@ -22,64 +22,50 @@ import {
 import { PoetryPanel } from '../PoetryView';
 import { FindBar, FIND_SHORTCUT } from '../FindBar';
 import { FocusChrome, FocusExit, FOCUS_HOTKEY } from '../FocusMode';
-import type { ThemeStore } from '../themeStore';
-import { PoetryPrefs, ReaderJump, UserSettings } from '../../types';
+import { UserSettings } from '../../types';
 import { HoverTooltip } from '../HoverTooltip';
-import { ParagraphRange } from '../../utils/textFormatting';
-import { type TextMark } from '../../utils/textMarks';
 import { TOOL_HOTKEYS, withShortcut } from '../pdf/workspaceKeys';
 import { plural } from '../../utils/plural';
-import { IS_APPLE, MODIFIER, SHIFT_MODIFIER, TextTool, TEXT_TOOLS, Tab } from './readerParts';
-import type { DocumentFind } from '../FindBar';
-import type { PoemAnalysis } from '../../utils/poetry';
-import type { Annotation } from '../pdf/annotationModel';
+import { IS_APPLE, MODIFIER, SHIFT_MODIFIER, TEXT_TOOLS } from './readerParts';
+import type { ReaderDoc, ReaderPanels, ReaderPoetry, ReaderRefs, ReaderSelection, ReaderThemes } from './readerState';
+import type { ReaderMarkViews } from './useReaderMarkViews';
+import type { ReaderMarking } from './useReaderMarking';
+import type { ReaderLayout } from './useReaderLayout';
+import type { ReaderExtras } from './useReaderExtras';
+import { iconBtn, pillClass } from './readerParts';
+import type { PlainTextAnnotations } from '../../hooks/usePlainTextAnnotations';
 
 export interface ReaderControlBarProps {
-  activeColor: string;
-  activeControlTab: Tab;
-  activeJump: ReaderJump;
-  activeParagraphIndex: number;
-  addProsodyThemes: () => void;
-  canRedo: boolean;
-  canUndo: boolean;
-  controlBarRef: React.RefObject<HTMLDivElement>;
-  createParagraphNote: (paraIdx: number) => void;
-  docId: string;
-  find: DocumentFind;
-  focusMode: boolean;
-  handleSwitchTab: (newTab: Tab) => void;
-  handleToolTap: (next: TextTool) => void;
-  iconBtn: "p-2 rounded-lg text-muted hover:bg-black/5 dark:hover:bg-white/5 hover:text-stone-800 dark:hover:text-stone-200 disabled:opacity-30 cursor-pointer disabled:cursor-default shrink-0";
-  isDark: boolean;
-  isPanelOpen: boolean;
-  missingProsody: { name: string; color: string; }[];
-  noteHeads: TextMark[];
-  onToggleFocus: () => void;
-  pendingSelection: ParagraphRange[];
-  pillClass: (active: boolean) => string;
-  poem: PoemAnalysis;
-  poetry: PoetryPrefs;
-  poetryOpen: boolean;
-  redo: () => void;
-  selectedIds: string[];
-  setActiveJump: React.Dispatch<React.SetStateAction<ReaderJump>>;
-  setIsPanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  setPoetry: (next: PoetryPrefs) => void;
-  setPoetryOpen: React.Dispatch<React.SetStateAction<boolean>>;
-  setShowInlineNotes: React.Dispatch<React.SetStateAction<boolean>>;
   settings: UserSettings;
-  showInlineNotes: boolean;
-  spreadFits: boolean;
-  spreadOn: boolean;
-  spreadPref: boolean;
-  themeStore: ThemeStore;
-  toggleSpread: () => void;
-  tool: TextTool;
-  undo: () => void;
-  views: Annotation[];
+  isDark: boolean;
+  focusMode: boolean;
+  onToggleFocus: (() => void) | undefined;
+  annotations: Pick<PlainTextAnnotations, 'canRedo' | 'canUndo' | 'redo' | 'undo' | 'selectedIds'>;
+  doc: Pick<ReaderDoc, 'docId'>;
+  themes: Pick<ReaderThemes, 'activeColor' | 'themeStore'>;
+  panels: Pick<ReaderPanels, 'activeControlTab' | 'activeParagraphIndex' | 'handleSwitchTab' | 'isPanelOpen' | 'setIsPanelOpen' | 'setShowInlineNotes' | 'showInlineNotes'>;
+  poetryView: Pick<ReaderPoetry, 'addProsodyThemes' | 'missingProsody' | 'poem' | 'poetry' | 'poetryOpen' | 'setPoetry' | 'setPoetryOpen'>;
+  selection: Pick<ReaderSelection, 'pendingSelection' | 'tool'>;
+  refs: Pick<ReaderRefs, 'controlBarRef'>;
+  markViews: Pick<ReaderMarkViews, 'noteHeads' | 'views'>;
+  marking: Pick<ReaderMarking, 'createParagraphNote' | 'handleToolTap'>;
+  layout: Pick<ReaderLayout, 'spreadFits' | 'spreadOn' | 'spreadPref' | 'toggleSpread'>;
+  extras: Pick<ReaderExtras, 'activeJump' | 'setActiveJump' | 'find'>;
 }
 
-export const ReaderControlBar: React.FC<ReaderControlBarProps> = ({ activeColor, activeControlTab, activeJump, activeParagraphIndex, addProsodyThemes, canRedo, canUndo, controlBarRef, createParagraphNote, docId, find, focusMode, handleSwitchTab, handleToolTap, iconBtn, isDark, isPanelOpen, missingProsody, noteHeads, onToggleFocus, pendingSelection, pillClass, poem, poetry, poetryOpen, redo, selectedIds, setActiveJump, setIsPanelOpen, setPoetry, setPoetryOpen, setShowInlineNotes, settings, showInlineNotes, spreadFits, spreadOn, spreadPref, themeStore, toggleSpread, tool, undo, views }) => (
+export const ReaderControlBar: React.FC<ReaderControlBarProps> = ({ settings, isDark, focusMode, onToggleFocus, annotations, doc, themes, panels, poetryView, selection, refs, markViews, marking, layout, extras }) => {
+  const { canRedo, canUndo, redo, undo, selectedIds } = annotations;
+  const { docId } = doc;
+  const { activeColor, themeStore } = themes;
+  const { activeControlTab, activeParagraphIndex, handleSwitchTab, isPanelOpen, setIsPanelOpen, setShowInlineNotes, showInlineNotes } = panels;
+  const { addProsodyThemes, missingProsody, poem, poetry, poetryOpen, setPoetry, setPoetryOpen } = poetryView;
+  const { pendingSelection, tool } = selection;
+  const { controlBarRef } = refs;
+  const { noteHeads, views } = markViews;
+  const { createParagraphNote, handleToolTap } = marking;
+  const { spreadFits, spreadOn, spreadPref, toggleSpread } = layout;
+  const { activeJump, setActiveJump, find } = extras;
+  return (
   <>
       {/* Reader control bar: tabs on the left, the PDF workspace's text tools, undo and the
           notes panel on the right. Sticks under the header, so the tools stay in reach while
@@ -282,4 +268,5 @@ export const ReaderControlBar: React.FC<ReaderControlBarProps> = ({ activeColor,
       </FocusChrome>
       {focusMode && onToggleFocus && <FocusExit onExit={onToggleFocus} isDark={isDark} />}
   </>
-);
+  );
+};

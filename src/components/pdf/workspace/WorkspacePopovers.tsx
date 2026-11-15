@@ -7,58 +7,53 @@
 import React from 'react';
 import type { ThemeStore } from '../../themeStore';
 import { UserSettings } from '../../../types';
-import { Annotation, AnnotationKind, FractionRect, PdfTool, isReaction } from '../annotationModel';
+import { isReaction } from '../annotationModel';
 import { InstanceNavigator } from '../InstanceNavigator';
-import { SelectionPopover, SelectionAnchor } from '../SelectionPopover';
+import { SelectionPopover } from '../SelectionPopover';
 import { LiveSelectionOverlay } from '../LiveSelectionOverlay';
 import { MarkProperties } from '../MarkProperties';
 import { ScrollPageIndicator } from '../ScrollPageIndicator';
 import { copyText } from '../../MarksArchive';
-import type { MarkLinks } from '../MarkProperties';
 import { formatQuoteRef } from '../../../utils/quoteRef';
-import { type CreatedTheme } from '../themeField';
 import { NAVIGATOR_HEIGHT } from './docState';
 import { pickTheme } from '../../../utils/markThemes';
-import type { ThemeResult } from '../../themeStore';
+import type { WorkspaceMarks, WorkspaceSelection, WorkspaceStatus, WorkspaceView } from './workspaceState';
+import type { PdfToolStyles } from './usePdfToolStyles';
+import type { TextMarking } from './useTextMarking';
+import type { WorkspaceThemePicker } from './useWorkspaceKeys';
+import type { MarkMutations } from './useMarkMutations';
+import type { MarkGeometry } from './useMarkGeometry';
+import type { WorkspaceExtras } from './useWorkspaceExtras';
 
 export interface WorkspacePopoversProps {
-  activeFocus: { kind: "theme"; themeId: string; label: string; color: string; } | { kind: "terminology"; label: string; color: string; };
-  activeThemeId: string;
-  activeThemeIds: string[];
-  annotations: Annotation[];
-  applyTextMark: (tool: PdfTool, groups: { page: number; rects: FractionRect[]; quote: string; }[], colorOverride?: string, themeOverride?: CreatedTheme | null) => void;
-  chooseSelectionTheme: (id: string) => void;
-  createNoteForSelection: () => void;
-  createReactionForSelection: (kind: AnnotationKind) => void;
-  createSelectionTheme: (name: string, color: string) => ThemeResult;
-  deleteAnnotation: (id: string) => void;
   documentTitle: string;
-  editing: Annotation;
   isDark: boolean;
-  isLoaded: boolean;
-  layoutSettled: boolean;
-  markLinksFor: (id: string) => MarkLinks;
-  markRect: { left: number; top: number; right: number; bottom: number; };
-  pageCount: number;
-  pendingSelection: { page: number; rects: FractionRect[]; quote: string; }[];
-  popoverTopInset: number;
-  scrollRef: React.RefObject<HTMLDivElement>;
-  scrollToAnnotation: (a: Annotation) => boolean;
-  selectedMark: Annotation;
-  selectionAnchor: SelectionAnchor;
-  setActiveFocus: React.Dispatch<React.SetStateAction<{ kind: "theme"; themeId: string; label: string; color: string; } | { kind: "terminology"; label: string; color: string; }>>;
-  setHoveredId: React.Dispatch<React.SetStateAction<string>>;
-  setSelectedId: React.Dispatch<React.SetStateAction<string>>;
-  setSelectionAnchor: React.Dispatch<React.SetStateAction<SelectionAnchor>>;
-  setTool: React.Dispatch<React.SetStateAction<PdfTool>>;
   settings: UserSettings;
-  startEditing: (id: string) => void;
-  themeStore: ThemeStore;
-  toolColors: Record<string, string>;
-  updateAnnotation: (id: string, patch: Partial<Annotation>) => void;
+  themeStore: ThemeStore | undefined;
+  styles: Pick<PdfToolStyles, 'activeThemeIds' | 'setTool' | 'toolColors'>;
+  marking: Pick<TextMarking, 'applyTextMark' | 'createNoteForSelection' | 'createReactionForSelection'>;
+  themePicker: Pick<WorkspaceThemePicker, 'chooseSelectionTheme' | 'createSelectionTheme'>;
+  marks: Pick<WorkspaceMarks, 'annotations'>;
+  mutations: Pick<MarkMutations, 'deleteAnnotation' | 'startEditing' | 'updateAnnotation'>;
+  geometry: Pick<MarkGeometry, 'editing' | 'markRect' | 'popoverTopInset' | 'selectedMark'>;
+  selection: Pick<WorkspaceSelection, 'pendingSelection' | 'selectionAnchor' | 'setSelectionAnchor' | 'setHoveredId' | 'setSelectedId'>;
+  view: Pick<WorkspaceView, 'layoutSettled' | 'pageCount' | 'scrollRef'>;
+  status: Pick<WorkspaceStatus, 'activeFocus' | 'setActiveFocus' | 'isLoaded'>;
+  extras: Pick<WorkspaceExtras, 'markLinksFor' | 'scrollToAnnotation'>;
 }
 
-export const WorkspacePopovers: React.FC<WorkspacePopoversProps> = ({ activeFocus, activeThemeId, activeThemeIds, annotations, applyTextMark, chooseSelectionTheme, createNoteForSelection, createReactionForSelection, createSelectionTheme, deleteAnnotation, documentTitle, editing, isDark, isLoaded, layoutSettled, markLinksFor, markRect, pageCount, pendingSelection, popoverTopInset, scrollRef, scrollToAnnotation, selectedMark, selectionAnchor, setActiveFocus, setHoveredId, setSelectedId, setSelectionAnchor, setTool, settings, startEditing, themeStore, toolColors, updateAnnotation }) => (
+export const WorkspacePopovers: React.FC<WorkspacePopoversProps> = ({ documentTitle, isDark, settings, themeStore, styles, marking, themePicker, marks, mutations, geometry, selection, view, status, extras }) => {
+  const { activeThemeIds, setTool, toolColors } = styles;
+  const { applyTextMark, createNoteForSelection, createReactionForSelection } = marking;
+  const { chooseSelectionTheme, createSelectionTheme } = themePicker;
+  const { annotations } = marks;
+  const { deleteAnnotation, startEditing, updateAnnotation } = mutations;
+  const { editing, markRect, popoverTopInset, selectedMark } = geometry;
+  const { pendingSelection, selectionAnchor, setSelectionAnchor, setHoveredId, setSelectedId } = selection;
+  const { layoutSettled, pageCount, scrollRef } = view;
+  const { activeFocus, setActiveFocus, isLoaded } = status;
+  const { markLinksFor, scrollToAnnotation } = extras;
+  return (
   <>
       {/* Stepping through the marks the reader came here to find. Reads from live annotation
           state, so marking or erasing while it is open changes the run under it. */}
@@ -175,4 +170,5 @@ export const WorkspacePopovers: React.FC<WorkspacePopoversProps> = ({ activeFocu
         />
       )}
   </>
-);
+  );
+};

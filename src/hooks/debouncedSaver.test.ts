@@ -146,7 +146,7 @@ test('the page operation does not run when the pending marks cannot be saved', a
 
 test('after a page operation the re-read marks reset the history (no undo across it)', async () => {
   const resets: string[] = [];
-  const saver = createDebouncedSaver({ save: async () => true, delayMs: 700 });
+  const saver = createDebouncedSaver<string>({ save: async () => true, delayMs: 700 });
   const outcome = await runPageOperation({
     saver,
     operate: async () => ({ pageCount: 4 }),

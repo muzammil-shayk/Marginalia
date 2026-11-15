@@ -48,11 +48,6 @@ const tile = (active: boolean) => (active ? `bg-stone-200 ${DARK_ON}` : `hover:b
 const textTile = (active: boolean) =>
   active ? `bg-stone-200 text-stone-900 ${DARK_ON}` : `text-muted hover:bg-stone-100 ${DARK_OFF}`;
 
-/**
- * True when a colour would vanish on the dark pill (under 3:1 against night-3, i.e. relative
- * luminance below ~0.121). Such swatches get a cream ring in dark mode so they read as a dot.
- * Non-hex values are assumed readable.
- */
 /** The check on a theme swatch that is on: dark on a light swatch, cream on a dark one. */
 const ThemeCheck: React.FC<{ color: string }> = ({ color }) => {
   const m = /^#([0-9a-f]{6})$/i.exec(color);
@@ -60,6 +55,11 @@ const ThemeCheck: React.FC<{ color: string }> = ({ color }) => {
   return <Check aria-hidden className="w-3 h-3" weight="bold" style={{ color: light ? '#1c1917' : '#f6f1e7' }} />;
 };
 
+/**
+ * True when a colour would vanish on the dark pill (under 3:1 against night-3, i.e. relative
+ * luminance below ~0.121). Such swatches get a cream ring in dark mode so they read as a dot.
+ * Non-hex values are assumed readable.
+ */
 export const isInkOnDark = (color: string) => {
   const m = /^#([0-9a-f]{6})$/i.exec(color);
   if (!m) return false;

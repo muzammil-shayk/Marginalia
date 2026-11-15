@@ -1,4 +1,3 @@
-import { jsPDF } from 'jspdf';
 import { StickyNote } from '../types';
 import { groupHeads, sortTextMarks, type TextMark, type TextMarkKind } from './textMarks';
 import { plural } from './plural';
@@ -127,7 +126,9 @@ export function generateMarkdown(notes: ExportEntry[], options: ExportOptions): 
 /**
  * Export annotations as a beautifully formatted PDF document
  */
-export function exportToPDF(notes: ExportEntry[], options: ExportOptions): void {
+export async function exportToPDF(notes: ExportEntry[], options: ExportOptions): Promise<void> {
+  // Loaded on first PDF export, so jsPDF stays out of the start-up bundle.
+  const { jsPDF } = await import('jspdf');
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',

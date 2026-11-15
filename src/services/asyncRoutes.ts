@@ -43,5 +43,10 @@ export function catchAsyncErrors<T extends Pick<Router, (typeof METHODS)[number]
 export const jsonErrorHandler: ErrorRequestHandler = (err, req, res, next) => {
   console.error(`[Marginalia] ${req.method} ${req.path} failed:`, err);
   if (res.headersSent) return next(err);
+  // A body over the route's limit (body-parser sets `status: 413`).
+  if (err?.status === 413) {
+    res.status(413).json({ error: 'This is too large for the app to take in one go.' });
+    return;
+  }
   res.status(500).json({ error: 'Something went wrong on this device. Please try again.' });
 };

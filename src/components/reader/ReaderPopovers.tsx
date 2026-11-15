@@ -4,65 +4,48 @@
  */
 
 import React from 'react';
-import { type CreatedTheme } from '../pdf/themeField';
-import type { MarkLinks } from '../pdf/MarkProperties';
-import type { ThemeStore } from '../themeStore';
-import { AnnotationFocus, UserSettings } from '../../types';
-import { ParagraphRange } from '../../utils/textFormatting';
+import { UserSettings } from '../../types';
 import type { PlainTextAnnotations } from '../../hooks/usePlainTextAnnotations';
 import { type TextMarkKind } from '../../utils/textMarks';
-import { SelectionPopover, SelectionAnchor } from '../pdf/SelectionPopover';
+import { SelectionPopover } from '../pdf/SelectionPopover';
 import { MarkProperties } from '../pdf/MarkProperties';
-import type { PanelContext } from '../pdf/useAnchoredPanel';
 import { InstanceNavigator } from '../pdf/InstanceNavigator';
 import { pickTheme } from '../../utils/markThemes';
-import { TextTool, isReactionKind, Tab } from './readerParts';
-import type { MarksArchive } from '../MarksArchive';
-import type { Annotation } from '../pdf/annotationModel';
-import type { TextMarkPatch } from '../../utils/textMarks';
+import { isReactionKind } from './readerParts';
+import type { ReaderPanels, ReaderSelection, ReaderThemes } from './readerState';
+import type { ReaderMarkViews } from './useReaderMarkViews';
+import type { ReaderMarking } from './useReaderMarking';
+import type { ReaderMarkUi } from './useReaderMarkUi';
+import type { ReaderLayout } from './useReaderLayout';
+import type { ReaderExtras } from './useReaderExtras';
 
 export interface ReaderPopoversProps {
-  activeControlTab: Tab;
-  activeFocus: AnnotationFocus;
-  activeThemeId: string;
-  activeThemeIds: string[];
-  toggleActiveTheme: (id: string) => void;
-  annotations: PlainTextAnnotations;
-  applyMark: (next: Exclude<TextTool, "select">, ranges: ParagraphRange[], themeOverride?: CreatedTheme | null) => void;
-  archive: MarksArchive;
-  bottomInset: 0 | 60;
-  clearSelection: () => void;
-  copyQuoteOf: (id: string, quote: string) => Promise<boolean>;
-  copySelectionQuote: (ranges: ParagraphRange[]) => Promise<boolean>;
-  createNoteForSelection: () => void;
-  createReactionForSelection: (kind: TextMarkKind) => void;
-  deleteMark: (id: string) => void;
-  dropSelection: () => void;
-  editorOpen: boolean;
-  isDark: boolean;
-  markLinksFor: (id: string) => MarkLinks;
-  markRect: { left: number; top: number; right: number; bottom: number; };
-  pendingSelection: ParagraphRange[];
-  placementContext: () => PanelContext;
-  popoverTopInset: number;
-  scrollToMark: (id: string) => boolean;
-  selectedView: Annotation;
-  selectionAnchor: SelectionAnchor;
-  selectionInView: boolean;
-  setActiveFocus: React.Dispatch<React.SetStateAction<AnnotationFocus>>;
-  setActiveThemeId: React.Dispatch<React.SetStateAction<string>>;
-  setHoveredId: React.Dispatch<React.SetStateAction<string>>;
-  setSelectionAnchor: React.Dispatch<React.SetStateAction<SelectionAnchor>>;
-  setTool: React.Dispatch<React.SetStateAction<TextTool>>;
   settings: UserSettings;
-  startEditing: (id: string) => void;
-  themeStore: ThemeStore;
-  toolColors: { [k: string]: string; };
-  updateMarks: (ids: Iterable<string>, patch: TextMarkPatch) => void;
-  views: Annotation[];
+  isDark: boolean;
+  annotations: PlainTextAnnotations;
+  popoverTopInset: number;
+  selectionInView: boolean;
+  themes: Pick<ReaderThemes, 'activeThemeIds' | 'toggleActiveTheme' | 'toolColors' | 'themeStore'>;
+  panels: Pick<ReaderPanels, 'activeControlTab' | 'activeFocus' | 'setActiveFocus' | 'bottomInset'>;
+  selection: Pick<ReaderSelection, 'pendingSelection' | 'selectionAnchor' | 'setSelectionAnchor' | 'setHoveredId' | 'setTool'>;
+  markViews: Pick<ReaderMarkViews, 'editorOpen' | 'selectedView' | 'views'>;
+  marking: Pick<ReaderMarking, 'applyMark' | 'createNoteForSelection' | 'createReactionForSelection' | 'deleteMark' | 'dropSelection' | 'startEditing'>;
+  markUi: Pick<ReaderMarkUi, 'markRect' | 'scrollToMark'>;
+  layout: Pick<ReaderLayout, 'placementContext'>;
+  extras: Pick<ReaderExtras, 'archive' | 'copyQuoteOf' | 'copySelectionQuote' | 'markLinksFor'>;
 }
 
-export const ReaderPopovers: React.FC<ReaderPopoversProps> = ({ activeControlTab, activeFocus, activeThemeId, activeThemeIds, toggleActiveTheme, annotations, applyMark, archive, bottomInset, clearSelection, copyQuoteOf, copySelectionQuote, createNoteForSelection, createReactionForSelection, deleteMark, dropSelection, editorOpen, isDark, markLinksFor, markRect, pendingSelection, placementContext, popoverTopInset, scrollToMark, selectedView, selectionAnchor, selectionInView, setActiveFocus, setActiveThemeId, setHoveredId, setSelectionAnchor, setTool, settings, startEditing, themeStore, toolColors, updateMarks, views }) => (
+export const ReaderPopovers: React.FC<ReaderPopoversProps> = ({ settings, isDark, annotations, popoverTopInset, selectionInView, themes, panels, selection, markViews, marking, markUi, layout, extras }) => {
+  const { activeThemeIds, toggleActiveTheme, toolColors, themeStore } = themes;
+  const { activeControlTab, activeFocus, setActiveFocus, bottomInset } = panels;
+  const { pendingSelection, selectionAnchor, setSelectionAnchor, setHoveredId, setTool } = selection;
+  const { editorOpen, selectedView, views } = markViews;
+  const { applyMark, createNoteForSelection, createReactionForSelection, deleteMark, dropSelection, startEditing } = marking;
+  const { markRect, scrollToMark } = markUi;
+  const { placementContext } = layout;
+  const { archive, copyQuoteOf, copySelectionQuote, markLinksFor } = extras;
+  const { clearSelection, updateMarks } = annotations;
+  return (
   <>
       {/* Stepping through the marks the reader came here to find (opened from the library). */}
       {activeFocus && annotations.isLoaded && (
@@ -151,4 +134,5 @@ export const ReaderPopovers: React.FC<ReaderPopoversProps> = ({ activeControlTab
         />
       )}
   </>
-);
+  );
+};

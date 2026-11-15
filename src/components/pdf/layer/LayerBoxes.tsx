@@ -20,16 +20,16 @@ import { isDarkFill, withAlpha, GestureMode } from './layerHelpers';
 export interface LayerBoxesProps {
   annotations: Annotation[];
   gestureHandlers: (a: Annotation, mode: GestureMode) => { onPointerDown: (e: React.PointerEvent) => void; };
-  gestureRef: React.RefObject<{ id: string; mode: GestureMode; startX: number; startY: number; origin: Annotation; originBounds: FractionRect; moved: boolean; }>;
+  gestureRef: React.RefObject<{ id: string; mode: GestureMode; startX: number; startY: number; origin: Annotation; originBounds: FractionRect; moved: boolean; } | null>;
   handleMarkClick: (e: React.MouseEvent, annotation: Annotation) => void;
-  hoveredId: string;
+  hoveredId: string | null;
   live: (a: Annotation) => Annotation;
   onEdit: (id: string) => void;
   onHover: (id: string | null) => void;
   onUpdate: (id: string, patch: Partial<Annotation>) => void;
   pageHeight: number;
   pageWidth: number;
-  selectedId: string;
+  selectedId: string | null;
 }
 
 export const LayerBoxes: React.FC<LayerBoxesProps> = ({ annotations, gestureHandlers, gestureRef, handleMarkClick, hoveredId, live, onEdit, onHover, onUpdate, pageHeight, pageWidth, selectedId }) => (

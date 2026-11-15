@@ -18,16 +18,16 @@ import { AppInfo, UpdateStatus } from '../../utils/documentStorage';
 import type { DesktopBridge } from '../../utils/documentStorage';
 
 export interface SettingsAboutProps {
-  appInfo: AppInfo;
+  appInfo: AppInfo | null;
   autoUpdateEnabled: boolean;
-  bridge: DesktopBridge;
-  expandedLegalDoc: "privacy" | "terms";
+  bridge: DesktopBridge | null;
+  expandedLegalDoc: "privacy" | "terms" | null;
   handleCheckForUpdates: () => void;
   handleToggleAutoUpdate: () => void;
   isDark: boolean;
-  onOpenChangelog: () => void;
-  onShowTutorial: () => void;
-  setExpandedLegalDoc: React.Dispatch<React.SetStateAction<"privacy" | "terms">>;
+  onOpenChangelog: (() => void) | undefined;
+  onShowTutorial: (() => void) | undefined;
+  setExpandedLegalDoc: React.Dispatch<React.SetStateAction<"privacy" | "terms" | null>>;
   updateStatus: UpdateStatus;
 }
 

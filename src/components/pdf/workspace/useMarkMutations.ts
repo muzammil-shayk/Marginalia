@@ -2,24 +2,22 @@
  * Creating, deleting, editing and re-filing marks (moved verbatim from PdfWorkspace).
  */
 
-import React, { useCallback } from 'react';
+import { useCallback } from 'react';
 import { UserSettings } from '../../../types';
 import { Annotation } from '../annotationModel';
 import { pickTheme } from '../../../utils/markThemes';
+import type { WorkspaceMarks, WorkspaceSelection } from './workspaceState';
 
 export interface UseMarkMutationsDeps {
-  annotations: Annotation[];
-  draftText: string;
-  editingId: string;
-  setAnnotations: (next: Annotation[] | ((prev: Annotation[]) => Annotation[])) => void;
-  setDraftText: React.Dispatch<React.SetStateAction<string>>;
-  setEditingId: React.Dispatch<React.SetStateAction<string>>;
-  setSelectedId: React.Dispatch<React.SetStateAction<string>>;
   settings: UserSettings;
+  marks: Pick<WorkspaceMarks, 'annotations' | 'setAnnotations'>;
+  selection: Pick<WorkspaceSelection, 'draftText' | 'editingId' | 'setDraftText' | 'setEditingId' | 'setSelectedId'>;
 }
 
 export function useMarkMutations(deps: UseMarkMutationsDeps) {
-  const { annotations, draftText, editingId, setAnnotations, setDraftText, setEditingId, setSelectedId, settings } = deps;
+  const { settings } = deps;
+  const { annotations, setAnnotations } = deps.marks;
+  const { draftText, editingId, setDraftText, setEditingId, setSelectedId } = deps.selection;
 
   // ── Mutations ──
   const createAnnotation = useCallback(
@@ -105,3 +103,5 @@ export function useMarkMutations(deps: UseMarkMutationsDeps) {
 
   return { createAnnotation, deleteAnnotation, retagAnnotation, saveEditing, startEditing, startEditingId, updateAnnotation };
 }
+
+export type MarkMutations = ReturnType<typeof useMarkMutations>;

@@ -34,6 +34,9 @@ before(async () => {
     await Promise.reject(new Error('router boom'));
   });
   app.use('/r', router);
+  app.post('/small', express.json({ limit: '10b' }), (_req, res) => {
+    res.json({ ok: true });
+  });
   app.use(jsonErrorHandler);
   const server = app.listen(0, '127.0.0.1');
   await new Promise((r) => server.once('listening', r));
@@ -65,4 +68,16 @@ test('async, sync and router errors answer 500 with JSON, and nothing is left un
 test('the server keeps serving afterwards, and app.get(name) still reads a setting', async () => {
   const res = await fetch(`${base}/ok`);
   assert.deepEqual(await res.json(), { setting: 'kept' });
+});
+
+test('a body over the route limit answers 413 with a plain reason, not a 500', async () => {
+  const errorLog = console.error;
+  console.error = () => {};
+  try {
+    const res = await fetch(`${base}/small`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: 'far too long' }) });
+    assert.equal(res.status, 413);
+    assert.match((await res.json()).error, /too large/);
+  } finally {
+    console.error = errorLog;
+  }
 });

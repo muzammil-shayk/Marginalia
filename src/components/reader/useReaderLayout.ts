@@ -4,45 +4,41 @@
  * paragraph font (moved verbatim from ReaderScreen).
  */
 
-import React, { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
+import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
 import { usePoemOverlay } from '../PoetryView';
-import { MIN_SPREAD_WIDTH, type TextSpreadHandle } from '../TextSpread';
-import { PoetryPrefs, UserSettings } from '../../types';
-import { type TextMark } from '../../utils/textMarks';
+import { MIN_SPREAD_WIDTH } from '../TextSpread';
+import { UserSettings } from '../../types';
 import { stackMargin } from '../marginLayout';
 import type { PanelContext } from '../pdf/useAnchoredPanel';
 import {
   PARA_TEXT_ID_PREFIX,
-  Tab,
-  NoteItem,
   MarginMode,
   MARGIN_CARDS_PX,
   MIN_TEXT_PX
 } from './readerParts';
-import type { PoemAnalysis } from '../../utils/poetry';
+import type { ReaderDoc, ReaderPanels, ReaderPoetry, ReaderRefs } from './readerState';
+import type { PlainTextAnnotations } from '../../hooks/usePlainTextAnnotations';
+import type { ReaderMarkViews } from './useReaderMarkViews';
 
 export interface UseReaderLayoutDeps {
-  /** Created by ReaderScreen, ahead of the hooks that use it. */
-  spreadHandle: React.RefObject<TextSpreadHandle | null>;
-  activeControlTab: Tab;
-  controlBarRef: React.RefObject<HTMLDivElement>;
-  docId: string;
-  isPanelOpen: boolean;
-  marks: TextMark[];
-  onSpreadChange: (on: boolean) => void;
-  openPin: string;
-  paraData: { glyphs: Map<number, string>; marks: Map<number, TextMark[]>; notes: Map<number, NoteItem[]>; };
-  paragraphs: string[];
-  poem: PoemAnalysis;
-  poetry: PoetryPrefs;
-  reportProgress: (position: number, total: number) => void;
-  setOpenPin: React.Dispatch<React.SetStateAction<string>>;
   settings: UserSettings;
-  showInlineNotes: boolean;
+  onSpreadChange: ((on: boolean) => void) | undefined;
+  annotations: Pick<PlainTextAnnotations, 'marks'>;
+  doc: Pick<ReaderDoc, 'docId' | 'paragraphs' | 'reportProgress'>;
+  poetry: Pick<ReaderPoetry, 'poem' | 'poetry'>;
+  views: Pick<ReaderMarkViews, 'paraData'>;
+  panels: Pick<ReaderPanels, 'activeControlTab' | 'isPanelOpen' | 'openPin' | 'setOpenPin' | 'showInlineNotes'>;
+  refs: Pick<ReaderRefs, 'controlBarRef'>;
 }
 
 export function useReaderLayout(deps: UseReaderLayoutDeps) {
-  const { spreadHandle, activeControlTab, controlBarRef, docId, isPanelOpen, marks, onSpreadChange, openPin, paraData, paragraphs, poem, poetry, reportProgress, setOpenPin, settings, showInlineNotes } = deps;
+  const { settings, onSpreadChange } = deps;
+  const { marks } = deps.annotations;
+  const { docId, paragraphs, reportProgress } = deps.doc;
+  const { poem, poetry } = deps.poetry;
+  const { paraData } = deps.views;
+  const { activeControlTab, isPanelOpen, openPin, setOpenPin, showInlineNotes } = deps.panels;
+  const { controlBarRef } = deps.refs;
   // Reports the last paragraph in view as the reader scrolls (debounced by the hook), and once
   // on opening, so a document read in one screen still counts as read that far.
   useEffect(() => {
@@ -254,3 +250,5 @@ export function useReaderLayout(deps: UseReaderLayoutDeps) {
 
   return { bodyRef, marginMode, paragraphFont, placementContext, setFlow, spreadFits, spreadOn, spreadPref, spreadStartId, toggleSpread };
 }
+
+export type ReaderLayout = ReturnType<typeof useReaderLayout>;

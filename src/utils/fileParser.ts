@@ -146,8 +146,8 @@ async function parsePdf(file: File, title: string): Promise<ParseResult> {
  * Parse DOCX files using mammoth.js.
  */
 async function parseDocx(file: File, title: string): Promise<ParseResult> {
+  const arrayBuffer = await zipBytes(file);
   const mammoth = await import('mammoth');
-  const arrayBuffer = await file.arrayBuffer();
   const result = await mammoth.extractRawText({ arrayBuffer });
 
   if (!result.value.trim()) {
@@ -166,8 +166,8 @@ async function parseDocx(file: File, title: string): Promise<ParseResult> {
  * Extracts text from each chapter/spine item.
  */
 async function parseEpub(file: File, title: string): Promise<ParseResult> {
+  const arrayBuffer = await zipBytes(file);
   const ePub = (await import('epubjs')).default;
-  const arrayBuffer = await file.arrayBuffer();
   const book = ePub(arrayBuffer);
 
   await book.ready;
@@ -208,3 +208,112 @@ async function parseHtml(file: File, siblings: File[]): Promise<ParseResult> {
     inlinedAssets: prepared.inlinedAssets
   };
 }
+
+/** Generous for any real book or document: a long illustrated EPUB unpacks to tens of MB. */
+const MAX_UNZIPPED_BYTES = 512 * 1024 * 1024;
+const MAX_ZIP_ENTRIES = 20_000;
+
+/**
+ * DOCX and EPUB are zip files, and a few KB can unpack to gigabytes (a "zip bomb"), freezing the
+ * app while it is read. This reads the zip's own directory, before anything is unpacked, and
+ * returns the reason to refuse it, or null. Not a zip (no directory found): null, and the format
+ * reader reports the problem as before.
+ *
+ * This is only the fast path: it trusts the sizes the directory declares. `zipInflatesTooLarge`
+ * then counts the real bytes, which catches a file that lies about them.
+ */
+export function zipTooLarge(bytes: Uint8Array, limits: { maxBytes?: number; maxEntries?: number } = {}): string | null {
+  const maxBytes = limits.maxBytes ?? MAX_UNZIPPED_BYTES;
+  const maxEntries = limits.maxEntries ?? MAX_ZIP_ENTRIES;
+  const tooLarge = tooLargeMessage(maxBytes, maxEntries);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  // End of central directory record: 22 bytes, then a comment of up to 65,535.
+  let end = -1;
+  for (let i = bytes.length - 22; i >= Math.max(0, bytes.length - 22 - 0xffff); i--) {
+    if (view.getUint32(i, true) === 0x06054b50) {
+      end = i;
+      break;
+    }
+  }
+  if (end < 0) return null;
+  const entries = view.getUint16(end + 10, true);
+  const offset = view.getUint32(end + 16, true);
+  // ZIP64 markers: a directory too big for the classic fields.
+  if (entries === 0xffff || offset === 0xffffffff) return tooLarge;
+  if (entries > maxEntries) return tooLarge;
+  let total = 0;
+  let at = offset;
+  for (let n = 0; n < entries; n++) {
+    if (at + 46 > bytes.length || view.getUint32(at, true) !== 0x02014b50) return null;
+    const size = view.getUint32(at + 24, true);
+    if (size === 0xffffffff) return tooLarge;
+    total += size;
+    if (total > maxBytes) return tooLarge;
+    at += 46 + view.getUint16(at + 28, true) + view.getUint16(at + 30, true) + view.getUint16(at + 32, true);
+  }
+  return null;
+}
+
+interface ZipStream {
+  on(event: 'data', listener: (chunk: Uint8Array) => void): ZipStream;
+  on(event: 'error' | 'end', listener: () => void): ZipStream;
+  pause(): ZipStream;
+  resume(): ZipStream;
+}
+
+function tooLargeMessage(maxBytes: number, maxEntries: number): string {
+  return `This file is too large to open: it unpacks to more than ${Math.round(maxBytes / 1024 / 1024)} MB or ${maxEntries.toLocaleString('en-US')} parts.`;
+}
+
+/**
+ * The real check: unpacks every entry once, counting the bytes as they come out and discarding
+ * them, and stops the moment the running total passes the limit, so a lying bomb never unpacks
+ * in full. Returns the reason to refuse, or null. Not a zip, or a damaged entry: null, and the
+ * format reader reports the problem as before.
+ */
+export async function zipInflatesTooLarge(
+  bytes: Uint8Array,
+  limits: { maxBytes?: number; maxEntries?: number } = {}
+): Promise<string | null> {
+  const maxBytes = limits.maxBytes ?? MAX_UNZIPPED_BYTES;
+  const maxEntries = limits.maxEntries ?? MAX_ZIP_ENTRIES;
+  const JSZip = (await import('jszip')).default;
+  let zip: InstanceType<typeof JSZip>;
+  try {
+    zip = await JSZip.loadAsync(bytes);
+  } catch {
+    return null;
+  }
+  const entries = Object.values(zip.files).filter((entry) => !entry.dir);
+  if (entries.length > maxEntries) return tooLargeMessage(maxBytes, maxEntries);
+  let total = 0;
+  for (const entry of entries) {
+    const over = await new Promise<boolean>((resolve) => {
+      // Documented JSZip API (ZipObject#internalStream) that its type definitions leave out.
+      const stream = (entry as unknown as { internalStream(type: 'uint8array'): ZipStream }).internalStream('uint8array');
+      stream
+        .on('data', (chunk: Uint8Array) => {
+          total += chunk.length;
+          if (total > maxBytes) {
+            stream.pause();
+            resolve(true);
+          }
+        })
+        .on('error', () => resolve(false))
+        .on('end', () => resolve(false))
+        .resume();
+    });
+    if (over) return tooLargeMessage(maxBytes, maxEntries);
+  }
+  return null;
+}
+
+/** The file's bytes, refused with a clear reason when the zip inside is too large to unpack. */
+async function zipBytes(file: File): Promise<ArrayBuffer> {
+  const arrayBuffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(arrayBuffer);
+  const reason = zipTooLarge(bytes) ?? (await zipInflatesTooLarge(bytes));
+  if (reason) throw new Error(reason);
+  return arrayBuffer;
+}
+

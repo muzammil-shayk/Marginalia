@@ -16,10 +16,10 @@ import { GestureMode } from './layerHelpers';
 export interface LayerHandlesProps {
   annotations: Annotation[];
   gestureHandlers: (a: Annotation, mode: GestureMode) => { onPointerDown: (e: React.PointerEvent) => void; };
-  gestureRef: React.RefObject<{ id: string; mode: GestureMode; startX: number; startY: number; origin: Annotation; originBounds: FractionRect; moved: boolean; }>;
-  hoveredId: string;
+  gestureRef: React.RefObject<{ id: string; mode: GestureMode; startX: number; startY: number; origin: Annotation; originBounds: FractionRect; moved: boolean; } | null>;
+  hoveredId: string | null;
   live: (a: Annotation) => Annotation;
-  transformTarget: Annotation;
+  transformTarget: Annotation | undefined;
 }
 
 export const LayerHandles: React.FC<LayerHandlesProps> = ({ annotations, gestureHandlers, gestureRef, hoveredId, live, transformTarget }) => (

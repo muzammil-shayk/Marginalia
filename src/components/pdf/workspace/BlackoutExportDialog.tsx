@@ -44,10 +44,11 @@ export const BlackoutExportDialog: React.FC<{
                 read aloud.
               </p>
               <p className="text-muted">
-                Removing them makes {pages === 1 ? 'that page a picture' : 'those pages pictures'} of themselves with the black-outs painted
+                Removing them makes {pages === 1 ? 'that page a picture of itself' : 'those pages pictures of themselves'} with the black-outs painted
                 in, so nothing under them survives. The other words on {pages === 1 ? 'that page' : 'those pages'} can then no longer be selected
                 or searched. Every other page stays as it is.
               </p>
+              <p className="text-muted">The cleaned copy also leaves out the PDF’s outline (bookmarks) and other document-wide extras.</p>
             </div>
           </div>
         </div>

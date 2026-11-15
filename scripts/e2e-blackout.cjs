@@ -9,6 +9,8 @@
  * 3. "Keep the text underneath": the hidden words are still in the file (the warning is true).
  * 4. "Remove the hidden text too": the hidden words are nowhere in the file, in any stream, while
  *    the page without a black-out keeps its text.
+
+ * 5. Class pack over a black-out: the word is nowhere in the pack's JSON or PDF, and the pack opens.
  * Exits 0 when every check passes, 1 otherwise, printing each result.
  */
 
@@ -150,6 +152,38 @@ async function main() {
     Boolean(doc) && !hasWord(redText, SECRET) && !hasWord(redText, 'King of Kings') && doc.getPageCount() === 2 && hasWord(redText, 'Nothing beside remains'),
     red.file ? path.basename(red.file) : 'no file'
   );
+
+  // 5. Class pack: a highlight over the blacked-out word whose quote names it. The saved pack (JSON
+  //    and its embedded PDF) must not hold the word anywhere, and must still open as a document.
+  const bar = bars[0];
+  const over = { id: 'over1', page: 1, kind: 'highlight', color: '#b5527a', themeIds: ['love'], themeId: 'love', rects: [{ ...bar.box }], quote: `My name is ${SECRET}`, text: 'teacher note', createdAt: new Date().toISOString() };
+  await fetch(`${base}/api/documents/${pdf.id}/annotations`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ annotations: [...marks, over] }) });
+  await win.loadURL(base);
+  await sleep(3500);
+  saved = null;
+  const clicked = await js(`
+    const open = document.querySelector('button[aria-label="Export"]');
+    if (!open) return 'missing export';
+    open.click(); await new Promise((r) => setTimeout(r, 400));
+    const b = [...document.querySelectorAll('button')].find((x) => x.textContent.trim().toLowerCase() === 'save class pack' && x.checkVisibility());
+    if (!b) return 'missing pack button';
+    b.click(); return 'ok';
+  `);
+  for (let i = 0; i < 80 && !saved; i++) await sleep(250);
+  const packText = saved ? fs.readFileSync(saved, 'utf8') : '';
+  const pack = packText ? JSON.parse(packText) : null;
+  const packPdf = pack?.document?.original ? Buffer.from(pack.document.original, 'base64') : Buffer.alloc(0);
+  const packPdfText = pdfText(packPdf);
+  const packDoc = packPdf.length ? await PDFDocument.load(packPdf) : null;
+  check('Class pack saved', Boolean(pack), clicked);
+  check('Class pack JSON (text, quotes) holds no blacked-out word', Boolean(pack) && !packText.includes(SECRET) && !packText.includes('King of Kings'));
+  check(
+    'Class pack PDF: the word is in no stream; 2 pages; page 2 keeps its text',
+    Boolean(packDoc) && !hasWord(packPdfText, SECRET) && !hasWord(packPdfText, 'King of Kings') && packDoc.getPageCount() === 2 && hasWord(packPdfText, 'Nothing beside remains')
+  );
+  const opened = await (await fetch(`${base}/api/class-packs`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: packText || '{}' })).json();
+  const studentDoc = opened.meta ? await api(`/documents/${opened.meta.id}`) : null;
+  check('Class pack opens via POST /api/class-packs, with no blacked-out word stored', Boolean(studentDoc) && !JSON.stringify(studentDoc).includes(SECRET), opened.meta ? '' : JSON.stringify(opened).slice(0, 120));
 
   win.destroy();
   fs.rmSync(store, { recursive: true, force: true });

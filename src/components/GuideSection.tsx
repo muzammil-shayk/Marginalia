@@ -37,7 +37,7 @@ export const GuideSection: React.FC<{ isDark: boolean }> = ({ isDark }) => {
     <section
       id={GUIDE_SECTION_ID}
       aria-labelledby="guide-title"
-      className={`scroll-mt-6 rounded-2xl border overflow-hidden ${isDark ? 'border-stone-800/80 bg-night-4' : 'border-stone-200/70 bg-[#f7f5f0]'}`}
+      className={`scroll-mt-6 rounded-2xl border overflow-hidden ${isDark ? 'border-stone-800/80 bg-night-4' : 'border-stone-200/70 bg-paper-3'}`}
     >
       <div className="px-5 pt-5 pb-3 flex items-center gap-3">
         <div className="w-7 h-7 rounded-lg bg-gold/10 dark:bg-gold/15 flex items-center justify-center text-gold">

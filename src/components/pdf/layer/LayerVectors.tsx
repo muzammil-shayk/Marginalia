@@ -22,20 +22,20 @@ export interface LayerVectorsProps {
   activeColor: string;
   annotations: Annotation[];
   bracketBoxFrom: (a: FractionPoint, b: FractionPoint) => FractionRect;
-  draftBox: FractionRect;
-  draftEnd: FractionPoint;
-  draftStart: FractionPoint;
-  draftStroke: FractionPoint[];
+  draftBox: FractionRect | null;
+  draftEnd: FractionPoint | null;
+  draftStart: FractionPoint | null;
+  draftStroke: FractionPoint[] | null;
   draftWidth: number;
   handleMarkClick: (e: React.MouseEvent, annotation: Annotation) => void;
   live: (a: Annotation) => Annotation;
   marksClickable: boolean;
   pageWidth: number;
-  strokeProps: (a: Annotation) => { stroke: string; strokeWidth: number; strokeDasharray: string; strokeLinecap: "round"; vectorEffect: "non-scaling-stroke"; filter: string; };
+  strokeProps: (a: Annotation) => { stroke: string; strokeWidth: number; strokeDasharray: string | undefined; strokeLinecap: "round"; vectorEffect: "non-scaling-stroke"; filter: string | undefined; };
   tool: PdfTool;
-  toolBracketSide: BracketSide;
-  toolStrokeStyle: StrokeStyle;
-  toolWeight: number;
+  toolBracketSide: BracketSide | undefined;
+  toolStrokeStyle: StrokeStyle | undefined;
+  toolWeight: number | undefined;
 }
 
 export const LayerVectors: React.FC<LayerVectorsProps> = ({ activeColor, annotations, bracketBoxFrom, draftBox, draftEnd, draftStart, draftStroke, draftWidth, handleMarkClick, live, marksClickable, pageWidth, strokeProps, tool, toolBracketSide, toolStrokeStyle, toolWeight }) => (

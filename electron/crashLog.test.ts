@@ -2,7 +2,7 @@
  * Run with: npx tsx --test electron/crashLog.test.ts
  */
 
-import { test } from 'node:test';
+import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'events';
 import fs from 'fs';
@@ -12,7 +12,16 @@ import { createRequire } from 'module';
 
 const { crashLine, appendCapped, installCrashLogging } = createRequire(import.meta.url)('./crashLog.cjs');
 
-const tmp = () => path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'marginalia-crash-')), 'crash.log');
+const made: string[] = [];
+const tmp = () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'marginalia-crash-'));
+  made.push(dir);
+  return path.join(dir, 'crash.log');
+};
+// The temp folders are removed afterwards (they used to pile up in the OS temp folder).
+after(() => {
+  for (const dir of made) fs.rmSync(dir, { recursive: true, force: true });
+});
 
 test('a line carries the time, the kind and the stack', () => {
   const line = crashLine('unhandledRejection', new Error('boom'), new Date('2026-11-12T10:00:00Z'));

@@ -21,8 +21,8 @@ export interface MarginsTrackerProps {
   keyConceptMarks: number;
   keyConceptsBooks: StoredDocumentMeta[];
   keyConceptsTheme: { id: string; name: string; color: string; };
-  onOpenMotifTracer: () => void;
-  onOpenStoredDocument: (meta: StoredDocumentMeta, focus?: AnnotationFocus) => void;
+  onOpenMotifTracer: (() => void) | undefined;
+  onOpenStoredDocument: ((meta: StoredDocumentMeta, focus?: AnnotationFocus) => void) | undefined;
   settings: UserSettings;
   studioDirection: 1 | -1;
   studioTab: "overview" | "themes" | "terminology";
@@ -37,13 +37,13 @@ export const MarginsTracker: React.FC<MarginsTrackerProps> = ({ booksByTheme, do
       {/* ── MY MARGINS TRACKER ────────────── */}
       <section
         className={`rounded-2xl border transition-all duration-200 overflow-hidden ${
-          isDark ? 'bg-night-3 border-stone-800/90' : 'bg-[#fcfbf9] border-stone-200/90'
+          isDark ? 'bg-night-3 border-stone-800/90' : 'bg-paper-0 border-stone-200/90'
         }`}
       >
         {/* Studio Top Control Strip */}
         <div
           className={`flex flex-wrap items-center justify-between gap-3 px-5 py-3.5 border-b ${
-            isDark ? 'border-stone-800/80 bg-night-4' : 'border-stone-200/70 bg-[#f7f5f0]'
+            isDark ? 'border-stone-800/80 bg-night-4' : 'border-stone-200/70 bg-paper-3'
           }`}
         >
           <div className="flex items-center gap-3">

@@ -1,4 +1,3 @@
-import "dotenv/config";
 import express from "express";
 import path from "path";
 import {
@@ -30,6 +29,7 @@ import { catchAsyncErrors, jsonErrorHandler } from "./src/services/asyncRoutes";
 import { setAiEnabled } from "./src/services/aiGate";
 import { wordWindow, markSearchHits } from "./searchSnippet";
 import { mainThemeId, themeIdsOf } from "./src/utils/markThemes";
+import { withSafeColors } from "./src/utils/marksExport";
 
 /**
  * Re-exported for the desktop shell, which owns the folder picker and calls this to re-point the
@@ -46,6 +46,34 @@ export { setAiEnabled };
 
 // Every route's thrown error or rejected promise reaches `jsonErrorHandler` (see asyncRoutes).
 const app = catchAsyncErrors(express());
+
+/** The app itself, for tests (server.test.ts). */
+export { app };
+
+/**
+ * The page's Content-Security-Policy, the second layer behind the checks on imported marks: even a
+ * value that slipped into a style string cannot fetch from the network or load a script. WASM is
+ * allowed for pdf.js's image decoders, `blob:` workers for pdf.js, `data:` for bundled fonts and
+ * page images. Only in the built app: Vite's dev server injects inline scripts.
+ */
+const CONTENT_SECURITY_POLICY = [
+  "default-src 'self'",
+  "script-src 'self' 'wasm-unsafe-eval'",
+  "worker-src 'self' blob:",
+  "img-src 'self' data: blob:",
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self' data:",
+  "connect-src 'self'",
+  "object-src 'none'",
+  "base-uri 'none'",
+  "frame-ancestors 'none'"
+].join("; ");
+
+app.use((_req, res, next) => {
+  if (process.env.NODE_ENV === "production") res.setHeader("Content-Security-Policy", CONTENT_SECURITY_POLICY);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  next();
+});
 
 /**
  * The desktop build passes PORT=0 so the OS assigns a free port — a fixed one would refuse to
@@ -102,15 +130,20 @@ app.use("/api", (req, res, next) => {
 });
 
 /**
- * One JSON parser, sized for the largest body any route takes.
+ * JSON body limits, per route.
  *
- * Per-route `express.json()` limits are dead code behind a global one: this middleware runs
- * first, sets `req._body`, and every later parser no-ops. So the 50mb on document creation, the
- * 200mb on HTML import and the 25mb on annotations were all silently capped at 10mb, and
- * importing a large book failed with an unexplained 413. The server listens on loopback only and
- * refuses cross-site callers, so the ceiling is a practical one rather than a security boundary.
+ * The first JSON parser to run reads the body and every later one skips it, so a route-level
+ * `express.json({ limit })` behind a global parser is dead code. The routes that take large bodies
+ * therefore get their own parser here, before the small default that covers everything else.
+ * (libraryRoutes keeps its own parsers for when it is mounted alone, as in its tests.)
  */
-app.use(express.json({ limit: "200mb" }));
+app.post("/api/documents/from-html", express.json({ limit: "200mb" }));
+app.post("/api/class-packs", express.json({ limit: "100mb" }));
+app.post("/api/documents", express.json({ limit: "50mb" }));
+app.post("/api/export/notes-pdf", express.json({ limit: "50mb" }));
+app.put("/api/documents/:id/annotations", express.json({ limit: "25mb" }));
+app.post("/api/motifs/trace", express.json({ limit: "1mb" }));
+app.use(express.json({ limit: "5mb" }));
 
 // Health check endpoint
 /** Gemini key settings, refused while the AI opt-in is off. See `src/services/geminiConfig.ts`. */
@@ -214,7 +247,7 @@ app.put(
  * Creates a document from its extracted text. Used for pasted text and as the first step of a
  * file upload, whose original bytes then follow via PUT /api/documents/:id/original.
  */
-app.post("/api/documents", express.json({ limit: "50mb" }), async (req, res) => {
+app.post("/api/documents", async (req, res) => {
   try {
     // Pasted custom text arrives with `layout: 'verbatim'` (and optional clipboard `html`).
     const params = documentParamsFromBody(req.body);
@@ -244,7 +277,7 @@ app.post("/api/documents", express.json({ limit: "50mb" }), async (req, res) => 
  * `setHtmlToPdfRenderer` and `electron/main.cjs`). Running as a bare dev server there is none,
  * so the import is refused with an explanation rather than silently storing an unopenable file.
  */
-app.post("/api/documents/from-html", express.json({ limit: "200mb" }), async (req, res) => {
+app.post("/api/documents/from-html", async (req, res) => {
   try {
     const { title, text, html, filename } = req.body || {};
     if (!html || typeof html !== "string" || !html.trim()) {
@@ -466,6 +499,8 @@ app.get("/api/documents/:id/original", async (req, res) => {
 
   if (req.query.disposition === "inline") {
     res.setHeader("Content-Type", INLINE_CONTENT_TYPES[ext] || "application/octet-stream");
+    // An HTML original opened at this URL runs with no script, no storage and no same-origin API access.
+    res.setHeader("Content-Security-Policy", "sandbox");
     res.setHeader("Content-Disposition", contentDisposition("inline", safeName));
   } else {
     res.setHeader("Content-Type", "application/octet-stream");
@@ -503,7 +538,7 @@ app.get("/api/documents/:id/annotations", async (req, res) => {
  * each edit, so a whole-array PUT keeps the two in sync without needing per-annotation
  * add/update/delete routes and the ordering problems they bring.
  */
-app.put("/api/documents/:id/annotations", express.json({ limit: "25mb" }), async (req, res) => {
+app.put("/api/documents/:id/annotations", async (req, res) => {
   const { annotations } = req.body || {};
   if (!Array.isArray(annotations)) {
     res.status(400).json({ error: "An annotations array is required." });
@@ -523,7 +558,8 @@ app.put("/api/documents/:id/annotations", express.json({ limit: "25mb" }), async
       `[Marginalia] annotations SHRANK ${had} -> ${annotations.length} on ${req.params.id} — previous set kept, restore with POST /api/documents/${req.params.id}/annotations/restore`
     );
   }
-  const meta = await updateDocument(req.params.id, { annotations });
+  // A colour reaches style strings when drawn: anything but a plain colour is dropped (see isSafeColor).
+  const meta = await updateDocument(req.params.id, { annotations: withSafeColors(annotations) });
   if (!meta) {
     res.status(404).json({ error: "Document not found." });
     return;

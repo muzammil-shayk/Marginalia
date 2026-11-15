@@ -3,13 +3,12 @@
  * board's items, and arriving from a motif trace (moved verbatim from ReaderScreen).
  */
 
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { hasRtlText } from '../../utils/scriptDirection';
 import { paragraphHits } from '../../utils/motifTrace';
 import { paintHighlight, rangeFor, readPieces } from '../findHighlight';
 import { printNotesPdf } from '../../utils/documentStorage';
 import nastaliqFontUrl from '@fontsource/noto-nastaliq-urdu/files/noto-nastaliq-urdu-arabic-400-normal.woff2?url';
-import { type TextSpreadHandle } from '../TextSpread';
 import { copyText, excerpt, useMarksArchive } from '../MarksArchive';
 import { useDocumentFind } from '../FindBar';
 import type { MarkLinks } from '../pdf/MarkProperties';
@@ -18,8 +17,6 @@ import { linkMarks, linkedIds, unlinkMarks } from '../../utils/markLinks';
 import { ReaderJump, UserSettings } from '../../types';
 import { ParagraphRange } from '../../utils/textFormatting';
 import type { PlainTextAnnotations } from '../../hooks/usePlainTextAnnotations';
-import { type TextMark } from '../../utils/textMarks';
-import { type TextStyle } from '../../utils/pastedText';
 import {
   exportToPDF,
   notesPrintHtml,
@@ -30,42 +27,36 @@ import {
   textMarksForExport,
   ExportOptions
 } from '../../utils/exportAnnotations';
-import { PARA_TEXT_ID_PREFIX, isReactionKind, Tab } from './readerParts';
-import type { Annotation } from '../pdf/annotationModel';
+import { PARA_TEXT_ID_PREFIX, isReactionKind } from './readerParts';
+import type { ReaderDoc, ReaderPanels, ReaderRefs } from './readerState';
+import type { ReaderMarkViews } from './useReaderMarkViews';
+import type { ReaderMarkUi } from './useReaderMarkUi';
+import type { ReaderLayout } from './useReaderLayout';
 
 export interface UseReaderExtrasDeps {
-  bottomInset: number;
-  activeControlTab: Tab;
-  annotations: PlainTextAnnotations;
-  colorOf: (m: TextMark) => string;
-  content: { text: string; layout?: "verbatim"; textStyles?: TextStyle[]; };
-  controlBarRef: React.RefObject<HTMLDivElement>;
-  displayAuthor: "";
-  displayTitle: string;
-  docId: string;
-  editorOpen: boolean;
-  heads: TextMark[];
-  isDark: boolean;
-  jump: ReaderJump;
-  markById: Map<string, TextMark>;
-  marks: TextMark[];
-  onAddThemes: (themes: UserSettings["activeThemes"]) => void;
-  paragraphs: string[];
-  reduceMotion: boolean;
-  scrollToMark: (id: string) => boolean;
-  select: (ids: Iterable<string>, opts?: { additive?: boolean; }) => void;
-  selectedThemeFilter: string;
-  setActiveParagraphIndex: React.Dispatch<React.SetStateAction<number>>;
   settings: UserSettings;
-  spreadHandle: React.RefObject<TextSpreadHandle>;
-  spreadOn: boolean;
-  textRef: React.RefObject<HTMLElement>;
-  viewById: Map<string, Annotation>;
-  views: Annotation[];
+  isDark: boolean;
+  reduceMotion: boolean | null;
+  jump: ReaderJump | undefined;
+  onAddThemes: ((themes: UserSettings["activeThemes"]) => void) | undefined;
+  annotations: PlainTextAnnotations;
+  doc: Pick<ReaderDoc, 'content' | 'displayAuthor' | 'displayTitle' | 'docId' | 'paragraphs'>;
+  views: Pick<ReaderMarkViews, 'colorOf' | 'editorOpen' | 'heads' | 'markById' | 'viewById' | 'views'>;
+  panels: Pick<ReaderPanels, 'activeControlTab' | 'bottomInset' | 'selectedThemeFilter' | 'setActiveParagraphIndex'>;
+  refs: Pick<ReaderRefs, 'controlBarRef' | 'spreadHandle' | 'textRef'>;
+  markUi: Pick<ReaderMarkUi, 'scrollToMark'>;
+  layout: Pick<ReaderLayout, 'spreadOn'>;
 }
 
 export function useReaderExtras(deps: UseReaderExtrasDeps) {
-  const { bottomInset, activeControlTab, annotations, colorOf, content, controlBarRef, displayAuthor, displayTitle, docId, editorOpen, heads, isDark, jump, markById, marks, onAddThemes, paragraphs, reduceMotion, scrollToMark, select, selectedThemeFilter, setActiveParagraphIndex, settings, spreadHandle, spreadOn, textRef, viewById, views } = deps;
+  const { settings, isDark, reduceMotion, jump, onAddThemes, annotations } = deps;
+  const { marks, select } = annotations;
+  const { content, displayAuthor, displayTitle, docId, paragraphs } = deps.doc;
+  const { colorOf, editorOpen, heads, markById, viewById, views } = deps.views;
+  const { activeControlTab, bottomInset, selectedThemeFilter, setActiveParagraphIndex } = deps.panels;
+  const { controlBarRef, spreadHandle, textRef } = deps.refs;
+  const { scrollToMark } = deps.markUi;
+  const { spreadOn } = deps.layout;
 
   // What the export tab writes: every mark (highlights included), one entry per mark.
   const exportEntries = useMemo(() => textMarksForExport(marks, paragraphs), [marks, paragraphs]);
@@ -96,7 +87,7 @@ export function useReaderExtras(deps: UseReaderExtrasDeps) {
           a.click();
           window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
         })();
-      } else exportToPDF(exportable, opts);
+      } else void exportToPDF(exportable, opts);
     }
     else if (format === 'markdown') downloadTextFile(generateMarkdown(exportable, opts), `${displayTitle}-annotations.md`, 'text/markdown');
     else downloadTextFile(generatePlainText(exportable, opts), `${displayTitle}-annotations.txt`, 'text/plain');
@@ -230,3 +221,5 @@ export function useReaderExtras(deps: UseReaderExtrasDeps) {
 
   return { activeJump, archive, boardItems, copyQuoteOf, copySelectionQuote, exportEntries, exportable, find, markLinksFor, runExport, setActiveJump };
 }
+
+export type ReaderExtras = ReturnType<typeof useReaderExtras>;

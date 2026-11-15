@@ -6,23 +6,26 @@
 
 import { useCallback, useMemo, useRef } from 'react';
 import { UserSettings } from '../../types';
-import { ParagraphRange } from '../../utils/textFormatting';
 import { groupHeads, expandToGroups, type TextMark } from '../../utils/textMarks';
 import { markColor, reuseUnchanged, textMarkViews } from '../../utils/textMarkView';
 import { FALLBACK_COLOR, isReactionKind, NoteItem } from './readerParts';
+import type { ReaderDoc, ReaderEditor, ReaderSelection } from './readerState';
+import type { PlainTextAnnotations } from '../../hooks/usePlainTextAnnotations';
 
 export interface UseReaderMarkViewsDeps {
-  editingId: string;
-  hoveredId: string;
-  marks: TextMark[];
-  newNote: { ranges: ParagraphRange[]; quote: string; themeIds: string[]; color: string; paragraphOnly?: true; };
-  paragraphs: string[];
-  selectedIds: string[];
   settings: UserSettings;
+  annotations: Pick<PlainTextAnnotations, 'marks' | 'selectedIds'>;
+  doc: Pick<ReaderDoc, 'paragraphs'>;
+  selection: Pick<ReaderSelection, 'hoveredId'>;
+  editor: Pick<ReaderEditor, 'editingId' | 'newNote'>;
 }
 
 export function useReaderMarkViews(deps: UseReaderMarkViewsDeps) {
-  const { editingId, hoveredId, marks, newNote, paragraphs, selectedIds, settings } = deps;
+  const { settings } = deps;
+  const { marks, selectedIds } = deps.annotations;
+  const { paragraphs } = deps.doc;
+  const { hoveredId } = deps.selection;
+  const { editingId, newNote } = deps.editor;
 
   const heads = useMemo(() => groupHeads(marks), [marks]);
   const views = useMemo(
@@ -91,3 +94,5 @@ export function useReaderMarkViews(deps: UseReaderMarkViewsDeps) {
 
   return { colorOf, editing, editorColor, editorIsNote, editorOpen, editorPara, heads, hovByPara, markById, noteHeads, paraData, selByPara, selectedView, viewById, views };
 }
+
+export type ReaderMarkViews = ReturnType<typeof useReaderMarkViews>;

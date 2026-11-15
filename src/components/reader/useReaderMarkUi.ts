@@ -3,35 +3,28 @@
  * and the one stable set of actions every paragraph is given (moved verbatim from ReaderScreen).
  */
 
-import type { TextSpreadHandle } from '../TextSpread';
-import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { type TextMark } from '../../utils/textMarks';
-import { SelectionAnchor } from '../pdf/SelectionPopover';
-import { Tab, ParagraphActions } from './readerParts';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { ParagraphActions } from './readerParts';
+import type { ReaderPanels, ReaderRefs, ReaderSelection } from './readerState';
+import type { PlainTextAnnotations } from '../../hooks/usePlainTextAnnotations';
+import type { ReaderMarking } from './useReaderMarking';
 
 export interface UseReaderMarkUiDeps {
-  spreadHandle: React.RefObject<TextSpreadHandle | null>;
-  activeControlTab: Tab;
-  createParagraphNote: (paraIdx: number) => void;
-  deleteMark: (id: string) => void;
-  handleSwitchTab: (newTab: Tab) => void;
-  isPanelOpen: boolean;
-  marks: TextMark[];
-  reduceMotion: boolean;
-  select: (ids: Iterable<string>, opts?: { additive?: boolean; }) => void;
-  selectedIds: string[];
-  selectionAnchor: SelectionAnchor;
-  setActiveParagraphIndex: React.Dispatch<React.SetStateAction<number>>;
-  setHoveredId: React.Dispatch<React.SetStateAction<string>>;
-  setOpenPin: React.Dispatch<React.SetStateAction<string>>;
-  setSelectionAnchor: React.Dispatch<React.SetStateAction<SelectionAnchor>>;
-  showInlineNotes: boolean;
-  startEditing: (id: string) => void;
-  textRef: React.RefObject<HTMLElement>;
+  reduceMotion: boolean | null;
+  annotations: Pick<PlainTextAnnotations, 'marks' | 'select' | 'selectedIds'>;
+  marking: Pick<ReaderMarking, 'createParagraphNote' | 'deleteMark' | 'startEditing'>;
+  panels: Pick<ReaderPanels, 'activeControlTab' | 'handleSwitchTab' | 'isPanelOpen' | 'setActiveParagraphIndex' | 'setOpenPin' | 'showInlineNotes'>;
+  selection: Pick<ReaderSelection, 'selectionAnchor' | 'setHoveredId' | 'setSelectionAnchor'>;
+  refs: Pick<ReaderRefs, 'spreadHandle' | 'textRef'>;
 }
 
 export function useReaderMarkUi(deps: UseReaderMarkUiDeps) {
-  const { spreadHandle, activeControlTab, createParagraphNote, deleteMark, handleSwitchTab, isPanelOpen, marks, reduceMotion, select, selectedIds, selectionAnchor, setActiveParagraphIndex, setHoveredId, setOpenPin, setSelectionAnchor, showInlineNotes, startEditing, textRef } = deps;
+  const { reduceMotion } = deps;
+  const { marks, select, selectedIds } = deps.annotations;
+  const { createParagraphNote, deleteMark, startEditing } = deps.marking;
+  const { activeControlTab, handleSwitchTab, isPanelOpen, setActiveParagraphIndex, setOpenPin, showInlineNotes } = deps.panels;
+  const { selectionAnchor, setHoveredId, setSelectionAnchor } = deps.selection;
+  const { spreadHandle, textRef } = deps.refs;
 
   /** The selected mark's on-screen box, kept current while the page scrolls. */
   const [markRect, setMarkRect] = useState<{ left: number; top: number; right: number; bottom: number } | null>(null);
@@ -158,3 +151,5 @@ export function useReaderMarkUi(deps: UseReaderMarkUiDeps) {
 
   return { markRect, paragraphActions, scrollToMark, scrollToMarkRef };
 }
+
+export type ReaderMarkUi = ReturnType<typeof useReaderMarkUi>;

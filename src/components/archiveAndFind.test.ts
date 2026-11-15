@@ -85,3 +85,16 @@ test('text session reset loads a written set with a fresh undo history and saves
   s.undo();
   assert.deepEqual(s.getState().marks.map((m) => m.id), ['r1']);
 });
+
+test('exports warn about black-outs only when the document has some', async () => {
+  const { archiveRows, BLACKOUT_PACK_WARNING, BLACKOUT_TEXT_WARNING } = await import('./MarksArchive');
+  const noop = () => {};
+  const archive = { canImport: true, exportMarkdown: noop, exportJson: noop, commonplace: noop, importJson: noop, openRestore: noop, classPack: noop, ui: null };
+  assert.ok(archiveRows(archive, 3).every((r) => !r.warning));
+  const rows = archiveRows(archive, 3, true);
+  const warn = (title: string) => rows.find((r) => r.title === title)?.warning;
+  assert.equal(warn('Commonplace book'), BLACKOUT_TEXT_WARNING);
+  assert.equal(warn('Full record'), BLACKOUT_TEXT_WARNING);
+  assert.equal(warn('Class pack'), BLACKOUT_PACK_WARNING);
+  assert.equal(warn('Bring marks back'), undefined);
+});

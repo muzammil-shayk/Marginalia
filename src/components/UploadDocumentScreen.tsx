@@ -2,7 +2,6 @@ import React, { useState, useRef } from 'react';
 import { Upload, FileText, BookOpen, Clock, CheckCircle2, Loader2, AlertCircle, Student } from './icons';
 import { Screen, TransitionType } from '../types';
 import type { LibraryDocument } from '../App';
-import { parseFile } from '../utils/fileParser';
 import { filesFromDrop, pickDocumentAndSiblings } from '../utils/fileDrop';
 import { isAnnotatableFormat } from '../utils/annotatableFormats';
 import { storeUploadedDocument, storePastedDocument, storeHtmlDocument, openClassPack, type OpenedClassPack } from '../utils/documentStorage';
@@ -127,10 +126,10 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
       onDocumentStored?.();
       onSelectDocumentForAnalysis?.(finalTitle, finalText, finalFormat, meta.id);
       onNavigate(isAnnotatableFormat(finalFormat) ? 'workspace' : 'reader', 'push');
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Could not store the document.', err);
       setParseError(
-        err?.message || 'The document could not be saved to this device. Check available disk space and try again.'
+        (err instanceof Error && err.message) || 'The document could not be saved to this device. Check available disk space and try again.'
       );
     } finally {
       setIsStoring(false);
@@ -160,6 +159,8 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
     setParseError(null);
 
     try {
+      // Loaded on first use: the EPUB/DOCX/HTML readers stay out of the start-up bundle.
+      const { parseFile } = await import('../utils/fileParser');
       const parsed = await parseFile(picked.document, picked.siblings);
       setParsedText(parsed.text);
       setParsedFormat(parsed.format);
@@ -167,11 +168,11 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
       setPrintableHtml(parsed.printableHtml ?? null);
       setInlinedAssets(parsed.inlinedAssets ?? 0);
       setTextLayerMissing(Boolean(parsed.textLayerMissing));
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('File parsing error:', err);
       setParsedText(null);
       setParsedFormat(null);
-      setParseError(err.message || 'Failed to read file contents.');
+      setParseError((err instanceof Error && err.message) || 'Failed to read file contents.');
     } finally {
       setIsParsing(false);
     }

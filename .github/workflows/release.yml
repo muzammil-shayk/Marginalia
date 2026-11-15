@@ -85,6 +85,14 @@ jobs:
       - name: Check types and run the tests
         run: npm test
 
+      # Drives the real app on a throwaway library (offscreen windows, temp store and profile).
+      # Both runners have a desktop session, so Electron needs no display server or extra flags.
+      # Not run on Linux, which would need xvfb.
+      - name: Run the end-to-end checks
+        # Informational until it has passed on these runners: a failure here must not block a release.
+        continue-on-error: true
+        run: npm run test:e2e
+
       # `--publish never`: NEITHER platform job talks to GitHub. Both used to, and the second one
       # to run recreated the release and dropped what the first had uploaded — which is how
       # v2.0.0 and v2.1.0 both ended up with one platform's installers and not the other's. The

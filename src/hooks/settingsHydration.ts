@@ -18,6 +18,10 @@ export function mergeHydratedSettings<T extends Settings>(remote: T, atLaunch: T
   for (const key of Object.keys(current)) {
     if (current[key] !== atLaunch[key]) out[key] = current[key];
   }
+  // A key removed this session stays removed.
+  for (const key of Object.keys(atLaunch)) {
+    if (!(key in current)) delete out[key];
+  }
   if (current.activeThemes !== atLaunch.activeThemes) {
     const launched = new Set((atLaunch.activeThemes ?? []).map((t) => t.id));
     const kept = new Set((current.activeThemes ?? []).map((t) => t.id));

@@ -26,7 +26,7 @@ let backend: DocumentBackend | null = null;
 
 /**
  * The active backend, created once on first use. Resolved lazily rather than at import time so
- * the environment — `dotenv` in development, the Electron main process in the packaged app —
+ * the environment — Node's `--env-file-if-exists=.env` in development, the Electron main process in the packaged app —
  * has certainly set the store root before it is read.
  */
 export function getBackend(): DocumentBackend {

@@ -1,31 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useReducedMotion } from 'motion/react';
+import React from 'react';
 import { paragraphTypeface } from '../utils/scriptDirection';
-import { analysePoem } from '../utils/poetry';
-import { DEFAULT_POETRY, PROSODY_THEMES } from './PoetryView';
-import { type TextSpreadHandle } from './TextSpread';
 import type { ThemeStore } from './themeStore';
 import {
   AnnotationFocus,
-  PoetryPrefs,
   ReaderJump,
   Screen,
   TransitionType,
   UserSettings
 } from '../types';
-import { ParagraphRange } from '../utils/textFormatting';
 import type { PlainTextAnnotations } from '../hooks/usePlainTextAnnotations';
-import { splitParagraphs, type TextStyle } from '../utils/pastedText';
-import { fetchDocumentContent } from '../utils/documentStorage';
-import { useReadingProgress } from '../hooks/useReadingProgress';
-import { SelectionAnchor } from './pdf/SelectionPopover';
 
 import {
-  NAVIGATOR_HEIGHT,
-  FALLBACK_COLOR,
-  TextTool,
-  Tab,
-  TAB_INDEXES,
   EMPTY_MARKS,
   EMPTY_STYLES,
   EMPTY_NOTES,
@@ -42,8 +27,7 @@ import { ReaderPopovers } from './reader/ReaderPopovers';
 import { ReaderBody } from './reader/ReaderBody';
 import { ReaderControlBar } from './reader/ReaderControlBar';
 import { ReaderHeader } from './reader/ReaderHeader';
-import { useKnownThemes } from '../hooks/knownTheme';
-import { toggleThemeId } from '../utils/markThemes';
+import { useReaderState } from './reader/readerState';
 
 interface ReaderScreenProps {
   settings: UserSettings;
@@ -90,152 +74,26 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
   jump,
   onUpdateSettings
 }) => {
-  const { marks, selectedIds, canUndo, canRedo, addMarks, updateMarks, deleteMarks, select, clearSelection, undo, redo } =
-    annotations;
-  const reduceMotion = useReducedMotion();
+  // State grouped by concern (doc, poetry, themes, panels, selection, editor, refs); each hook
+  // takes and returns groups.
+  const state = useReaderState({ settings, docId, documentText, documentTitle, focus, themeStore, onUpdateSettings });
+  const { reduceMotion, doc, poetry: poetryView, themes, panels, selection, editor, refs } = state;
+  const markViews = useReaderMarkViews({ settings, annotations, doc, selection, editor });
+  const marking = useReaderMarking({ settings, textRef: refs.textRef, annotations, doc, themes, selection, editor, views: markViews });
+  useReaderSelectionKeys({ settings, textRef: refs.textRef, annotations, marking, views: markViews, themes, selection });
+  const markUi = useReaderMarkUi({ reduceMotion, annotations, marking, panels, selection, refs });
+  const layout = useReaderLayout({ settings, onSpreadChange, annotations, doc, poetry: poetryView, views: markViews, panels, refs });
+  const extras = useReaderExtras({ settings, isDark, reduceMotion, jump, onAddThemes, annotations, doc, views: markViews, panels, refs, markUi, layout });
 
-  /**
-   * The stored text with its layout and pasted formatting. Until it arrives a saved document shows
-   * no paragraphs: split the default way first, a verbatim paste would put marks on the wrong lines.
-   */
-  const [content, setContent] = useState<{ text: string; layout?: 'verbatim'; textStyles?: TextStyle[] } | null>(null);
-  /**
-   * A failed fetch shows an error with Retry and no paragraphs, so nothing can be marked. Falling
-   * back to the bare text would lose the layout and anchor marks to the wrong paragraphs.
-   */
-  const [loadFailed, setLoadFailed] = useState(false);
-  const [loadAttempt, setLoadAttempt] = useState(0);
-  useEffect(() => {
-    if (!docId) return;
-    let live = true;
-    setLoadFailed(false);
-    void fetchDocumentContent(docId).then((c) => {
-      if (!live) return;
-      if (c) setContent(c);
-      else setLoadFailed(true);
-    });
-    return () => {
-      live = false;
-    };
-  }, [docId, loadAttempt]);
-  const sourceText = docId ? content?.text : documentText;
-  const verbatim = content?.layout === 'verbatim';
-  // Paragraphs exactly as the marks' anchors count them (`splitParagraphs`, shared with the store).
-  const paragraphs = useMemo(() => splitParagraphs(sourceText ?? '', content?.layout), [sourceText, content?.layout]);
-  const stylesByPara = useMemo(() => {
-    const map = new Map<number, TextStyle[]>();
-    for (const st of content?.textStyles ?? []) (map.get(st.anchor.paragraphIndex) ?? map.set(st.anchor.paragraphIndex, []).get(st.anchor.paragraphIndex)!).push(st);
-    return map;
-  }, [content?.textStyles]);
-
-  // ── Poetry view: per document, kept with the settings ──
-  const poetry: PoetryPrefs = (docId && settings.poetry?.[docId]) || DEFAULT_POETRY;
-  const [poetryOpen, setPoetryOpen] = useState(false);
-  const setPoetry = (next: PoetryPrefs) => {
-    if (!docId) return;
-    onUpdateSettings?.((prev) => ({ ...prev, poetry: { ...prev.poetry, [docId]: next } }));
-  };
-  const poem = useMemo(() => (poetry.on ? analysePoem(paragraphs) : null), [poetry.on, paragraphs]);
-  const missingProsody = PROSODY_THEMES.filter((p) => !settings.activeThemes.some((t) => t.name.toLowerCase() === p.name.toLowerCase()));
-  const addProsodyThemes = () => {
-    for (const p of missingProsody) themeStore?.create(p.name, p.color);
-  };
-
-  // How far through the text the reader has got: the last paragraph in view, of all of them.
-  const reportProgress = useReadingProgress(docId);
-
-  const displayTitle = documentTitle || (documentText ? 'Uploaded Document' : 'No Document Selected');
-  // Documents carry no author field, so exports leave the author out rather than invent one.
-  const displayAuthor = '';
-  const [activeParagraphIndex, setActiveParagraphIndex] = useState<number | null>(null);
-  const [showInlineNotes, setShowInlineNotes] = useState(true);
-  /** The note opened from a margin pin (narrow margin only). */
-  const [openPin, setOpenPin] = useState<string | null>(null);
-  const [isPanelOpen, setIsPanelOpen] = useState(false);
-  // On a phone the panel covers the page, so one left open while the window narrows is closed.
-  useEffect(() => {
-    const phone = window.matchMedia('(max-width: 767.98px)');
-    const onChange = () => phone.matches && setIsPanelOpen(false);
-    phone.addEventListener('change', onChange);
-    return () => phone.removeEventListener('change', onChange);
-  }, []);
-  const [selectedThemeFilter, setSelectedThemeFilter] = useState<string>('All');
-  const [activeControlTab, setActiveControlTab] = useState<Tab>('notes');
-  const [slideDirection, setSlideDirection] = useState<number>(1);
-  const [activeFocus, setActiveFocus] = useState<AnnotationFocus | null>(focus ?? null);
-
-  const handleSwitchTab = (newTab: Tab) => {
-    if (newTab === activeControlTab) return;
-    setSlideDirection(TAB_INDEXES[newTab] > TAB_INDEXES[activeControlTab] ? 1 : -1);
-    setActiveControlTab(newTab);
-  };
-
-  /**
-   * The theme new marks are filed under, and so their colour — the same "pick a colour by picking
-   * a theme" mechanic as the PDF workspace's theme strip.
-   */
-  const [activeThemeIds, setActiveThemeIds] = useState<string[]>(() => (settings.activeThemes[0] ? [settings.activeThemes[0].id] : []));
-  const activeThemeId = activeThemeIds[0] ?? null;
-  const setActiveThemeId = useCallback((id: string | null) => setActiveThemeIds(id ? [id] : []), []);
-  /** The selection menu's dots and the number keys over a selection toggle several themes. */
-  const toggleActiveTheme = useCallback((id: string) => setActiveThemeIds((prev) => toggleThemeId(prev, id)), []);
-  // Never a theme that is not in the list (see knownTheme.ts).
-  useKnownThemes(activeThemeIds, setActiveThemeIds, settings.activeThemes);
-  const themeColor = useCallback(
-    (themeId: string | null): string => settings.activeThemes.find((t) => t.id === themeId)?.color || FALLBACK_COLOR,
-    [settings.activeThemes]
-  );
-  const activeColor = themeColor(activeThemeId);
-  const toolColors = useMemo(
-    () =>
-      Object.fromEntries(
-        ['highlight', 'underline', 'strikeout', 'question', 'star', 'exclamation', 'note'].map((k) => [k, activeColor])
-      ),
-    [activeColor]
-  );
-
-  const [tool, setTool] = useState<TextTool>('select');
-  const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  /**
-   * A note being written that does not exist yet. It is only made on Save, so cancelling (Escape,
-   * Cancel) leaves nothing behind: no empty note, and no add-then-delete pair in the undo history.
-   */
-  const [newNote, setNewNote] = useState<{
-    ranges: ParagraphRange[];
-    quote: string;
-    themeIds: string[];
-    color: string;
-    paragraphOnly?: true;
-  } | null>(null);
-  const [draftText, setDraftText] = useState('');
-  const [draftTitle, setDraftTitle] = useState('');
-  const [draftQuote, setDraftQuote] = useState('');
-
-  // Scrolls the "Tagging as" strip so the newly active theme is visible whenever it changes —
-  // picking one from the popover or a number key should still bring it into view here.
-  const themeStripRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!activeThemeId) return;
-    const el = themeStripRef.current?.querySelector<HTMLElement>(`[data-theme-id="${activeThemeId}"]`);
-    el?.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', inline: 'nearest', block: 'nearest' });
-  }, [activeThemeId, reduceMotion]);
-
-  const textRef = useRef<HTMLElement>(null);
-  const headerRef = useRef<HTMLElement>(null);
-  const controlBarRef = useRef<HTMLDivElement>(null);
-  const [pendingSelection, setPendingSelection] = useState<ParagraphRange[] | null>(null);
-  const [selectionAnchor, setSelectionAnchor] = useState<SelectionAnchor | null>(null);
-  const { colorOf, editing, editorColor, editorIsNote, editorOpen, editorPara, heads, hovByPara, markById, noteHeads, paraData, selByPara, selectedView, viewById, views } = useReaderMarkViews({ editingId, hoveredId, marks, newNote, paragraphs, selectedIds, settings });
-  const { applyMark, clock, closeEditor, createNoteForSelection, createParagraphNote, createReactionForSelection, deleteMark, dropSelection, editorRef, handleToolTap, saveEditing, startEditing } = useReaderMarking({ activeColor, activeThemeId, activeThemeIds, addMarks, deleteMarks, draftQuote, draftText, draftTitle, editingId, editorOpen, editorPara, markById, marks, newNote, paragraphs, pendingSelection, select, setDraftQuote, setDraftText, setDraftTitle, setEditingId, setNewNote, setPendingSelection, setSelectionAnchor, setTool, settings, textRef, updateMarks, viewById });
-  useReaderSelectionKeys({ applyMark, clearSelection, createNoteForSelection, deleteMarks, dropSelection, editorOpen, handleToolTap, marks, pendingSelection, redo, selectedIds, selectionAnchor, setActiveThemeId, toggleActiveTheme, setPendingSelection, setSelectionAnchor, setTool, settings, textRef, tool, undo, updateMarks });
-  // The two-page spread's handle: made here, ahead of the hooks that turn its pages.
-  const spreadHandle = useRef<TextSpreadHandle>(null);
-  const { markRect, paragraphActions, scrollToMark, scrollToMarkRef } = useReaderMarkUi({ spreadHandle, activeControlTab, createParagraphNote, deleteMark, handleSwitchTab, isPanelOpen, marks, reduceMotion, select, selectedIds, selectionAnchor, setActiveParagraphIndex, setHoveredId, setOpenPin, setSelectionAnchor, showInlineNotes, startEditing, textRef });
-  const { bodyRef, marginMode, paragraphFont, placementContext, setFlow, spreadFits, spreadOn, spreadPref, spreadStartId, toggleSpread } = useReaderLayout({ spreadHandle, activeControlTab, controlBarRef, docId, isPanelOpen, marks, onSpreadChange, openPin, paraData, paragraphs, poem, poetry, reportProgress, setOpenPin, settings, showInlineNotes });
-  // Declared here, before the hooks that read it (Find's reveal used it from below).
-  const bottomInset = activeFocus ? NAVIGATOR_HEIGHT : 0;
-  const { activeJump, archive, boardItems, copyQuoteOf, copySelectionQuote, exportEntries, exportable, find, markLinksFor, runExport, setActiveJump } = useReaderExtras({ bottomInset, activeControlTab, annotations, colorOf, content, controlBarRef, displayAuthor, displayTitle, docId, editorOpen, heads, isDark, jump, markById, marks, onAddThemes, paragraphs, reduceMotion, scrollToMark, select, selectedThemeFilter, setActiveParagraphIndex, settings, spreadHandle, spreadOn, textRef, viewById, views });
+  const { paragraphs, content, loadFailed, setLoadAttempt, displayTitle, verbatim, stylesByPara } = doc;
+  const { poetry } = poetryView;
+  const { activeParagraphIndex, openPin, bottomInset } = panels;
+  const { selectionAnchor } = selection;
+  const { controlBarRef, headerRef } = refs;
+  const { paraData, selByPara, hovByPara } = markViews;
+  const { paragraphFont, marginMode } = layout;
+  const { clock } = marking;
+  const { paragraphActions } = markUi;
 
   // Popovers stay below the sticky header and control bar.
   // In focus mode the bar slides over the page when called, so menus keep clear of where it lands.
@@ -246,15 +104,6 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
   // back on scrolling back); a menu pinned to the edge would act on words the reader can't see.
   const selectionInView =
     !!selectionAnchor && selectionAnchor.bottom > popoverTopInset && selectionAnchor.top < window.innerHeight - bottomInset;
-  const pillClass = (active: boolean) =>
-    `flex items-center gap-1.5 transition-all duration-200 cursor-pointer shrink-0 ${
-      active
-        ? 'bg-accent text-on-accent px-3 py-1.5 rounded-xl font-semibold shadow-xs animate-in fade-in zoom-in-95'
-        : 'p-2 rounded-xl bg-black/5 dark:bg-white/5 hover:bg-black/10 text-stone-700 dark:text-stone-300'
-    }`;
-  const iconBtn =
-    'p-2 rounded-lg text-muted hover:bg-black/5 dark:hover:bg-white/5 hover:text-stone-800 dark:hover:text-stone-200 disabled:opacity-30 cursor-pointer disabled:cursor-default shrink-0';
-
   const titleBlock = (
     <div
       id="reader-title-block"
@@ -317,15 +166,15 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
 
   return (
     <div className={`min-h-screen flex flex-col transition-colors ${isDark ? 'bg-night text-stone-100' : 'bg-paper text-ink'}`}>
-      <ReaderHeader activeThemeId={activeThemeId} displayTitle={displayTitle} focusMode={focusMode} headerRef={headerRef} isDark={isDark} onNavigate={onNavigate} setActiveThemeId={setActiveThemeId} settings={settings} themeStripRef={themeStripRef} />
+      <ReaderHeader activeThemeId={themes.activeThemeId} displayTitle={displayTitle} focusMode={focusMode} headerRef={headerRef} isDark={isDark} onNavigate={onNavigate} setActiveThemeId={themes.setActiveThemeId} settings={settings} themeStripRef={themes.themeStripRef} />
 
-      <ReaderControlBar activeColor={activeColor} activeControlTab={activeControlTab} activeJump={activeJump} activeParagraphIndex={activeParagraphIndex} addProsodyThemes={addProsodyThemes} canRedo={canRedo} canUndo={canUndo} controlBarRef={controlBarRef} createParagraphNote={createParagraphNote} docId={docId} find={find} focusMode={focusMode} handleSwitchTab={handleSwitchTab} handleToolTap={handleToolTap} iconBtn={iconBtn} isDark={isDark} isPanelOpen={isPanelOpen} missingProsody={missingProsody} noteHeads={noteHeads} onToggleFocus={onToggleFocus} pendingSelection={pendingSelection} pillClass={pillClass} poem={poem} poetry={poetry} poetryOpen={poetryOpen} redo={redo} selectedIds={selectedIds} setActiveJump={setActiveJump} setIsPanelOpen={setIsPanelOpen} setPoetry={setPoetry} setPoetryOpen={setPoetryOpen} setShowInlineNotes={setShowInlineNotes} settings={settings} showInlineNotes={showInlineNotes} spreadFits={spreadFits} spreadOn={spreadOn} spreadPref={spreadPref} themeStore={themeStore} toggleSpread={toggleSpread} tool={tool} undo={undo} views={views} />
+      <ReaderControlBar settings={settings} isDark={isDark} focusMode={focusMode} onToggleFocus={onToggleFocus} annotations={annotations} doc={doc} themes={themes} panels={panels} poetryView={poetryView} selection={selection} refs={refs} markViews={markViews} marking={marking} layout={layout} extras={extras} />
 
-      <ReaderBody activeControlTab={activeControlTab} annotations={annotations} archive={archive} boardItems={boardItems} bodyRef={bodyRef} clearSelection={clearSelection} deleteMark={deleteMark} displayTitle={displayTitle} exportEntries={exportEntries} exportable={exportable} handleSwitchTab={handleSwitchTab} hoveredId={hoveredId} iconBtn={iconBtn} isDark={isDark} isPanelOpen={isPanelOpen} marginMode={marginMode} marks={marks} paragraphNodes={paragraphNodes} poetry={poetry} reduceMotion={reduceMotion} runExport={runExport} scrollToMark={scrollToMark} scrollToMarkRef={scrollToMarkRef} select={select} selectedThemeFilter={selectedThemeFilter} setFlow={setFlow} setHoveredId={setHoveredId} setIsPanelOpen={setIsPanelOpen} setSelectedThemeFilter={setSelectedThemeFilter} setSelectionAnchor={setSelectionAnchor} settings={settings} slideDirection={slideDirection} spreadHandle={spreadHandle} spreadOn={spreadOn} spreadStartId={spreadStartId} startEditing={startEditing} textRef={textRef} titleBlock={titleBlock} updateMarks={updateMarks} views={views} />
+      <ReaderBody settings={settings} isDark={isDark} reduceMotion={reduceMotion} annotations={annotations} page={{ titleBlock, paragraphNodes }} doc={doc} poetryView={poetryView} panels={panels} selection={selection} refs={refs} markViews={markViews} marking={marking} markUi={markUi} layout={layout} extras={extras} />
 
-      <ReaderPopovers activeControlTab={activeControlTab} activeFocus={activeFocus} activeThemeId={activeThemeId} activeThemeIds={activeThemeIds} toggleActiveTheme={toggleActiveTheme} annotations={annotations} applyMark={applyMark} archive={archive} bottomInset={bottomInset} clearSelection={clearSelection} copyQuoteOf={copyQuoteOf} copySelectionQuote={copySelectionQuote} createNoteForSelection={createNoteForSelection} createReactionForSelection={createReactionForSelection} deleteMark={deleteMark} dropSelection={dropSelection} editorOpen={editorOpen} isDark={isDark} markLinksFor={markLinksFor} markRect={markRect} pendingSelection={pendingSelection} placementContext={placementContext} popoverTopInset={popoverTopInset} scrollToMark={scrollToMark} selectedView={selectedView} selectionAnchor={selectionAnchor} selectionInView={selectionInView} setActiveFocus={setActiveFocus} setActiveThemeId={setActiveThemeId} setHoveredId={setHoveredId} setSelectionAnchor={setSelectionAnchor} setTool={setTool} settings={settings} startEditing={startEditing} themeStore={themeStore} toolColors={toolColors} updateMarks={updateMarks} views={views} />
+      <ReaderPopovers settings={settings} isDark={isDark} annotations={annotations} popoverTopInset={popoverTopInset} selectionInView={selectionInView} themes={themes} panels={panels} selection={selection} markViews={markViews} marking={marking} markUi={markUi} layout={layout} extras={extras} />
 
-      <ReaderNoteEditor closeEditor={closeEditor} deleteMark={deleteMark} draftQuote={draftQuote} draftText={draftText} draftTitle={draftTitle} editing={editing} editorColor={editorColor} editorIsNote={editorIsNote} editorOpen={editorOpen} editorPara={editorPara} editorRef={editorRef} isDark={isDark} newNote={newNote} saveEditing={saveEditing} setDraftQuote={setDraftQuote} setDraftText={setDraftText} setDraftTitle={setDraftTitle} viewById={viewById} />
+      <ReaderNoteEditor isDark={isDark} editor={editor} markViews={markViews} marking={marking} />
     </div>
   );
 };

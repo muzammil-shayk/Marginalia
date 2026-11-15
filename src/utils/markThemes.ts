@@ -22,7 +22,10 @@ type Entry = Record<string, unknown>;
 export function themeIdsOf(entry: object | null | undefined): string[] {
   if (!entry) return [];
   const e = entry as { themeIds?: unknown; themeId?: unknown };
-  const source = Array.isArray(e.themeIds) ? e.themeIds : typeof e.themeId === 'string' ? [e.themeId] : [];
+  const single = typeof e.themeId === 'string' ? [e.themeId] : [];
+  // Both fields: `themeId` is written as the first theme, so a different one means an older
+  // version refiled the mark (it only sees `themeId`). That choice becomes the main theme.
+  const source = Array.isArray(e.themeIds) ? [...single, ...e.themeIds] : single;
   const out: string[] = [];
   for (const id of source) if (typeof id === 'string' && id && !out.includes(id)) out.push(id);
   return out;

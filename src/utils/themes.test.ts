@@ -60,7 +60,7 @@ test('a mark under a deleted theme still resolves: "Untitled" with the fallback 
 });
 
 test('themeUsage counts marks under a theme across the library (to warn before deleting)', () => {
-  const metas = [{ themeCounts: { t1: 3, t2: 1 } }, { themeCounts: { t1: 2 } }, { themeCounts: {} }];
+  const metas: { themeCounts: Record<string, number> }[] = [{ themeCounts: { t1: 3, t2: 1 } }, { themeCounts: { t1: 2 } }, { themeCounts: {} }];
   assert.equal(themeUsage(metas, 't1'), 5);
   assert.equal(themeUsage(metas, 'zz'), 0);
 });

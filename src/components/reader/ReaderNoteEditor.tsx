@@ -4,32 +4,22 @@
  */
 
 import React from 'react';
-import { ParagraphRange } from '../../utils/textFormatting';
-import { type TextMark } from '../../utils/textMarks';
-import type { Annotation } from '../pdf/annotationModel';
+import type { ReaderEditor } from './readerState';
+import type { ReaderMarkViews } from './useReaderMarkViews';
+import type { ReaderMarking } from './useReaderMarking';
 
 export interface ReaderNoteEditorProps {
-  closeEditor: () => void;
-  deleteMark: (id: string) => void;
-  draftQuote: string;
-  draftText: string;
-  draftTitle: string;
-  editing: TextMark;
-  editorColor: string;
-  editorIsNote: boolean;
-  editorOpen: boolean;
-  editorPara: number;
-  editorRef: React.RefObject<HTMLDivElement>;
   isDark: boolean;
-  newNote: { ranges: ParagraphRange[]; quote: string; themeIds: string[]; color: string; paragraphOnly?: true; };
-  saveEditing: () => void;
-  setDraftQuote: React.Dispatch<React.SetStateAction<string>>;
-  setDraftText: React.Dispatch<React.SetStateAction<string>>;
-  setDraftTitle: React.Dispatch<React.SetStateAction<string>>;
-  viewById: Map<string, Annotation>;
+  editor: Pick<ReaderEditor, 'draftQuote' | 'draftText' | 'draftTitle' | 'newNote' | 'setDraftQuote' | 'setDraftText' | 'setDraftTitle'>;
+  markViews: Pick<ReaderMarkViews, 'editing' | 'editorColor' | 'editorIsNote' | 'editorOpen' | 'editorPara' | 'viewById'>;
+  marking: Pick<ReaderMarking, 'closeEditor' | 'deleteMark' | 'editorRef' | 'saveEditing'>;
 }
 
-export const ReaderNoteEditor: React.FC<ReaderNoteEditorProps> = ({ closeEditor, deleteMark, draftQuote, draftText, draftTitle, editing, editorColor, editorIsNote, editorOpen, editorPara, editorRef, isDark, newNote, saveEditing, setDraftQuote, setDraftText, setDraftTitle, viewById }) => (
+export const ReaderNoteEditor: React.FC<ReaderNoteEditorProps> = ({ isDark, editor, markViews, marking }) => {
+  const { draftQuote, draftText, draftTitle, newNote, setDraftQuote, setDraftText, setDraftTitle } = editor;
+  const { editing, editorColor, editorIsNote, editorOpen, editorPara, viewById } = markViews;
+  const { closeEditor, deleteMark, editorRef, saveEditing } = marking;
+  return (
   <>
       {/* Comment / note editor — the PDF workspace's, with a title for notes. Escape or Cancel
           discards the edit (a note still being written is never made). The backdrop does
@@ -142,4 +132,5 @@ export const ReaderNoteEditor: React.FC<ReaderNoteEditorProps> = ({ closeEditor,
         </div>
       )}
   </>
-);
+  );
+};

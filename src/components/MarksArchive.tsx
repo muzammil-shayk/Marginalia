@@ -12,7 +12,7 @@
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
-import { History, Loader2, X } from './icons';
+import { EyeOff, History, Loader2, X } from './icons';
 import {
   fetchAnnotations,
   fetchClassPack,
@@ -47,8 +47,7 @@ export interface MarksArchiveOptions {
   /** Every stored entry of the document right now. */
   entries: () => StoredEntry[];
   themes: Theme[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  saver: DebouncedSaver<any> | null;
+  saver: DebouncedSaver<StoredEntry[]> | null;
   /** Loads a set the server just wrote and resets the undo history. */
   reset: (entries: StoredEntry[]) => void;
   /** Adds themes an import brought along (saved with the settings). */
@@ -161,8 +160,16 @@ export function useMarksArchive(o: MarksArchiveOptions): MarksArchive {
     if (!docId) return;
     // The pack is read from disk, so the latest marks are written first.
     if (saver && !(await saver.flush())) return setStatus('Your latest marks could not be saved yet, so no class pack was made. Try again in a moment.');
-    const body = await fetchClassPack(docId, teacher ?? '', '');
-    if (!body) return setStatus('The class pack could not be made.');
+    const raw = await fetchClassPack(docId, teacher ?? '', '');
+    if (!raw) return setStatus('The class pack could not be made.');
+    // With black-outs, the pack carries the redacted copy; if that fails, no pack (never the original).
+    let body: string;
+    try {
+      body = await (await import('./pdf/export/classPackRedaction')).cleanClassPack(raw);
+    } catch (error) {
+      console.error('Class pack redaction failed:', error);
+      return setStatus('The blacked-out words could not be removed, so no class pack was made.');
+    }
     downloadTextFile(body, classPackFilename(doc.title), 'application/json');
     setStatus('Class pack saved. Students open it from Add Document, with no account or internet.');
   };
@@ -367,10 +374,17 @@ export interface ArchiveRow {
   title: string;
   sub: string;
   actions: { label: string; onSelect: () => void; disabled?: boolean; hint?: string }[];
+  /** A plain caution under the description (black-outs and what an export does with them). */
+  warning?: string;
 }
 
-export function archiveRows(a: MarksArchive, markCount: number): ArchiveRow[] {
+export const BLACKOUT_TEXT_WARNING = 'Notes that touch a blacked-out area are exported without their quoted text.';
+export const BLACKOUT_PACK_WARNING = 'This pack contains the cleaned copy: pages with a black-out become pictures, so the words you blacked out are gone.';
+
+/** `hasBlackouts`: the document has blacked-out marks, so the exports say what happens to them. */
+export function archiveRows(a: MarksArchive, markCount: number, hasBlackouts = false): ArchiveRow[] {
   const none = markCount === 0;
+  const textWarning = hasBlackouts ? BLACKOUT_TEXT_WARNING : undefined;
   const noStore = a.canImport ? undefined : 'Only for documents saved in My Collections';
   return [
     {
@@ -380,7 +394,8 @@ export function archiveRows(a: MarksArchive, markCount: number): ArchiveRow[] {
         { label: 'Save .md', onSelect: () => a.commonplace('md'), disabled: none },
         { label: 'Save .txt', onSelect: () => a.commonplace('txt'), disabled: none },
         { label: 'Copy', onSelect: () => a.commonplace('copy'), disabled: none }
-      ]
+      ],
+      warning: textWarning
     },
     {
       title: 'Full record',
@@ -388,12 +403,14 @@ export function archiveRows(a: MarksArchive, markCount: number): ArchiveRow[] {
       actions: [
         { label: 'Markdown', onSelect: a.exportMarkdown, disabled: none },
         { label: 'JSON', onSelect: a.exportJson, disabled: none }
-      ]
+      ],
+      warning: textWarning
     },
     {
       title: 'Class pack',
       sub: 'This document with your marks as one file for students, shared by USB stick or folder. No accounts, no internet.',
-      actions: [{ label: 'Save class pack', onSelect: a.classPack, disabled: !a.canImport, hint: noStore }]
+      actions: [{ label: 'Save class pack', onSelect: a.classPack, disabled: !a.canImport, hint: noStore }],
+      warning: hasBlackouts ? BLACKOUT_PACK_WARNING : undefined
     },
     {
       title: 'Bring marks back',
@@ -414,6 +431,12 @@ export const ArchivePanel: React.FC<{ rows: ArchiveRow[]; compact?: boolean; onA
         <div className="min-w-0">
           <div className="font-bold text-[13px] text-stone-900 dark:text-paper">{row.title}</div>
           <div className={`text-[11.5px] text-muted leading-snug ${compact ? 'max-w-[18rem]' : 'max-w-md'}`}>{row.sub}</div>
+          {row.warning && (
+            <p className={`mt-1 flex items-start gap-1.5 text-[11.5px] leading-snug text-stone-800 dark:text-paper ${compact ? 'max-w-[18rem]' : 'max-w-md'}`}>
+              <EyeOff aria-hidden className="w-3.5 h-3.5 shrink-0 mt-px text-gold" />
+              {row.warning}
+            </p>
+          )}
         </div>
         <div className="flex flex-wrap gap-1.5 shrink-0">
           {row.actions.map((act) => (

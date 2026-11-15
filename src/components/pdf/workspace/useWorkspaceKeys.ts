@@ -3,39 +3,34 @@
  * PdfWorkspace).
  */
 
-import React, { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback, useRef } from 'react';
 import type { ThemeStore } from '../../themeStore';
 import { UserSettings } from '../../../types';
-import { FractionRect, PdfTool, isTextAnchored } from '../annotationModel';
-import { SelectionAnchor } from '../SelectionPopover';
+import { isTextAnchored } from '../annotationModel';
 import { escapeConsumes, isTypingTarget, resolveWorkspaceKey } from '../workspaceKeys';
 import { toggleThemeId } from '../../../utils/markThemes';
+import type { WorkspaceMarks, WorkspaceSelection } from './workspaceState';
+import type { PdfToolStyles } from './usePdfToolStyles';
+import type { MarkMutations } from './useMarkMutations';
+import type { TextMarking } from './useTextMarking';
 
 export interface UseWorkspaceKeysDeps {
-  activeThemeIds: string[];
-  toggleActiveTheme: (id: string) => void;
-  createNoteForSelection: () => void;
-  deleteAnnotation: (id: string) => void;
-  editingId: string;
-  handleToolTap: (next: PdfTool) => void;
-  pendingSelection: { page: number; rects: FractionRect[]; quote: string; }[];
-  redo: () => void;
-  retagAnnotation: (id: string, themeId: string | null, color: string) => void;
-  selectedId: string;
-  selectionAnchor: SelectionAnchor;
-  setActiveThemeId: React.Dispatch<React.SetStateAction<string>>;
-  setSelectedId: React.Dispatch<React.SetStateAction<string>>;
-  setSelectionAnchor: React.Dispatch<React.SetStateAction<SelectionAnchor>>;
-  setTool: React.Dispatch<React.SetStateAction<PdfTool>>;
-  setToolColor: (which: string, color: string) => void;
   settings: UserSettings;
-  themeStore: ThemeStore;
-  tool: PdfTool;
-  undo: () => void;
+  themeStore: ThemeStore | undefined;
+  styles: Pick<PdfToolStyles, 'activeThemeIds' | 'toggleActiveTheme' | 'setActiveThemeId' | 'setTool' | 'setToolColor' | 'tool'>;
+  marks: Pick<WorkspaceMarks, 'undo' | 'redo'>;
+  selection: Pick<WorkspaceSelection, 'editingId' | 'pendingSelection' | 'selectedId' | 'selectionAnchor' | 'setSelectedId' | 'setSelectionAnchor'>;
+  mutations: Pick<MarkMutations, 'deleteAnnotation' | 'retagAnnotation'>;
+  marking: Pick<TextMarking, 'createNoteForSelection' | 'handleToolTap'>;
 }
 
 export function useWorkspaceKeys(deps: UseWorkspaceKeysDeps) {
-  const { activeThemeIds, toggleActiveTheme, createNoteForSelection, deleteAnnotation, editingId, handleToolTap, pendingSelection, redo, retagAnnotation, selectedId, selectionAnchor, setActiveThemeId, setSelectedId, setSelectionAnchor, setTool, setToolColor, settings, themeStore, tool, undo } = deps;
+  const { settings, themeStore } = deps;
+  const { activeThemeIds, toggleActiveTheme, setActiveThemeId, setTool, setToolColor, tool } = deps.styles;
+  const { undo, redo } = deps.marks;
+  const { editingId, pendingSelection, selectedId, selectionAnchor, setSelectedId, setSelectionAnchor } = deps.selection;
+  const { deleteAnnotation, retagAnnotation } = deps.mutations;
+  const { createNoteForSelection, handleToolTap } = deps.marking;
 
   /**
    * Choosing a theme while a passage is selected: every mark the selection menu can make picks up
@@ -162,3 +157,5 @@ export function useWorkspaceKeys(deps: UseWorkspaceKeysDeps) {
 
   return { chooseSelectionTheme, createSelectionTheme };
 }
+
+export type WorkspaceThemePicker = ReturnType<typeof useWorkspaceKeys>;

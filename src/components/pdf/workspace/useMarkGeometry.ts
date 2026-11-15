@@ -3,20 +3,22 @@
  * (moved verbatim from PdfWorkspace).
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Annotation, annotationBounds } from '../annotationModel';
+import type { WorkspaceMarks, WorkspaceSelection, WorkspaceView } from './workspaceState';
 
 export interface UseMarkGeometryDeps {
-  annotations: Annotation[];
-  editingId: string;
   focusMode: boolean;
-  scale: number;
-  scrollRef: React.RefObject<HTMLDivElement>;
-  selectedId: string;
+  marks: Pick<WorkspaceMarks, 'annotations'>;
+  selection: Pick<WorkspaceSelection, 'editingId' | 'selectedId'>;
+  view: Pick<WorkspaceView, 'scale' | 'scrollRef'>;
 }
 
 export function useMarkGeometry(deps: UseMarkGeometryDeps) {
-  const { annotations, editingId, focusMode, scale, scrollRef, selectedId } = deps;
+  const { focusMode } = deps;
+  const { annotations } = deps.marks;
+  const { editingId, selectedId } = deps.selection;
+  const { scale, scrollRef } = deps.view;
 
   const byPage = useMemo(() => {
     const map = new Map<number, Annotation[]>();
@@ -77,3 +79,5 @@ export function useMarkGeometry(deps: UseMarkGeometryDeps) {
 
   return { byPage, editing, markRect, popoverTopInset, selectedMark };
 }
+
+export type MarkGeometry = ReturnType<typeof useMarkGeometry>;

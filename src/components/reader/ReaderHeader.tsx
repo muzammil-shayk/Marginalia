@@ -8,15 +8,15 @@ import { ArrowLeft, Settings as SettingsIcon } from '../icons';
 import { Screen, TransitionType, UserSettings } from '../../types';
 
 export interface ReaderHeaderProps {
-  activeThemeId: string;
+  activeThemeId: string | null;
   displayTitle: string;
   focusMode: boolean;
-  headerRef: React.RefObject<HTMLElement>;
+  headerRef: React.RefObject<HTMLElement | null>;
   isDark: boolean;
   onNavigate: (screen: Screen, transition?: TransitionType) => void;
-  setActiveThemeId: React.Dispatch<React.SetStateAction<string>>;
+  setActiveThemeId: (id: string | null) => void;
   settings: UserSettings;
-  themeStripRef: React.RefObject<HTMLDivElement>;
+  themeStripRef: React.RefObject<HTMLDivElement | null>;
 }
 
 export const ReaderHeader: React.FC<ReaderHeaderProps> = ({ activeThemeId, displayTitle, focusMode, headerRef, isDark, onNavigate, setActiveThemeId, settings, themeStripRef }) => (

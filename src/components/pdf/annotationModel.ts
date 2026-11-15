@@ -13,6 +13,8 @@
  * of that. Conversion happens once on the way in and once on the way out.
  */
 
+import type { Annotation as StoredEntry } from '../../utils/documentStorage';
+
 /** Everything the toolbar can draw. */
 export type AnnotationKind =
   | 'highlight'
@@ -124,6 +126,14 @@ export function pageToolFor(tool: PdfTool, maskMode: MaskMode): PdfTool {
   return maskMode === 'words' ? 'maskWords' : maskMode === 'freehand' ? 'maskPen' : 'mask';
 }
 
+/**
+ * Marks read back from the store, which keeps them as loose `{ id, ... }` records. The server
+ * writes back only what the workspace saved, so this is the one place the shape is trusted.
+ */
+export function asPdfMarks(stored: readonly StoredEntry[] | null | undefined): Annotation[] {
+  return (stored ?? []) as Annotation[];
+}
+
 /** A mark that blacks something out: made with Black it out, or a Mask box from before (filled rect). */
 export function isBlackout(a: Pick<Annotation, 'kind' | 'filled' | 'blackout'>): boolean {
   return a.blackout === true || (a.kind === 'rect' && a.filled === true);
@@ -141,7 +151,11 @@ export interface FractionRect {
   h: number;
 }
 
-export interface Annotation {
+/**
+ * A type, not an interface, so a mark list is assignable to the store's loose `{ id, ...}` records
+ * (utils/documentStorage) without a cast; reading them back goes through `asPdfMarks`.
+ */
+export type Annotation = {
   id: string;
   /** 1-based, matching how pdf.js numbers pages and how readers talk about them. */
   page: number;
@@ -222,7 +236,7 @@ export interface Annotation {
   locked?: boolean;
   author?: string;
   createdAt: string;
-}
+};
 
 /** Kinds built from a text selection rather than from dragging on the page. `terminology` is the
  *  toolbar tool, not a stored kind — see `PdfTool` — but it acts on a selection exactly like

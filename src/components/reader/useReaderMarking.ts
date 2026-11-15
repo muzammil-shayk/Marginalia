@@ -10,53 +10,35 @@ import { UserSettings } from '../../types';
 import { ParagraphRange } from '../../utils/textFormatting';
 import {
   expandToGroups,
-  type TextMark,
-  type TextMarkKind,
-  type TextMarkPatch
-} from '../../utils/textMarks';
+  type TextMarkKind } from '../../utils/textMarks';
 import { planTextRanges } from '../../utils/textMarkView';
 import { addThemeId } from '../../utils/markThemes';
 import { useDialogFocus } from '../../hooks/useDialogFocus';
 import { DEFAULT_TEXT_SIZE } from '../pdf/annotationModel';
-import { SelectionAnchor } from '../pdf/SelectionPopover';
 import { TextTool } from './readerParts';
-import type { NewTextMark } from '../../utils/textMarks';
-import type { Annotation } from '../pdf/annotationModel';
+import type { ReaderDoc, ReaderEditor, ReaderSelection, ReaderThemes } from './readerState';
+import type { PlainTextAnnotations } from '../../hooks/usePlainTextAnnotations';
+import type { ReaderMarkViews } from './useReaderMarkViews';
 
 export interface UseReaderMarkingDeps {
-  activeColor: string;
-  activeThemeId: string;
-  activeThemeIds: string[];
-  addMarks: (ranges: ParagraphRange[], props: NewTextMark, paragraphs: string[]) => TextMark[];
-  deleteMarks: (ids: Iterable<string>) => void;
-  draftQuote: string;
-  draftText: string;
-  draftTitle: string;
-  editingId: string;
-  editorOpen: boolean;
-  editorPara: number;
-  markById: Map<string, TextMark>;
-  marks: TextMark[];
-  newNote: { ranges: ParagraphRange[]; quote: string; themeIds: string[]; color: string; paragraphOnly?: true; };
-  paragraphs: string[];
-  pendingSelection: ParagraphRange[];
-  select: (ids: Iterable<string>, opts?: { additive?: boolean; }) => void;
-  setDraftQuote: React.Dispatch<React.SetStateAction<string>>;
-  setDraftText: React.Dispatch<React.SetStateAction<string>>;
-  setDraftTitle: React.Dispatch<React.SetStateAction<string>>;
-  setEditingId: React.Dispatch<React.SetStateAction<string>>;
-  setNewNote: React.Dispatch<React.SetStateAction<{ ranges: ParagraphRange[]; quote: string; themeIds: string[]; color: string; paragraphOnly?: true; }>>;
-  setPendingSelection: React.Dispatch<React.SetStateAction<ParagraphRange[]>>;
-  setSelectionAnchor: React.Dispatch<React.SetStateAction<SelectionAnchor>>;
-  setTool: React.Dispatch<React.SetStateAction<TextTool>>;
   settings: UserSettings;
-  textRef: React.RefObject<HTMLElement>;
-  updateMarks: (ids: Iterable<string>, patch: TextMarkPatch) => void;
-  viewById: Map<string, Annotation>;
+  textRef: React.RefObject<HTMLElement | null>;
+  annotations: Pick<PlainTextAnnotations, 'addMarks' | 'deleteMarks' | 'marks' | 'select' | 'updateMarks'>;
+  doc: Pick<ReaderDoc, 'paragraphs'>;
+  themes: Pick<ReaderThemes, 'activeColor' | 'activeThemeIds'>;
+  selection: Pick<ReaderSelection, 'pendingSelection' | 'setPendingSelection' | 'setSelectionAnchor' | 'setTool'>;
+  editor: Pick<ReaderEditor, 'draftQuote' | 'draftText' | 'draftTitle' | 'editingId' | 'newNote' | 'setDraftQuote' | 'setDraftText' | 'setDraftTitle' | 'setEditingId' | 'setNewNote'>;
+  views: Pick<ReaderMarkViews, 'editorOpen' | 'editorPara' | 'markById' | 'viewById'>;
 }
 
 export function useReaderMarking(deps: UseReaderMarkingDeps) {
-  const { activeColor, activeThemeId, activeThemeIds, addMarks, deleteMarks, draftQuote, draftText, draftTitle, editingId, editorOpen, editorPara, markById, marks, newNote, paragraphs, pendingSelection, select, setDraftQuote, setDraftText, setDraftTitle, setEditingId, setNewNote, setPendingSelection, setSelectionAnchor, setTool, settings, textRef, updateMarks, viewById } = deps;
+  const { settings, textRef } = deps;
+  const { addMarks, deleteMarks, marks, select, updateMarks } = deps.annotations;
+  const { paragraphs } = deps.doc;
+  const { activeColor, activeThemeIds } = deps.themes;
+  const { pendingSelection, setPendingSelection, setSelectionAnchor, setTool } = deps.selection;
+  const { draftQuote, draftText, draftTitle, editingId, newNote, setDraftQuote, setDraftText, setDraftTitle, setEditingId, setNewNote } = deps.editor;
+  const { editorOpen, editorPara, markById, viewById } = deps.views;
 
   // Relative note times ("5 minutes ago") move on once a minute.
   const [clock, setClock] = useState(() => Date.now());
@@ -245,3 +227,5 @@ export function useReaderMarking(deps: UseReaderMarkingDeps) {
 
   return { applyMark, clock, closeEditor, createNoteForSelection, createParagraphNote, createReactionForSelection, deleteMark, dropSelection, editorRef, handleToolTap, saveEditing, startEditing };
 }
+
+export type ReaderMarking = ReturnType<typeof useReaderMarking>;

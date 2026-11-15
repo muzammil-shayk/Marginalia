@@ -4,7 +4,6 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
-import { type PDFDocumentProxy } from 'pdfjs-dist';
 import { useReducedMotion } from 'motion/react';
 import { playTurn, snapshotPage, turnDirection, waitFor, TURN_WAIT_MAX_MS, type PageBox } from '../../pageTurn';
 import { isTypingTarget } from '../workspaceKeys';
@@ -26,31 +25,23 @@ import {
   loadDocState,
   saveDocState
 } from './docState';
-import { fitScale } from './viewFit';
+import { fitScale, openingZoom } from './viewFit';
+import { openPageAt } from './openPage';
+import type { WorkspaceView } from './workspaceState';
 
 export interface UsePdfNavigationDeps {
-  currentPage: number;
   docId: string;
-  fittedRef: React.RefObject<string>;
-  jumpToPage: number;
-  pageCount: number;
-  pdf: PDFDocumentProxy;
-  restoredPageRef: React.RefObject<string>;
+  jumpToPage: number | undefined;
   resumeReading: boolean;
-  scale: number;
-  scrollRef: React.RefObject<HTMLDivElement>;
-  setCurrentPage: React.Dispatch<React.SetStateAction<number>>;
-  setLayoutSettled: React.Dispatch<React.SetStateAction<boolean>>;
-  setScale: React.Dispatch<React.SetStateAction<number>>;
-  setViewMode: React.Dispatch<React.SetStateAction<PdfViewMode>>;
-  viewMode: PdfViewMode;
   zoomTouchedRef: React.RefObject<boolean>;
+  view: Pick<WorkspaceView, 'currentPage' | 'fittedRef' | 'pageCount' | 'pdf' | 'restoredPageRef' | 'scale' | 'scrollRef' | 'setCurrentPage' | 'setLayoutSettled' | 'setScale' | 'setViewMode' | 'viewMode'>;
   /** The armed tool: a drawing tool (pen, shapes, notes…) turns swiping off. */
   tool?: PdfTool;
 }
 
 export function usePdfNavigation(deps: UsePdfNavigationDeps) {
-  const { tool, currentPage, docId, fittedRef, jumpToPage, pageCount, pdf, restoredPageRef, resumeReading, scale, scrollRef, setCurrentPage, setLayoutSettled, setScale, setViewMode, viewMode, zoomTouchedRef } = deps;
+  const { tool, docId, jumpToPage, resumeReading, zoomTouchedRef } = deps;
+  const { currentPage, fittedRef, pageCount, pdf, restoredPageRef, scale, scrollRef, setCurrentPage, setLayoutSettled, setScale, setViewMode, viewMode } = deps.view;
 
   // ── Navigation & zoom ──
   /**
@@ -221,11 +212,8 @@ export function usePdfNavigation(deps: UsePdfNavigationDeps) {
     void pdf.getPage(1).then((page) => {
       if (cancelled) return;
       const unscaled = page.getViewport({ scale: 1 });
-      const fit = (container.clientWidth - 48) / unscaled.width;
-      const renderedAtDefault = unscaled.width * DEFAULT_ZOOM;
-      const badFit = renderedAtDefault < container.clientWidth * 0.5 || renderedAtDefault > container.clientWidth * 2.5;
       fittedRef.current = docId;
-      setScale(badFit ? Math.max(0.5, Math.min(3, fit)) : DEFAULT_ZOOM);
+      setScale(openingZoom(unscaled.width, container.clientWidth, DEFAULT_ZOOM));
       setLayoutSettled(true);
     });
     return () => {
@@ -440,18 +428,12 @@ export function usePdfNavigation(deps: UsePdfNavigationDeps) {
 
   /** From a grid: that page at reading size, one page in view (fit to width). */
   const openPage = useCallback(
-    (page: number) => {
-      handleViewModeChange('single');
-      setCurrentPage(page);
-      // Again as the pages take their new sizes (each learns its size from pdf.js a moment later),
-      // so the page lands at the top of the window rather than where it was mid-relayout.
-      const jump = () => scrollRef.current?.querySelector(`[data-page-number="${page}"]`)?.scrollIntoView({ block: 'start' });
-      requestAnimationFrame(() => requestAnimationFrame(jump));
-      window.setTimeout(jump, 250);
-      window.setTimeout(jump, 600);
-    },
+    (page: number) =>
+      openPageAt(page, { showSingle: () => handleViewModeChange('single'), setCurrentPage, scrollRoot: () => scrollRef.current }),
     [handleViewModeChange]
   );
 
   return { bookOn, bookRef, bookTurnRef, fitPage, openPage, fitWidth, goToPage, handleViewModeChange, pageRef, reduceMotion, scrollAnimation };
 }
+
+export type PdfNavigation = ReturnType<typeof usePdfNavigation>;

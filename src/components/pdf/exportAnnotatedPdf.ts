@@ -32,6 +32,9 @@ import {
   PDFArray,
   PDFString,
   PDFHexString,
+  type PDFContext,
+  type PDFObject,
+  type PDFRef,
   StandardFonts,
   LineCapStyle,
   degrees,
@@ -118,6 +121,10 @@ const FONT_ASSETS: Record<HandFamily, { normal: string; italic?: string; bold?: 
 /** Mirrors `AnnotationLayer`'s fallback weight, so an old mark with no weight of its own exports
  *  at the same thickness it draws on screen. */
 const DEFAULT_WEIGHT = 0.0028;
+
+/** A value `context.obj` takes (pdf-lib does not export its own `Literal` type). */
+type PdfLiteral = PDFObject | string | number | boolean | null | undefined | PdfLiteral[] | PdfDictLiteral;
+type PdfDictLiteral = { [name: string]: PdfLiteral };
 
 
 export async function exportAnnotatedPdf(
@@ -214,7 +221,7 @@ export async function exportAnnotatedPdf(
    * page (see the kinds below). Kept anyway because some readers do surface it, e.g. in an
    * annotation's properties panel.
    */
-  const borderStyle = (a: Annotation, pageWidth: number, context: any) => {
+  const borderStyle = (a: Annotation, pageWidth: number, context: PDFContext) => {
     const width = Math.max(1, (a.weight ?? DEFAULT_WEIGHT) * pageWidth);
     const pattern = dashPattern(a.strokeStyle, width);
     if (pattern) return context.obj({ W: width, S: PDFName.of('D'), D: context.obj(pattern) });
@@ -274,7 +281,7 @@ export async function exportAnnotatedPdf(
     };
 
     const context = pdfDoc.context;
-    const annots: any[] = [];
+    const annots: PDFRef[] = [];
 
     /**
      * A genuinely empty appearance stream, sized to `rect`.
@@ -300,11 +307,11 @@ export async function exportAnnotatedPdf(
     const common = (
       a: Annotation,
       rect: [number, number, number, number],
-      extra: Record<string, any>,
+      extra: PdfDictLiteral,
       opts: { bakedOntoPage?: boolean } = {}
     ) => {
       const { r, g, b } = hexToRgb(a.color);
-      const dict: Record<string, any> = {
+      const dict: PdfDictLiteral = {
         Type: PDFName.of('Annot'),
         Rect: context.obj(rect),
         C: context.obj([r, g, b]),

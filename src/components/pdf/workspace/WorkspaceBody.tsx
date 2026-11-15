@@ -4,67 +4,55 @@
  */
 
 import React from 'react';
-import { type PDFDocumentProxy } from 'pdfjs-dist';
 import { Loader2, FileWarning, ChevronLeft, ChevronRight } from '../../icons';
 import { UserSettings } from '../../../types';
-import {
-  Annotation,
-  BracketSide,
-  NoteStyle,
-  PdfTool,
-  StrokeStyle,
-  TextAlign,
-  TextFont
-} from '../annotationModel';
+import { PdfTool, StrokeStyle } from '../annotationModel';
 import { PdfPage } from '../PdfPage';
 import { NotesList } from '../NotesList';
-import { type PdfViewMode } from '../../../utils/documentStorage';
+import type { WorkspaceMarks, WorkspaceSelection, WorkspaceStatus, WorkspaceView } from './workspaceState';
+import type { PdfToolStyles } from './usePdfToolStyles';
+import type { MarkMutations } from './useMarkMutations';
+import type { MarkGeometry } from './useMarkGeometry';
+import type { PdfNavigation } from './usePdfNavigation';
+import type { WorkspaceExtras } from './useWorkspaceExtras';
+import type { PageEdits } from './usePageEdits';
 
-export interface WorkspaceBodyProps {
-  activeColor: string;
-  activeThemeIds: string[];
-  annotations: Annotation[];
-  bookOn: boolean;
-  bookRef: React.RefObject<HTMLDivElement>;
-  bracketSide: BracketSide;
-  byPage: Map<number, Annotation[]>;
-  createAnnotation: (annotation: Annotation) => void;
-  currentPage: number;
-  deleteAnnotation: (id: string) => void;
-  goToPage: (page: number, animate?: boolean) => void;
-  handleDeletePage: (pageNumber: number) => Promise<void>;
-  hoveredId: string;
-  isDark: boolean;
-  isPanelOpen: boolean;
-  loadError: string;
-  noteStyle: NoteStyle;
-  pageCount: number;
-  pdf: PDFDocumentProxy;
-  retagAnnotation: (id: string, themeId: string | null, color: string) => void;
-  /** Grids: opens a page at reading size (one page in view). */
-  openPage: (page: number) => void;
-  scale: number;
-  scrollRef: React.RefObject<HTMLDivElement>;
-  scrollToAnnotation: (a: Annotation) => boolean;
-  selectedId: string;
-  setCurrentPage: React.Dispatch<React.SetStateAction<number>>;
-  setHoveredId: React.Dispatch<React.SetStateAction<string>>;
-  setSelectedId: React.Dispatch<React.SetStateAction<string>>;
-  settings: UserSettings;
-  startEditing: (id: string) => void;
-  textAlign: TextAlign;
-  textBold: boolean;
-  textFont: TextFont;
-  textItalic: boolean;
-  textSize: number;
+/** What the page itself acts as: Black it out's mode stands in for the mask tool. */
+export interface PageTools {
   tool: PdfTool;
   toolStrokeStyles: Record<string, StrokeStyle>;
   toolWeights: Record<string, number>;
-  updateAnnotation: (id: string, patch: Partial<Annotation>) => void;
-  viewMode: PdfViewMode;
 }
 
-export const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({ activeColor, activeThemeIds, annotations, bookOn, bookRef, bracketSide, byPage, createAnnotation, currentPage, deleteAnnotation, goToPage, handleDeletePage, hoveredId, isDark, isPanelOpen, loadError, noteStyle, openPage, pageCount, pdf, retagAnnotation, scale, scrollRef, scrollToAnnotation, selectedId, setCurrentPage, setHoveredId, setSelectedId, settings, startEditing, textAlign, textBold, textFont, textItalic, textSize, tool, toolStrokeStyles, toolWeights, updateAnnotation, viewMode }) => (
+export interface WorkspaceBodyProps {
+  settings: UserSettings;
+  isDark: boolean;
+  styles: Pick<PdfToolStyles, 'activeColor' | 'activeThemeIds' | 'bracketSide' | 'noteStyle' | 'textAlign' | 'textBold' | 'textFont' | 'textItalic' | 'textSize'>;
+  pageTools: Pick<PageTools, 'tool' | 'toolStrokeStyles' | 'toolWeights'>;
+  marks: Pick<WorkspaceMarks, 'annotations'>;
+  mutations: Pick<MarkMutations, 'createAnnotation' | 'deleteAnnotation' | 'retagAnnotation' | 'startEditing' | 'updateAnnotation'>;
+  geometry: Pick<MarkGeometry, 'byPage'>;
+  selection: Pick<WorkspaceSelection, 'hoveredId' | 'setHoveredId' | 'selectedId' | 'setSelectedId'>;
+  view: Pick<WorkspaceView, 'currentPage' | 'setCurrentPage' | 'pageCount' | 'pdf' | 'scale' | 'scrollRef' | 'viewMode'>;
+  status: Pick<WorkspaceStatus, 'isPanelOpen' | 'loadError'>;
+  nav: Pick<PdfNavigation, 'openPage' | 'bookOn' | 'bookRef' | 'goToPage'>;
+  extras: Pick<WorkspaceExtras, 'scrollToAnnotation'>;
+  pageEdits: Pick<PageEdits, 'handleDeletePage'>;
+}
+
+export const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({ settings, isDark, styles, pageTools, marks, mutations, geometry, selection, view, status, nav, extras, pageEdits }) => {
+  const { activeColor, activeThemeIds, bracketSide, noteStyle, textAlign, textBold, textFont, textItalic, textSize } = styles;
+  const { tool, toolStrokeStyles, toolWeights } = pageTools;
+  const { annotations } = marks;
+  const { createAnnotation, deleteAnnotation, retagAnnotation, startEditing, updateAnnotation } = mutations;
+  const { byPage } = geometry;
+  const { hoveredId, setHoveredId, selectedId, setSelectedId } = selection;
+  const { currentPage, setCurrentPage, pageCount, pdf, scale, scrollRef, viewMode } = view;
+  const { isPanelOpen, loadError } = status;
+  const { openPage, bookOn, bookRef, goToPage } = nav;
+  const { scrollToAnnotation } = extras;
+  const { handleDeletePage } = pageEdits;
+  return (
   <>
       <div className="flex-1 flex min-h-0 min-w-0">
         <div
@@ -235,4 +223,5 @@ export const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({ activeColor, activ
         </div>
       </div>
   </>
-);
+  );
+};

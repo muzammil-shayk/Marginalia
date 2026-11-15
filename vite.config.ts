@@ -94,6 +94,33 @@ export default defineConfig(() => {
         '@': path.resolve(__dirname, '.'),
       },
     },
+    build: {
+      // Largest chunks: fontkit ~720 kB (one package, loaded only on PDF export) and the app's own
+      // code ~520 kB; the big libraries are split out below.
+      chunkSizeWarningLimit: 750,
+      rollupOptions: {
+        output: {
+          // Big libraries get their own chunks: the start-up ones still load at start (same files,
+          // just not one 3 MB script); jsPDF, pdf-lib and fontkit are reached only through the lazy
+          // export paths, so they load on first export. File import is a dynamic import too.
+          manualChunks(id: string) {
+            // Vite's dynamic-import helper: unassigned, Rollup parks it in the first lazy vendor that
+            // needs it (jsPDF), which then preloads at start. Its own tiny chunk keeps jsPDF lazy.
+            if (id.includes('vite/preload-helper')) return 'preload-helper';
+            const pkg = id.match(/node_modules\/((?:@[^/]+\/)?[^/]+)\//)?.[1];
+            if (!pkg) return undefined;
+            if (pkg === 'pdfjs-dist') return 'vendor-pdfjs';
+            if (pkg === 'react' || pkg === 'react-dom' || pkg === 'scheduler') return 'vendor-react';
+            if (pkg === 'motion' || pkg === 'motion-dom' || pkg === 'motion-utils' || pkg === 'framer-motion') return 'vendor-motion';
+            if (pkg === 'jspdf' || pkg === 'fast-png' || pkg === 'fflate' || pkg === 'iobuffer') return 'vendor-jspdf';
+            if (pkg === '@phosphor-icons/react') return 'vendor-icons';
+            if (pkg === '@pdf-lib/fontkit') return 'vendor-fontkit';
+            if (pkg === 'pdf-lib' || pkg.startsWith('@pdf-lib/')) return 'vendor-pdflib';
+            return undefined;
+          },
+        },
+      },
+    },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.

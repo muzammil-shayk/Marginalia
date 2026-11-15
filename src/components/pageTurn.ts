@@ -47,6 +47,11 @@ export const FADE_MS = 220;
  */
 export const TURN_FAILSAFE_MS = TURN_MS + 40;
 
+/** When a turn's overlay is removed at the latest: just after the fade, or the turn, capped at TURN_FAILSAFE_MS. */
+export function turnFailsafeMs(reduced: boolean | undefined, duration?: number): number {
+  return reduced ? FADE_MS + 40 : Math.min(TURN_FAILSAFE_MS, (duration ?? TURN_MS) + 40);
+}
+
 /** Clamps a requested spread index into range. */
 export function clampSpread(index: number, count: number): number {
   return Math.max(0, Math.min(Math.max(0, count - 1), Math.floor(index)));
@@ -144,7 +149,7 @@ export function playTurn(o: TurnOptions): { done: Promise<void>; finish: () => v
     resolve();
   };
   // Gone by TURN_FAILSAFE_MS (or just after a fade) whether or not `onfinish` has fired.
-  const failsafe = window.setTimeout(end, o.reduced ? FADE_MS + 40 : Math.min(TURN_FAILSAFE_MS, (o.duration ?? TURN_MS) + 40));
+  const failsafe = window.setTimeout(end, turnFailsafeMs(o.reduced, o.duration));
 
   if (o.reduced) {
     // The old spread's two pages, over the new one, fading away.
