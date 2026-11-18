@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isAlreadyMarked, planTextMarks, type SelectionGroup } from './textMarking';
+import { isAlreadyMarked, pageHasText, planTextMarks, type SelectionGroup } from './textMarking';
 import type { Annotation } from './annotationModel';
 
 const line = (y: number, x = 0.1, w = 0.6) => ({ x, y, w, h: 0.02 });
@@ -119,4 +119,10 @@ test('black it out, words: a solid bar per selected line, slightly larger, with 
   assert.ok(b.x < 0.1 && b.y < 0.3 && b.x + b.w > 0.7 && b.y + b.h > 0.32);
   // Clamped to the page.
   assert.ok(marks[2].box!.x >= 0);
+});
+
+test('a scanned page (no text items, or only blank ones) has no text; a page with words has', () => {
+  assert.equal(pageHasText([]), false);
+  assert.equal(pageHasText([{ str: ' ' }, { str: '' }, { type: 'beginMarkedContent' }]), false);
+  assert.equal(pageHasText([{ str: ' ' }, { str: 'Red' }]), true);
 });

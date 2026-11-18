@@ -1890,3 +1890,862 @@ main[data-annotation-surface] ::selection {
   text-decoration: underline solid rgb(91 128 112 / 0.85) 2px;
   text-underline-offset: 3px;
 }
+
+/* ── Tutorial deck (GuideSection.tsx, guideDeck.ts) ── cards stacked with the next ones tucked
+   behind on both sides. Poses come from guideDeck.ts; this is the look and the pictures' loop. */
+.deck-stage {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  padding: 28px 0 26px;
+  touch-action: pan-y;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.deck-card {
+  grid-area: 1 / 1;
+  position: relative;
+  width: min(80%, 560px);
+  border-radius: 24px;
+  overflow: hidden;
+  border: 1px solid var(--color-stone-200);
+  background: #fffdf8;
+  box-shadow:
+    0 1px 2px rgb(42 38 33 / 0.06),
+    0 18px 40px -18px rgb(42 38 33 / 0.35);
+  will-change: transform;
+  transform-origin: 50% 60%;
+}
+@media (min-width: 640px) {
+  .deck-card {
+    width: min(62%, 560px);
+  }
+}
+.dark .deck-card {
+  border-color: var(--color-stone-700);
+  background: var(--color-night-3);
+  box-shadow:
+    0 1px 2px rgb(0 0 0 / 0.3),
+    0 22px 44px -18px rgb(0 0 0 / 0.7);
+}
+.deck-sizer {
+  visibility: hidden;
+  pointer-events: none;
+}
+.deck-shade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--color-paper-3);
+  mix-blend-mode: normal;
+}
+.dark .deck-shade {
+  background: var(--color-night-4);
+}
+.deck-stage:focus-visible .deck-card[aria-hidden='false'] {
+  outline: 2px solid var(--color-gold);
+  outline-offset: 3px;
+}
+.deck-frame {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  background: var(--color-paper-2);
+  border-bottom: 1px solid var(--color-stone-200);
+}
+.dark .deck-frame {
+  background: var(--color-night-2);
+  border-bottom-color: var(--color-stone-700);
+}
+
+/* A screenshot that eases in on its feature while a pointer glides over and clicks it (7.5 s). */
+.deck-shot {
+  position: relative;
+  width: 100%;
+}
+.deck-zoom {
+  transform-origin: 0 0;
+}
+.deck-pointer,
+.deck-ripple {
+  position: absolute;
+  left: var(--fx);
+  top: var(--fy);
+  pointer-events: none;
+  opacity: 0;
+}
+.deck-pointer {
+  margin: -3px 0 0 -5px;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.25));
+}
+.deck-ripple {
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  border-radius: 9999px;
+  border: 2.5px solid var(--color-gold);
+  background: color-mix(in oklab, var(--color-gold) 22%, transparent);
+}
+.deck-shot.is-playing .deck-zoom {
+  animation: deck-zoom 7.5s var(--ease-out) infinite;
+}
+.deck-shot.is-playing .deck-pointer {
+  animation: deck-pointer 7.5s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+.deck-shot.is-playing .deck-ripple {
+  animation: deck-ripple 7.5s ease-out infinite;
+}
+@keyframes deck-zoom {
+  0%, 8% { transform: translate(0, 0) scale(1); }
+  34%, 76% { transform: translate(var(--tx), var(--ty)) scale(var(--z)); }
+  94%, 100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes deck-pointer {
+  0%, 22% { opacity: 0; translate: var(--ox) var(--oy); scale: 1; }
+  28% { opacity: 1; translate: var(--ox) var(--oy); }
+  44% { opacity: 1; translate: 0 0; scale: 1; }
+  48% { scale: 0.82; }
+  52% { scale: 1; }
+  70% { opacity: 1; translate: 0 0; }
+  78%, 100% { opacity: 0; translate: 0 0; }
+}
+@keyframes deck-ripple {
+  0%, 46% { opacity: 0; scale: 0.3; }
+  49% { opacity: 1; scale: 0.5; }
+  66% { opacity: 0; scale: 2.1; }
+  100% { opacity: 0; scale: 2.1; }
+}
+
+/* A toolbar card (9 s): the pointer clicks the tool, then the picture zooms to the mark it made
+   and the pointer clicks that. --bx/--by is the tool, --fx/--fy the mark once zoomed. */
+.deck-shot.has-tool .deck-pointer {
+  left: var(--bx);
+  top: var(--by);
+}
+.deck-ripple-tool {
+  left: var(--bx);
+  top: var(--by);
+}
+.deck-shot.has-tool.is-playing .deck-zoom {
+  animation: deck-zoom-tool 9s var(--ease-out) infinite;
+}
+.deck-shot.has-tool.is-playing .deck-pointer {
+  animation: deck-pointer-tool 9s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+.deck-shot.has-tool.is-playing .deck-ripple-tool {
+  animation: deck-ripple-tool 9s ease-out infinite;
+}
+.deck-shot.has-tool.is-playing .deck-ripple:not(.deck-ripple-tool) {
+  animation: deck-ripple-mark 9s ease-out infinite;
+}
+@keyframes deck-zoom-tool {
+  0%, 30% { transform: translate(0, 0) scale(1); }
+  46%, 80% { transform: translate(var(--tx), var(--ty)) scale(var(--z)); }
+  95%, 100% { transform: translate(0, 0) scale(1); }
+}
+@keyframes deck-pointer-tool {
+  0%, 6% { opacity: 0; left: var(--bx); top: var(--by); translate: var(--ox) var(--oy); scale: 1; }
+  10% { opacity: 1; translate: var(--ox) var(--oy); }
+  20% { left: var(--bx); top: var(--by); translate: 0 0; scale: 1; }
+  23% { scale: 0.82; }
+  26% { left: var(--bx); top: var(--by); scale: 1; }
+  46% { left: var(--fx); top: var(--fy); }
+  50% { scale: 0.82; }
+  53% { scale: 1; }
+  72% { opacity: 1; left: var(--fx); top: var(--fy); translate: 0 0; }
+  78%, 100% { opacity: 0; left: var(--fx); top: var(--fy); translate: 0 0; }
+}
+@keyframes deck-ripple-tool {
+  0%, 22% { opacity: 0; scale: 0.3; }
+  24% { opacity: 1; scale: 0.5; }
+  36%, 100% { opacity: 0; scale: 2.1; }
+}
+@keyframes deck-ripple-mark {
+  0%, 49% { opacity: 0; scale: 0.3; }
+  51% { opacity: 1; scale: 0.5; }
+  66%, 100% { opacity: 0; scale: 2.1; }
+}
+
+/* The shortcuts card: keys and what they do on the left, the effect happening on the right. */
+.deck-keys {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+}
+.deck-keys-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  gap: 16px;
+  align-items: center;
+  width: 100%;
+  padding: 0 18px 12px;
+}
+.deck-keys-side {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.deck-keycap {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 600;
+  min-width: 38px;
+  padding: 7px 10px 9px;
+  border-radius: 10px;
+  text-align: center;
+  white-space: nowrap;
+  color: var(--color-ink);
+  background: #fffdf8;
+  border: 1.5px solid var(--color-stone-300);
+  box-shadow: 0 4px 0 var(--color-stone-300);
+}
+.dark .deck-keycap {
+  color: var(--color-paper);
+  background: var(--color-night-3);
+  border-color: var(--color-stone-600);
+  box-shadow: 0 4px 0 var(--color-stone-600);
+}
+.deck-keys-row.is-playing .deck-keycap {
+  animation: deck-key 0.5s var(--ease-out) both;
+}
+@keyframes deck-key {
+  0% { translate: 0 0; box-shadow: 0 4px 0 var(--color-stone-300); }
+  40% { translate: 0 3px; box-shadow: 0 1px 0 var(--color-stone-300); border-color: var(--color-gold); }
+  100% { translate: 0 0; box-shadow: 0 4px 0 var(--color-stone-300); border-color: var(--color-gold); }
+}
+
+/* The scrap of page each shortcut acts on. Every effect starts a beat after its key goes down. */
+.sd-scene {
+  position: relative;
+  height: 168px;
+  overflow: hidden;
+  padding: 14px 14px 12px;
+  border-radius: 12px;
+  background: #fffdf8;
+  border: 1px solid var(--color-stone-200);
+  box-shadow: 0 6px 18px -10px rgb(42 38 33 / 0.35);
+  font-family: var(--font-serif);
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--color-ink);
+}
+.dark .sd-scene {
+  background: var(--color-night-3);
+  border-color: var(--color-stone-700);
+  color: var(--color-paper);
+}
+.sd-page {
+  margin: 0;
+}
+.sd-target {
+  -webkit-box-decoration-break: slice;
+  box-decoration-break: slice;
+  background-repeat: no-repeat;
+  border-radius: 2px;
+}
+.sd-pointer {
+  position: absolute;
+  left: 70%;
+  top: 92%;
+  opacity: 0;
+  filter: drop-shadow(0 2px 3px rgb(0 0 0 / 0.25));
+}
+.sd-pointer svg {
+  width: 20px;
+  height: 20px;
+}
+.is-playing .sd-pointer {
+  animation: sd-pointer-in 0.5s 0.4s var(--ease-out) both;
+}
+@keyframes sd-pointer-in {
+  to { opacity: 1; }
+}
+@keyframes sd-sweep {
+  to { background-size: 100% 100%; }
+}
+
+/* H: a sweep of highlight across the words. */
+.sd-highlight .sd-target {
+  background-image: linear-gradient(rgb(79 143 122 / 0.42), rgb(79 143 122 / 0.42));
+  background-size: 0% 100%;
+}
+.is-playing .sd-highlight .sd-target {
+  animation: sd-sweep 0.9s 0.7s var(--ease-out) forwards;
+}
+/* U and S: a rule drawn under, or through. */
+.sd-underline .sd-target {
+  background-image: linear-gradient(#6d6ad8, #6d6ad8);
+  background-position: 0 100%;
+  background-size: 0% 2px;
+}
+.is-playing .sd-underline .sd-target {
+  animation: sd-rule 0.9s 0.7s var(--ease-out) forwards;
+}
+.sd-strike .sd-target {
+  background-image: linear-gradient(#d97a2b, #d97a2b);
+  background-position: 0 58%;
+  background-size: 0% 1.6px;
+}
+.is-playing .sd-strike .sd-target {
+  animation: sd-rule-thin 0.9s 0.7s var(--ease-out) forwards;
+}
+@keyframes sd-rule {
+  to { background-size: 100% 2px; }
+}
+@keyframes sd-rule-thin {
+  to { background-size: 100% 1.6px; }
+}
+/* A: a box dragged open over the page, then filled. */
+.sd-areabox {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  width: 70%;
+  height: 62%;
+  border: 1.5px dashed #d97a2b;
+  border-radius: 4px;
+  clip-path: inset(0 100% 100% 0);
+}
+.is-playing .sd-area .sd-areabox {
+  animation: sd-area 1.4s 0.7s var(--ease-out) forwards;
+}
+@keyframes sd-area {
+  70% { clip-path: inset(0 0 0 0); background: transparent; }
+  100% { clip-path: inset(0 0 0 0); background: rgb(217 122 43 / 0.22); border-style: solid; }
+}
+.sd-area .sd-pointer {
+  left: 10px;
+  top: 10px;
+}
+.is-playing .sd-area .sd-pointer {
+  animation: sd-pointer-in 0.3s 0.4s both, sd-drag-area 1s 0.7s var(--ease-out) forwards;
+}
+@keyframes sd-drag-area {
+  to { left: calc(70% + 10px); top: calc(62% + 10px); }
+}
+/* P: a squiggle drawn under the line. */
+.sd-pen {
+  position: absolute;
+  left: 14px;
+  bottom: 18px;
+  width: 78%;
+  height: 22px;
+  overflow: visible;
+}
+.sd-pen path {
+  fill: none;
+  stroke: #d97a2b;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 320;
+  stroke-dashoffset: 320;
+}
+.is-playing .sd-pen path {
+  animation: sd-ink 1.2s 0.7s ease-in-out forwards;
+}
+@keyframes sd-ink {
+  to { stroke-dashoffset: 0; }
+}
+/* N: a click, and a sticky note appears there. */
+.sd-sticky {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border-left: 3px solid #6d6ad8;
+  background: rgb(109 106 216 / 0.18);
+  font-family: 'Caveat Variable', Caveat, cursive;
+  font-size: 17px;
+  line-height: 1;
+  opacity: 0;
+  scale: 0.7;
+  transform-origin: 20% 20%;
+}
+.is-playing .sd-note .sd-sticky {
+  animation: sd-pop 0.45s 1.1s var(--ease-out) forwards;
+}
+.sd-scene.sd-note .sd-pointer {
+  left: 55%;
+  top: 95%;
+}
+.is-playing .sd-scene.sd-note .sd-pointer {
+  animation: sd-pointer-in 0.3s 0.4s both, sd-to-note 0.6s 0.5s var(--ease-out) forwards;
+}
+@keyframes sd-to-note {
+  to { left: calc(100% - 92px); top: calc(100% - 34px); }
+}
+@keyframes sd-pop {
+  to { opacity: 1; scale: 1; }
+}
+/* V then E: the mark is picked up (outlined), then erased. */
+.sd-selectErase .sd-target,
+.sd-delete .sd-target,
+.sd-theme .sd-target,
+.sd-undo .sd-target,
+.sd-escape .sd-target {
+  background-color: rgb(79 143 122 / 0.42);
+}
+.is-playing .sd-selectErase .sd-target {
+  animation: sd-select 0.4s 0.6s both, sd-erase 0.5s 1.6s forwards;
+}
+@keyframes sd-select {
+  to { outline: 1.5px dashed #3f6fb5; outline-offset: 2px; }
+}
+@keyframes sd-erase {
+  from { outline: 1.5px dashed #3f6fb5; outline-offset: 2px; }
+  to { background-color: transparent; outline: 1.5px dashed transparent; outline-offset: 2px; }
+}
+.sd-selectErase .sd-pointer {
+  left: 80%;
+  top: 95%;
+}
+.is-playing .sd-selectErase .sd-pointer {
+  animation: sd-pointer-in 0.3s 0.2s both, sd-to-mark 0.5s 0.25s var(--ease-out) forwards;
+}
+@keyframes sd-to-mark {
+  to { left: 48%; top: 40%; }
+}
+/* Delete: the selected mark goes. */
+.sd-delete .sd-target {
+  outline: 1.5px dashed #3f6fb5;
+  outline-offset: 2px;
+}
+.is-playing .sd-delete .sd-target {
+  animation: sd-erase 0.5s 0.7s forwards;
+}
+/* 1–9: the mark changes theme, and the strip shows which. */
+.sd-chips {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  display: flex;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+}
+.sd-chips b {
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--color-stone-100);
+  color: var(--color-stone-600);
+}
+.dark .sd-chips b {
+  background: var(--color-night-2);
+  color: var(--color-stone-300);
+}
+.sd-chips b:first-child {
+  background: #4f8f7a;
+  color: #fff;
+}
+.is-playing .sd-theme .sd-target {
+  animation: sd-retheme 0.5s 0.8s forwards;
+}
+.is-playing .sd-theme .sd-chips b:first-child {
+  animation: sd-chip-off 0.4s 0.8s forwards;
+}
+.is-playing .sd-theme .sd-chips b:last-child {
+  animation: sd-chip-on 0.4s 0.8s forwards;
+}
+@keyframes sd-retheme {
+  to { background-color: rgb(109 106 216 / 0.4); }
+}
+@keyframes sd-chip-off {
+  to { background: var(--color-stone-100); color: var(--color-stone-600); }
+}
+@keyframes sd-chip-on {
+  to { background: #6d6ad8; color: #fff; }
+}
+/* ← →: a leaf turns over. */
+.sd-turn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  perspective: 700px;
+}
+.sd-spread {
+  position: relative;
+  width: 86%;
+  height: 120px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+.sd-leaf {
+  position: relative;
+  background:
+    repeating-linear-gradient(to bottom, transparent 0 9px, color-mix(in oklab, currentColor 30%, transparent) 9px 11px) 12px 14px / calc(100% - 24px) calc(100% - 34px) no-repeat,
+    #fffdf8;
+  border: 1px solid var(--color-stone-200);
+}
+.dark .sd-leaf {
+  background:
+    repeating-linear-gradient(to bottom, transparent 0 9px, color-mix(in oklab, currentColor 30%, transparent) 9px 11px) 12px 14px / calc(100% - 24px) calc(100% - 34px) no-repeat,
+    var(--color-night-2);
+  border-color: var(--color-stone-700);
+}
+.sd-leaf-left {
+  border-radius: 6px 0 0 6px;
+}
+.sd-leaf-right {
+  border-radius: 0 6px 6px 0;
+}
+.sd-leaf-turning {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 50%;
+  height: 100%;
+  border-radius: 0 6px 6px 0;
+  transform-origin: 0 50%;
+  backface-visibility: hidden;
+  box-shadow: -6px 0 14px -8px rgb(0 0 0 / 0.4);
+}
+.is-playing .sd-leaf-turning {
+  animation: sd-turn 1.1s 0.7s cubic-bezier(0.45, 0, 0.25, 1) forwards;
+}
+.sd-folio-new {
+  opacity: 0;
+}
+.is-playing .sd-folio-old {
+  animation: sd-away 0.2s 1.4s forwards;
+}
+.is-playing .sd-folio-new {
+  animation: sd-pop-in 0.3s 1.5s forwards;
+}
+@keyframes sd-turn {
+  to { transform: rotateY(-180deg); }
+}
+.sd-folio {
+  position: absolute;
+  bottom: 3px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  font-family: var(--font-sans);
+  font-size: 9px;
+  opacity: 0.6;
+}
+/* The pretend toolbar some scenes need: Find opens in it, focus mode sends it away. */
+.sd-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  margin: -4px 0 8px;
+}
+.sd-bar i {
+  width: 18px;
+  height: 14px;
+  border-radius: 4px;
+  background: var(--color-stone-200);
+}
+.dark .sd-bar i {
+  background: var(--color-night-2);
+}
+.sd-findbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid var(--color-gold);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  opacity: 0;
+}
+.sd-typed {
+  display: inline-block;
+  overflow: hidden;
+  white-space: nowrap;
+  width: 0;
+}
+.sd-count {
+  margin-left: auto;
+  opacity: 0;
+  color: var(--color-stone-500);
+}
+.is-playing .sd-find .sd-findbox {
+  animation: sd-pop-in 0.3s 0.6s forwards;
+}
+.is-playing .sd-find .sd-typed {
+  animation: sd-type 0.7s 0.9s steps(6) forwards;
+}
+.is-playing .sd-find .sd-count {
+  animation: sd-pop-in 0.3s 1.6s forwards;
+}
+.sd-find .sd-hit {
+  background-image: linear-gradient(rgb(234 179 8 / 0.45), rgb(234 179 8 / 0.45));
+  background-size: 0% 100%;
+}
+.is-playing .sd-find .sd-hit {
+  animation: sd-sweep 0.01s 1.6s forwards;
+}
+@keyframes sd-type {
+  to { width: 6ch; }
+}
+@keyframes sd-pop-in {
+  to { opacity: 1; }
+}
+/* F: everything but the page steps back. */
+.is-playing .sd-focus .sd-bar {
+  animation: sd-away 0.6s 0.7s var(--ease-out) forwards;
+}
+.is-playing .sd-focus .sd-page {
+  animation: sd-centre 0.8s 0.7s var(--ease-out) forwards;
+}
+@keyframes sd-away {
+  to { opacity: 0; translate: 0 -10px; }
+}
+@keyframes sd-centre {
+  to { translate: 0 -12px; font-size: 13.5px; }
+}
+/* Undo then redo: the mark goes, then comes back. */
+.is-playing .sd-undo .sd-target {
+  animation: sd-undo 0.4s 0.6s forwards, sd-redo 0.4s 1.5s forwards;
+}
+@keyframes sd-undo {
+  to { background-color: transparent; }
+}
+@keyframes sd-redo {
+  from { background-color: transparent; }
+  to { background-color: rgb(79 143 122 / 0.42); }
+}
+/* Esc: the open menu closes. */
+.sd-menu {
+  position: absolute;
+  left: 40%;
+  top: 46%;
+  display: flex;
+  gap: 6px;
+  padding: 7px 9px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid var(--color-stone-200);
+  box-shadow: 0 8px 20px -10px rgb(0 0 0 / 0.4);
+}
+.dark .sd-menu {
+  background: var(--color-night-2);
+  border-color: var(--color-stone-700);
+}
+.sd-menu i {
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  background: #4f8f7a;
+}
+.sd-menu i:nth-child(2) {
+  background: #6d6ad8;
+}
+.sd-menu i:nth-child(3) {
+  background: #d97a2b;
+}
+.is-playing .sd-escape .sd-menu {
+  animation: sd-close 0.3s 0.7s var(--ease-out) forwards;
+}
+@keyframes sd-close {
+  to { opacity: 0; scale: 0.9; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sd-scene *,
+  .sd-scene {
+    animation-duration: 0.01s !important;
+    animation-delay: 0s !important;
+  }
+}
+
+/* ── Collapse to marks (reader/CollapseParts.tsx) ── the bar over a collapsed document, and the
+   fold that stands for each hidden run: two hairlines pinched towards a label. */
+.collapse-bar {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--color-stone-200);
+  background: var(--color-paper-3);
+  font-family: var(--font-sans);
+  animation: collapse-in 260ms var(--ease-out) both;
+}
+.dark .collapse-bar {
+  border-color: var(--color-stone-800);
+  background: var(--color-night-4);
+}
+.collapse-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--color-stone-700);
+  border: 1px solid var(--color-stone-300);
+  cursor: pointer;
+  transition:
+    background-color 160ms var(--ease-out),
+    border-color 160ms var(--ease-out),
+    color 160ms var(--ease-out);
+}
+.collapse-chip:hover:not(:disabled) {
+  border-color: var(--color-gold);
+}
+.collapse-chip:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.collapse-chip.is-on {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-on-accent);
+}
+.dark .collapse-chip {
+  color: var(--color-stone-300);
+  border-color: var(--color-stone-600);
+}
+.dark .collapse-chip.is-on {
+  color: var(--color-on-accent);
+  border-color: var(--color-accent);
+}
+.collapse-fold {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-sans);
+  animation: collapse-in 260ms var(--ease-out) both;
+}
+.collapse-fold-rule {
+  flex: 1;
+  height: 7px;
+  border-top: 1px solid var(--color-stone-300);
+  border-bottom: 1px solid var(--color-stone-300);
+  opacity: 0.8;
+}
+.dark .collapse-fold-rule {
+  border-color: var(--color-stone-700);
+}
+.collapse-fold-btn,
+.collapse-fold-read {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    border-color 160ms var(--ease-out),
+    color 160ms var(--ease-out);
+}
+.collapse-fold-btn {
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--color-stone-700);
+  border: 1px dashed var(--color-stone-400);
+}
+.dark .collapse-fold-btn {
+  color: var(--color-stone-300);
+  border-color: var(--color-stone-600);
+}
+.collapse-fold-btn:hover,
+.collapse-fold-read:hover {
+  border-color: var(--color-gold);
+  color: var(--color-ink);
+}
+.dark .collapse-fold-btn:hover,
+.dark .collapse-fold-read:hover {
+  color: var(--color-paper);
+}
+.collapse-fold-read {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--color-muted);
+  border: 1px solid transparent;
+}
+.collapse-run {
+  animation: collapse-in 320ms var(--ease-out) both;
+}
+@keyframes collapse-in {
+  from { opacity: 0; translate: 0 6px; }
+  to { opacity: 1; translate: 0 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .collapse-bar,
+  .collapse-fold,
+  .collapse-run {
+    animation: none;
+  }
+}
+
+/* PDF collapsed (pdf/workspace/PdfCollapsed.tsx): a strip of the real page, clipped to a band
+   around its marks, with a torn-paper gap between strips of the same page. */
+.pdf-band {
+  position: relative;
+  overflow: hidden;
+  max-width: 100%;
+  border-radius: 3px;
+  box-shadow:
+    0 1px 2px rgb(42 38 33 / 0.08),
+    0 10px 24px -16px rgb(42 38 33 / 0.45);
+  animation: collapse-in 320ms var(--ease-out) both;
+}
+.pdf-band > div > [data-page-number] {
+  box-shadow: none;
+}
+.pdf-band-loading {
+  width: min(100%, 600px);
+  background: var(--color-paper-2);
+}
+.dark .pdf-band-loading {
+  background: var(--color-night-2);
+}
+.pdf-band-gap {
+  display: block;
+  width: 64px;
+  height: 10px;
+  background: radial-gradient(circle, var(--color-stone-400) 1.2px, transparent 1.6px) 0 50% / 12px 10px repeat-x;
+  opacity: 0.7;
+}
+/* C: the unmarked lines fold away, a fold takes their place. */
+.sd-collapse .sd-line {
+  margin: 0;
+  overflow: hidden;
+  max-height: 2.4em;
+}
+.sd-collapse .sd-target {
+  background-color: rgb(79 143 122 / 0.42);
+}
+.sd-collapse .sd-target-2 {
+  background-color: rgb(109 106 216 / 0.38);
+}
+.sd-foldpill {
+  display: block;
+  width: max-content;
+  margin: 0 auto;
+  padding: 0 10px;
+  border: 1px dashed var(--color-stone-400);
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  line-height: 20px;
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+}
+.is-playing .sd-collapse .sd-fold-away {
+  animation: sd-fold 0.7s 0.7s var(--ease-out) forwards;
+}
+.is-playing .sd-collapse .sd-foldpill {
+  animation: sd-fold-in 0.4s 1.2s var(--ease-out) forwards;
+}
+@keyframes sd-fold {
+  to { max-height: 0; opacity: 0; }
+}
+@keyframes sd-fold-in {
+  to { max-height: 22px; opacity: 1; margin: 4px auto; }
+}

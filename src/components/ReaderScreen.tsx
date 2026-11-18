@@ -28,6 +28,9 @@ import { ReaderBody } from './reader/ReaderBody';
 import { ReaderControlBar } from './reader/ReaderControlBar';
 import { ReaderHeader } from './reader/ReaderHeader';
 import { useReaderState } from './reader/readerState';
+import { useCollapseState, useReaderCollapse } from './reader/useReaderCollapse';
+import { CollapseBar, CollapseFold } from './reader/CollapseParts';
+import { plural } from '../utils/plural';
 
 interface ReaderScreenProps {
   settings: UserSettings;
@@ -82,8 +85,17 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
   const marking = useReaderMarking({ settings, textRef: refs.textRef, annotations, doc, themes, selection, editor, views: markViews });
   useReaderSelectionKeys({ settings, textRef: refs.textRef, annotations, marking, views: markViews, themes, selection });
   const markUi = useReaderMarkUi({ reduceMotion, annotations, marking, panels, selection, refs });
-  const layout = useReaderLayout({ settings, onSpreadChange, annotations, doc, poetry: poetryView, views: markViews, panels, refs });
+  const collapseState = useCollapseState();
+  const layout = useReaderLayout({ settings, onSpreadChange, annotations, doc, poetry: poetryView, views: markViews, panels, refs, collapsed: collapseState.on });
   const extras = useReaderExtras({ settings, isDark, reduceMotion, jump, onAddThemes, annotations, doc, views: markViews, panels, refs, markUi, layout });
+  const findHits = extras.find.open ? extras.find.hits : [];
+  const collapse = useReaderCollapse({
+    state: collapseState,
+    paragraphCount: doc.paragraphs.length,
+    marks: annotations.marks,
+    findHits,
+    topInset: () => refs.controlBarRef.current?.getBoundingClientRect().bottom ?? 0
+  });
 
   const { paragraphs, content, loadFailed, setLoadAttempt, displayTitle, verbatim, stylesByPara } = doc;
   const { poetry } = poetryView;
@@ -164,13 +176,55 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
     );
   });
 
+  // Collapsed: the bar first, then each shown run of paragraphs and a fold for each hidden one.
+  const pageNodes = collapse.segments
+    ? [
+        <CollapseBar
+          key="collapse-bar"
+          filter={collapse.filter}
+          context={collapse.context}
+          summary={`Showing ${collapse.shown} of ${plural(collapse.total, 'paragraph')}`}
+          countFor={(f) => collapse.keepFor(f).size}
+          contextText={(n) => (n === 0 ? 'only the marked paragraphs' : `and ${plural(n, 'paragraph')} either side`)}
+          onFilter={(f) => {
+            collapse.remember();
+            collapse.setFilter(f);
+          }}
+          onContext={(n) => {
+            collapse.remember();
+            collapse.setContext(n);
+          }}
+          onExit={collapse.toggle}
+          themes={settings.activeThemes}
+          terminologyColor={settings.terminologyColor}
+          findQuery={findHits.length ? extras.find.query : null}
+        />,
+        ...collapse.segments.map((s) =>
+          s.kind === 'show' ? (
+            <div key={`show-${s.from}`} className="collapse-run space-y-6">
+              {paragraphNodes.slice(s.from, s.to + 1)}
+            </div>
+          ) : (
+            <CollapseFold
+              key={`fold-${s.from}-${s.to}`}
+              from={s.from}
+              to={s.to}
+              total={paragraphs.length}
+              onOpen={() => collapse.openFold(s)}
+              onReadFrom={() => collapse.expandAt(s.from)}
+            />
+          )
+        )
+      ]
+    : paragraphNodes;
+
   return (
     <div className={`min-h-screen flex flex-col transition-colors ${isDark ? 'bg-night text-stone-100' : 'bg-paper text-ink'}`}>
       <ReaderHeader activeThemeId={themes.activeThemeId} displayTitle={displayTitle} focusMode={focusMode} headerRef={headerRef} isDark={isDark} onNavigate={onNavigate} setActiveThemeId={themes.setActiveThemeId} settings={settings} themeStripRef={themes.themeStripRef} />
 
-      <ReaderControlBar settings={settings} isDark={isDark} focusMode={focusMode} onToggleFocus={onToggleFocus} annotations={annotations} doc={doc} themes={themes} panels={panels} poetryView={poetryView} selection={selection} refs={refs} markViews={markViews} marking={marking} layout={layout} extras={extras} />
+      <ReaderControlBar settings={settings} isDark={isDark} focusMode={focusMode} onToggleFocus={onToggleFocus} annotations={annotations} doc={doc} themes={themes} panels={panels} poetryView={poetryView} selection={selection} refs={refs} markViews={markViews} marking={marking} layout={layout} extras={extras} collapse={collapse} />
 
-      <ReaderBody settings={settings} isDark={isDark} reduceMotion={reduceMotion} annotations={annotations} page={{ titleBlock, paragraphNodes }} doc={doc} poetryView={poetryView} panels={panels} selection={selection} refs={refs} markViews={markViews} marking={marking} markUi={markUi} layout={layout} extras={extras} />
+      <ReaderBody settings={settings} isDark={isDark} reduceMotion={reduceMotion} annotations={annotations} page={{ titleBlock, paragraphNodes: pageNodes }} doc={doc} poetryView={poetryView} panels={panels} selection={selection} refs={refs} markViews={markViews} marking={marking} markUi={markUi} layout={layout} extras={extras} />
 
       <ReaderPopovers settings={settings} isDark={isDark} annotations={annotations} popoverTopInset={popoverTopInset} selectionInView={selectionInView} themes={themes} panels={panels} selection={selection} markViews={markViews} marking={marking} markUi={markUi} layout={layout} extras={extras} />
 

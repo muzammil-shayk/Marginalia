@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mergeRectsIntoLines } from './annotationModel';
+import { blackoutBoxFromPoints, MIN_BLACKOUT_HEIGHT, mergeRectsIntoLines } from './annotationModel';
 
 // Node has no DOM, and only these six numbers are read.
 class Rect {
@@ -55,4 +55,14 @@ test('muted highlight colours are laid down harder than vivid ones, so they neve
   assert.equal(highlightOpacity('#eab308'), 0.38); // vivid yellow
   assert.ok(highlightOpacity('#52796f', true) > highlightOpacity('#52796f'));
   assert.equal(highlightOpacity('not-a-colour'), 0.38);
+});
+
+test('a black-out dragged along a line gets a line of height, centred and kept on the page', () => {
+  const flat = blackoutBoxFromPoints({ x: 0.2, y: 0.5 }, { x: 0.7, y: 0.5 });
+  assert.equal(flat.h, MIN_BLACKOUT_HEIGHT);
+  assert.ok(Math.abs(flat.y + flat.h / 2 - 0.5) < 1e-9);
+  assert.ok(Math.abs(flat.w - 0.5) < 1e-9);
+  assert.equal(blackoutBoxFromPoints({ x: 0.2, y: 0 }, { x: 0.7, y: 0 }).y, 0);
+  const tall = blackoutBoxFromPoints({ x: 0.1, y: 0.1 }, { x: 0.3, y: 0.4 });
+  assert.ok(Math.abs(tall.h - 0.3) < 1e-9);
 });

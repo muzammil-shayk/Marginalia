@@ -7,7 +7,9 @@ import React from 'react';
 import { StickyNote } from '../../icons';
 import { FocusChrome, FocusExit, FOCUS_HOTKEY } from '../../FocusMode';
 import { HoverTooltip } from '../../HoverTooltip';
-import { Maximize2, Minimize2, Search } from '../../icons';
+import { CollapseIcon, Maximize2, Minimize2, Search } from '../../icons';
+import { COLLAPSE_HOTKEY } from '../../reader/useReaderCollapse';
+import type { PdfCollapse } from './PdfCollapsed';
 import { FindBar, FIND_SHORTCUT } from '../../FindBar';
 import { UserSettings } from '../../../types';
 import { PdfToolbar } from '../PdfToolbar';
@@ -35,9 +37,10 @@ export interface WorkspaceToolbarProps {
   nav: Pick<PdfNavigation, 'fitPage' | 'fitWidth' | 'goToPage' | 'handleViewModeChange'>;
   extras: Pick<WorkspaceExtras, 'archive' | 'find' | 'handleExport'>;
   pageEdits: Pick<PageEdits, 'isDeletingPage' | 'isInsertingPage' | 'setInsertPageMenuOpen'>;
+  collapse: Pick<PdfCollapse, 'on' | 'toggle'>;
 }
 
-export const WorkspaceToolbar: React.FC<WorkspaceToolbarProps> = ({ settings, isDark, focusMode, onToggleFocus, zoomTouchedRef, styles, marking, marks, selection, view, status, nav, extras, pageEdits }) => {
+export const WorkspaceToolbar: React.FC<WorkspaceToolbarProps> = ({ settings, isDark, focusMode, onToggleFocus, zoomTouchedRef, styles, marking, marks, selection, view, status, nav, extras, pageEdits, collapse }) => {
   const { maskMode, setMaskMode, activeThemeId, setActiveThemeId, bracketSide, noteStyle, textAlign, textBold, textFont, textItalic, textSize, tool, toolColors, toolStrokeStyles, toolWeights } = styles;
   const { handleBracketSideChange, handleNoteStyleChange, handleTextAlignChange, handleTextBoldChange, handleTextFontChange, handleTextItalicChange, handleTextSizeChange, handleToolColorChange, handleToolStrokeStyleChange, handleToolTap, handleToolWeightChange } = marking;
   const { annotations, canUndo, canRedo, undo, redo } = marks;
@@ -57,6 +60,18 @@ export const WorkspaceToolbar: React.FC<WorkspaceToolbarProps> = ({ settings, is
         compact={!settings.sidebarCollapsed}
         panelControls={
           <>
+            <HoverTooltip label={collapse.on ? `Show everything (${COLLAPSE_HOTKEY})` : `Collapse to marks (${COLLAPSE_HOTKEY})`}>
+              <button
+                type="button"
+                onClick={collapse.toggle}
+                aria-label="Collapse to marks"
+                aria-keyshortcuts={COLLAPSE_HOTKEY}
+                aria-pressed={collapse.on}
+                className={`p-1.5 rounded-lg hover:bg-stone-100 dark:hover:bg-stone-800 cursor-pointer ${collapse.on ? 'text-gold dark:text-gold' : 'text-muted'}`}
+              >
+                <CollapseIcon className="w-4 h-4" weight={collapse.on ? 'bold' : 'regular'} />
+              </button>
+            </HoverTooltip>
             <button
               type="button"
               onClick={find.open ? find.close : find.openFind}

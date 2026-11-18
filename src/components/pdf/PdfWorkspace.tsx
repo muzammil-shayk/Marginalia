@@ -13,6 +13,7 @@ import { Loader2, ArrowLeft, Check } from '../icons';
 import type { ThemeStore } from '../themeStore';
 import { AnnotationFocus, Screen, TransitionType, UserSettings } from '../../types';
 import { pageToolFor } from './annotationModel';
+import { usePdfCollapse } from './workspace/PdfCollapsed';
 import { BlackoutExportDialog } from './workspace/BlackoutExportDialog';
 import { ErrorDialog } from '../ErrorDialog';
 import { usePdfToolStyles } from './workspace/usePdfToolStyles';
@@ -97,6 +98,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   const extras = useWorkspaceExtras({ docId, documentTitle, isDark, onAddThemes, saver, settings, marks, selection, view, status, nav });
   const pageEdits = usePageEdits({ docId, goToPage: nav.goToPage, saver, marks, view, status });
   const geometry = useMarkGeometry({ focusMode, marks, selection, view });
+  const collapse = usePdfCollapse({ annotations: marks.annotations, pageCount: view.pageCount, currentPage: view.currentPage, goToPage: nav.goToPage, scrollRef: view.scrollRef });
   const { saveState, failure, setFailure } = status;
   const { archive, askRedact, setAskRedact, exportPdf, blackoutPages } = extras;
 
@@ -142,9 +144,9 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         </span>
       </header>
 
-      <WorkspaceToolbar settings={settings} isDark={isDark} focusMode={focusMode} onToggleFocus={onToggleFocus} zoomTouchedRef={zoomTouchedRef} styles={styles} marking={marking} marks={marks} selection={selection} view={view} status={status} nav={nav} extras={extras} pageEdits={pageEdits} />
+      <WorkspaceToolbar settings={settings} isDark={isDark} focusMode={focusMode} onToggleFocus={onToggleFocus} zoomTouchedRef={zoomTouchedRef} styles={styles} marking={marking} marks={marks} selection={selection} view={view} status={status} nav={nav} extras={extras} pageEdits={pageEdits} collapse={collapse} />
 
-      <WorkspaceBody settings={settings} isDark={isDark} styles={styles} pageTools={{ tool: pageTool, toolStrokeStyles: pageToolStrokeStyles, toolWeights: pageToolWeights }} marks={marks} mutations={mutations} geometry={geometry} selection={selection} view={view} status={status} nav={nav} extras={extras} pageEdits={pageEdits} />
+      <WorkspaceBody settings={settings} isDark={isDark} styles={styles} pageTools={{ tool: pageTool, toolStrokeStyles: pageToolStrokeStyles, toolWeights: pageToolWeights }} marks={marks} mutations={mutations} geometry={geometry} selection={selection} view={view} status={status} nav={nav} extras={extras} pageEdits={pageEdits} collapse={collapse} />
 
       <ErrorDialog open={Boolean(failure)} message={failure ?? ''} onClose={() => setFailure(null)} />
       {archive.ui}

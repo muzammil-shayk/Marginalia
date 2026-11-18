@@ -748,3 +748,19 @@ export function highlightOpacity(color: string, strong = false): number {
   if (strong) return chroma < 0.35 ? 0.72 : 0.62;
   return chroma < 0.35 ? 0.56 : 0.38;
 }
+
+/** The least a black-out box covers top to bottom: about one line of book text (fraction of the page). */
+export const MIN_BLACKOUT_HEIGHT = 0.024;
+
+/**
+ * The box Black it out draws for a drag. Dragging along a line of text (the natural gesture, and
+ * what Words mode does on a scanned page) has almost no height, so the box is given a line's
+ * height, centred on the drag, and kept on the page.
+ */
+export function blackoutBoxFromPoints(a: FractionPoint, b: FractionPoint): FractionRect {
+  const box = boxFromPoints(a, b);
+  if (box.h >= MIN_BLACKOUT_HEIGHT) return box;
+  const mid = box.y + box.h / 2;
+  const y = Math.min(Math.max(mid - MIN_BLACKOUT_HEIGHT / 2, 0), 1 - MIN_BLACKOUT_HEIGHT);
+  return { ...box, y, h: MIN_BLACKOUT_HEIGHT };
+}

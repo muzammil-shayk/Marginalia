@@ -16,6 +16,7 @@ import type { MarkGeometry } from './useMarkGeometry';
 import type { PdfNavigation } from './usePdfNavigation';
 import type { WorkspaceExtras } from './useWorkspaceExtras';
 import type { PageEdits } from './usePageEdits';
+import { PdfCollapsed, type PdfCollapse } from './PdfCollapsed';
 
 /** What the page itself acts as: Black it out's mode stands in for the mask tool. */
 export interface PageTools {
@@ -38,9 +39,10 @@ export interface WorkspaceBodyProps {
   nav: Pick<PdfNavigation, 'openPage' | 'bookOn' | 'bookRef' | 'goToPage'>;
   extras: Pick<WorkspaceExtras, 'scrollToAnnotation'>;
   pageEdits: Pick<PageEdits, 'handleDeletePage'>;
+  collapse: PdfCollapse;
 }
 
-export const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({ settings, isDark, styles, pageTools, marks, mutations, geometry, selection, view, status, nav, extras, pageEdits }) => {
+export const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({ settings, isDark, styles, pageTools, marks, mutations, geometry, selection, view, status, nav, extras, pageEdits, collapse }) => {
   const { activeColor, activeThemeIds, bracketSide, noteStyle, textAlign, textBold, textFont, textItalic, textSize } = styles;
   const { tool, toolStrokeStyles, toolWeights } = pageTools;
   const { annotations } = marks;
@@ -111,6 +113,11 @@ export const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({ settings, isDark, 
                 onDeletePage={pageCount > 1 ? () => void handleDeletePage(pageNumber) : undefined}
               />
             );
+
+            // Collapsed to marks: strips of the marked pages, whatever the view (PdfCollapsed.tsx).
+            if (collapse.on) {
+              return <PdfCollapsed collapse={collapse} pdf={pdf} scale={scale} renderPage={(n) => renderPage(n)} settings={settings} />;
+            }
 
             // Spread groups pages two to a row, like an open book — everything else about a page
             // (its own AnnotationLayer, its own coordinate space) is unaffected by how it's laid

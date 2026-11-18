@@ -126,5 +126,7 @@ export {
   Feather,
   Path as MotifPath,
   Kanban as Board,
-  Student
+  Student,
+  // ── Collapse to marks ──
+  ArrowsInLineVertical as CollapseIcon
 } from '@phosphor-icons/react';

@@ -17,8 +17,10 @@ import {
   Minimize2,
   Search,
   Feather,
-  Board as BoardIcon
+  Board as BoardIcon,
+  CollapseIcon
 } from '../icons';
+import { COLLAPSE_HOTKEY, type ReaderCollapse } from './useReaderCollapse';
 import { PoetryPanel } from '../PoetryView';
 import { FindBar, FIND_SHORTCUT } from '../FindBar';
 import { FocusChrome, FocusExit, FOCUS_HOTKEY } from '../FocusMode';
@@ -51,9 +53,10 @@ export interface ReaderControlBarProps {
   marking: Pick<ReaderMarking, 'createParagraphNote' | 'handleToolTap'>;
   layout: Pick<ReaderLayout, 'spreadFits' | 'spreadOn' | 'spreadPref' | 'toggleSpread'>;
   extras: Pick<ReaderExtras, 'activeJump' | 'setActiveJump' | 'find'>;
+  collapse: Pick<ReaderCollapse, 'on' | 'toggle'>;
 }
 
-export const ReaderControlBar: React.FC<ReaderControlBarProps> = ({ settings, isDark, focusMode, onToggleFocus, annotations, doc, themes, panels, poetryView, selection, refs, markViews, marking, layout, extras }) => {
+export const ReaderControlBar: React.FC<ReaderControlBarProps> = ({ settings, isDark, focusMode, onToggleFocus, annotations, doc, themes, panels, poetryView, selection, refs, markViews, marking, layout, extras, collapse }) => {
   const { canRedo, canUndo, redo, undo, selectedIds } = annotations;
   const { docId } = doc;
   const { activeColor, themeStore } = themes;
@@ -196,6 +199,19 @@ export const ReaderControlBar: React.FC<ReaderControlBarProps> = ({ settings, is
               className={`${iconBtn} ${find.open ? 'text-gold dark:text-gold' : ''}`}
             >
               <Search className="w-4 h-4" />
+            </button>
+          </HoverTooltip>
+          <HoverTooltip label={collapse.on ? `Show everything (${COLLAPSE_HOTKEY})` : `Collapse to marks (${COLLAPSE_HOTKEY})`}>
+            <button
+              type="button"
+              onClick={collapse.toggle}
+              aria-label="Collapse to marks"
+              aria-keyshortcuts={COLLAPSE_HOTKEY}
+              aria-pressed={collapse.on}
+              disabled={activeControlTab !== 'notes'}
+              className={`${iconBtn} ${collapse.on ? 'text-gold dark:text-gold' : ''}`}
+            >
+              <CollapseIcon className="w-4 h-4" weight={collapse.on ? 'bold' : 'regular'} />
             </button>
           </HoverTooltip>
           <HoverTooltip

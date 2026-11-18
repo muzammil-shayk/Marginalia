@@ -14,6 +14,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist';
 import { TextLayer } from 'pdfjs-dist';
+import { pageHasText } from './textMarking';
 import { Trash2 } from '../icons';
 import {
   Annotation,
@@ -126,6 +127,12 @@ export const PdfPage: React.FC<PdfPageProps> = ({
    * only from then on: before, new marks floated over a blank "Page N" placeholder.
    */
   const [painted, setPainted] = useState(false);
+  /**
+   * Whether pdf.js found any text on this page (null until it has looked). A scanned page is a
+   * picture with nothing to select, so Black it out's Words mode draws a box there instead of
+   * doing nothing.
+   */
+  const [hasText, setHasText] = useState<boolean | null>(null);
   /** A second tap to confirm, right where the first one was, rather than a separate dialog —
    *  removing a page is destructive (it takes any marks on it with it) but common enough while
    *  cleaning up an inserted page that a modal every time would be a tax on the common case. */
@@ -239,7 +246,10 @@ export const PdfPage: React.FC<PdfPageProps> = ({
     try {
       textLayerDiv.replaceChildren();
       const textLayer = new TextLayer({
-        textContentSource: await page.getTextContent(),
+        textContentSource: await page.getTextContent().then((content) => {
+          setHasText(pageHasText(content.items));
+          return content;
+        }),
         container: textLayerDiv,
         viewport
       });
@@ -317,7 +327,9 @@ export const PdfPage: React.FC<PdfPageProps> = ({
   // 'mask' belongs here with the other drawing tools: it draws a stroke, so the text under it
   // should not be selectable while it is armed. It only escaped notice because the annotation
   // layer's drag capture happens to swallow the pointer first.
-  const selectable = !['ink', 'mask', 'maskPen', 'note', 'rect', 'ellipse', 'arrow', 'line', 'bracket', 'text'].includes(tool);
+  // Black it out, Words, on a page with no text (a scan): there is nothing to select, so it draws a box.
+  const pageTool: PdfTool = tool === 'maskWords' && hasText === false ? 'mask' : tool;
+  const selectable = !['ink', 'mask', 'maskPen', 'note', 'rect', 'ellipse', 'arrow', 'line', 'bracket', 'text'].includes(pageTool);
 
   return (
     <div
@@ -407,6 +419,12 @@ export const PdfPage: React.FC<PdfPageProps> = ({
         </div>
       )}
 
+      {pageTool !== tool && painted && (
+        <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 pointer-events-none rounded-full px-3 py-1 text-[11.5px] bg-ink/85 text-paper shadow-sm whitespace-nowrap">
+          This page is a picture with no text, so drag a box to black it out.
+        </div>
+      )}
+
       {/*
         `selecting` is on for the duration of a drag, which is what raises `.endOfContent` over
         the layer. It is cleared from a document-level listener rather than this element's own
@@ -426,7 +444,7 @@ export const PdfPage: React.FC<PdfPageProps> = ({
         pageWidth={size?.width ?? 0}
         pageHeight={size?.height ?? 0}
         annotations={annotations}
-        tool={tool}
+        tool={pageTool}
         activeColor={activeColor}
         activeThemeIds={activeThemeIds}
         toolWeight={toolWeight}

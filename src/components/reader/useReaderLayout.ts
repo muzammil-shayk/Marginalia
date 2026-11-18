@@ -29,6 +29,8 @@ export interface UseReaderLayoutDeps {
   views: Pick<ReaderMarkViews, 'paraData'>;
   panels: Pick<ReaderPanels, 'activeControlTab' | 'isPanelOpen' | 'openPin' | 'setOpenPin' | 'showInlineNotes'>;
   refs: Pick<ReaderRefs, 'controlBarRef'>;
+  /** Collapse to marks is on: one scrolling page, never the spread. */
+  collapsed?: boolean;
 }
 
 export function useReaderLayout(deps: UseReaderLayoutDeps) {
@@ -98,7 +100,7 @@ export function useReaderLayout(deps: UseReaderLayoutDeps) {
    */
   const spreadPref = settings.readerSpread === true;
   const spreadFits = bodyWidth - docked >= MIN_SPREAD_WIDTH;
-  const spreadOn = spreadPref && spreadFits && activeControlTab === 'notes';
+  const spreadOn = spreadPref && spreadFits && activeControlTab === 'notes' && !deps.collapsed;
   /** Where to open (entering) or return to (leaving) the spread: a paragraph's element id. */
   const spreadStartId = useRef<string | null>(null);
   const toggleSpread = () => {

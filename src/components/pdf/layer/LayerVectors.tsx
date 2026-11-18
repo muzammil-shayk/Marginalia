@@ -12,6 +12,7 @@ import {
   LINE_KINDS,
   PdfTool,
   StrokeStyle,
+  blackoutBoxFromPoints,
   bracketPath,
   dashArray,
   pointsToPolyline
@@ -202,9 +203,10 @@ export const LayerVectors: React.FC<LayerVectorsProps> = ({ activeColor, annotat
             vectorEffect="non-scaling-stroke"
           />
         )}
-        {draftBox && tool === 'mask' && (
-          <rect x={draftBox.x * 100} y={draftBox.y * 100} width={draftBox.w * 100} height={draftBox.h * 100} fill={activeColor} fillOpacity={0.85} />
-        )}
+        {draftStart && draftEnd && tool === 'mask' && (() => {
+          const bar = blackoutBoxFromPoints(draftStart, draftEnd);
+          return <rect x={bar.x * 100} y={bar.y * 100} width={bar.w * 100} height={bar.h * 100} fill={activeColor} fillOpacity={0.85} />;
+        })()}
         {draftBox && (tool === 'rect' || tool === 'ellipse' || tool === 'text') && (
           <rect
             x={draftBox.x * 100}

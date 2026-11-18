@@ -22,9 +22,42 @@ export interface ReleaseNote {
   highlights: ChangelogItem[];
 }
 
-export const CURRENT_APP_VERSION = '2.9.2';
+export const CURRENT_APP_VERSION = '2.10.0';
 
 export const CHANGELOG_RELEASES: ReleaseNote[] = [
+  {
+    version: '2.10.0',
+    title: 'Collapse to Marks and a Card Tutorial',
+    date: 'November 2026',
+    summary:
+      'Fold a document shut around what you marked, learn every tool from a deck of tutorial cards on My Collections, and black out scanned pages.',
+    highlights: [
+      {
+        category: 'feature',
+        title: 'Collapse to marks',
+        description:
+          'Press C, or the pinch button, and the document folds shut around what you marked: every mark, one theme, terminology, notes or Find hits, with a little context around each if you like. In a PDF each marked page shows as strips around its marks. Open any fold, or read on from it.'
+      },
+      {
+        category: 'feature',
+        title: 'Tutorial cards',
+        description:
+          'The guide on My Collections is now a deck of cards you swipe through either way, with the next cards stacked behind. Each card shows the feature in the app and plays it: the pointer clicks the tool, then the picture zooms to what it made.'
+      },
+      {
+        category: 'feature',
+        title: 'Every toolbar tool, and every shortcut',
+        description:
+          'A Toolbar group has a card for each tool, from Select to the ··· menu, including all three sticky note styles and handwritten text boxes. The shortcuts card shows each key, what it does, and the effect happening on a page.'
+      },
+      {
+        category: 'fix',
+        title: 'Black it out on scanned pages',
+        description:
+          'On a scanned page, which has no text to select, Words now draws a box instead of doing nothing, and says so. A box dragged along a line covers the whole line, and black-outs are no longer filed under a theme.'
+      }
+    ]
+  },
   {
     version: '2.9.2',
     title: 'Steadier Behind the Scenes',

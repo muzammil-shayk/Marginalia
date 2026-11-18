@@ -18,6 +18,7 @@ import {
   StrokeStyle,
   TextAlign,
   TextFont,
+  blackoutBoxFromPoints,
   boxFromPoints,
   constrainToShape,
   newAnnotationId,
@@ -153,7 +154,8 @@ export function useDrawing(deps: UseDrawingDeps) {
       const box = pageBox();
       const to = box ? pointToFraction(e.clientX, e.clientY, box) : draftEnd ?? draftStart;
       if (Math.hypot(to.x - draftStart.x, to.y - draftStart.y) > 0.01) {
-        onCreate({ ...base('rect'), box: boxFromPoints(draftStart, to), filled: true, weight: 0, blackout: true });
+        // Like Words, a black-out hides, it does not file: no theme, so the Tracker never counts it.
+        onCreate({ ...base('rect'), themeIds: [], box: blackoutBoxFromPoints(draftStart, to), filled: true, weight: 0, blackout: true });
       }
       setDraftStart(null);
       setDraftEnd(null);
@@ -170,7 +172,7 @@ export function useDrawing(deps: UseDrawingDeps) {
             weight: toolWeight ?? DEFAULT_WEIGHT,
             strokeStyle: toolStrokeStyle,
             // Black it out, freehand: an opaque stroke to blot content out.
-            ...(tool === 'maskPen' && { blackout: true as const })
+            ...(tool === 'maskPen' && { blackout: true as const, themeIds: [] })
           });
         }
         return null;

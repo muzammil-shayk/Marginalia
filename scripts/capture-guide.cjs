@@ -189,6 +189,21 @@ const PAGE_HELPERS = `
     el.dispatchEvent(new Event('input', { bubbles: true }));
     return true;
   };
+  // A point on screen, in percent of the window (= of the saved picture): an element's centre,
+  // or a spot on PDF page one given in page fractions.
+  window.__pt = (el) => {
+    const r = el.getBoundingClientRect();
+    return { x: +(((r.left + r.width / 2) / innerWidth) * 100).toFixed(1), y: +(((r.top + r.height / 2) / innerHeight) * 100).toFixed(1) };
+  };
+  window.__pagePt = (fx, fy) => {
+    const r = document.querySelector('[data-page-number="1"]').getBoundingClientRect();
+    return { x: +(((r.left + fx * r.width) / innerWidth) * 100).toFixed(1), y: +(((r.top + fy * r.height) / innerHeight) * 100).toFixed(1) };
+  };
+  window.__tool = (label) => {
+    const b = [...document.querySelectorAll('button[aria-label]')].find((e) => e.getAttribute('aria-label').startsWith(label) && !e.getAttribute('aria-label').includes('options'));
+    if (!b) throw new Error('no tool ' + label);
+    return b;
+  };
   window.__rect = (sel, text, pad = 12) => {
     const r = window.__q(sel, text).getBoundingClientRect();
     return { x: Math.max(0, Math.floor(r.left - pad)), y: Math.max(0, Math.floor(r.top - pad)), width: Math.ceil(r.width + 2 * pad), height: Math.ceil(r.height + 2 * pad) };
@@ -398,17 +413,10 @@ async function main() {
     await js(`await __view('1 page'); return true;`);
     await sleep(600);
   });
-  await step('blackout', async () => {
+  // (Black it out has its own shot with the other toolbar tools, at the end.)
+  await step('workspace', async () => {
     await open('workspace', { ...pdf, format: 'PDF' });
     await sleep(1500);
-    // Arming the tool opens its options: Words, Box or Freehand.
-    await js(`__click('button', 'Black it out'); return true;`);
-    await sleep(500);
-    await js(`if (![...document.querySelectorAll('button[role="radio"]')].some((b) => b.textContent.trim() === 'Words')) __click('button[aria-label="Black it out options"]'); return true;`);
-    await sleep(500);
-    await shot('blackout', full);
-    await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return true;`);
-    await sleep(300);
   });
   await step('markspanel', async () => {
     await js(`__click('button', 'Show marks panel'); return true;`);
@@ -480,6 +488,165 @@ async function main() {
     await sleep(500);
     await shot('classpack', full);
   });
+
+  // ── The toolbar, one tool at a time ──────────────────────────────────────
+  // Each shot has the tool armed and an example of what it makes on page one. The points say
+  // where the deck's pointer clicks the tool, then the mark (src/data/guidePoints.ts).
+  const points = {};
+  const L = (k) => 0.122 + k * 0.0286; // lines of the first paragraph
+  const P = (k) => 0.289 + k * 0.0286; // and of the second
+  const mark = (id, kind, extra) => ({ id, page: 1, kind, color: '#4f8f7a', themeIds: ['1'], themeId: '1', author: 'Reader', createdAt: now, ...extra });
+  const line = (k, w = 0.8, top = L) => ({ x: 0.093, y: top(k), w, h: 0.026 });
+  const wave = (y) => Array.from({ length: 24 }, (_, i) => ({ x: 0.1 + i * 0.033, y: y + Math.sin(i / 2) * 0.012 }));
+  const TOOLS = [
+    { id: 'tool-select', label: 'Select', marks: [mark('t', 'rect', { color: '#3f6fb5', weight: 0.004, box: { x: 0.08, y: 0.275, w: 0.84, h: 0.155 } })], focus: [0.08, 0.35], click: [0.0805, 0.35] },
+    { id: 'tool-highlight', label: 'Highlight', marks: [mark('t', 'highlight', { rects: [line(0), line(1, 0.5)], quote: 'Reading slowly' })], focus: [0.4, L(0) + 0.013] },
+    { id: 'tool-underline', label: 'Underline', marks: [mark('t', 'underline', { color: '#6d6ad8', themeIds: ['2'], themeId: '2', rects: [line(0), line(1, 0.5)], quote: 'Reading slowly' })], focus: [0.4, L(1) + 0.02] },
+    { id: 'tool-strikeout', label: 'Strikeout', marks: [mark('t', 'strikeout', { color: '#d97a2b', themeIds: ['3'], themeId: '3', rects: [line(1, 0.6)], quote: 'the margin' })], focus: [0.4, L(1) + 0.013] },
+    { id: 'tool-area', label: 'Area highlight', marks: [mark('t', 'highlight', { area: true, color: '#d97a2b', themeIds: ['3'], themeId: '3', rects: [{ x: 0.08, y: 0.278, w: 0.84, h: 0.15 }] })], focus: [0.5, 0.35] },
+    { id: 'tool-pen', label: 'Pen', marks: [mark('t', 'ink', { color: '#d97a2b', weight: 0.004, points: wave(0.47) })], focus: [0.45, 0.47] },
+    { id: 'tool-rect', label: 'Rectangle', marks: [mark('t', 'rect', { color: '#3f6fb5', weight: 0.004, box: { x: 0.08, y: 0.11, w: 0.84, h: 0.125 } })], focus: [0.5, 0.11] },
+    { id: 'tool-ellipse', label: 'Ellipse', marks: [mark('t', 'ellipse', { color: '#b5527a', weight: 0.004, box: { x: 0.3, y: 0.112, w: 0.34, h: 0.046 } })], focus: [0.47, 0.135] },
+    { id: 'tool-arrow', label: 'Arrow', marks: [mark('t', 'arrow', { color: '#b5527a', weight: 0.004, from: { x: 0.82, y: 0.52 }, to: { x: 0.62, y: 0.36 } })], focus: [0.62, 0.36] },
+    { id: 'tool-line', label: 'Line', marks: [mark('t', 'line', { color: '#3f6fb5', weight: 0.004, from: { x: 0.09, y: 0.448 }, to: { x: 0.9, y: 0.448 } })], focus: [0.5, 0.448] },
+    { id: 'tool-bracket', label: 'Bracket', marks: [mark('t', 'bracket', { color: '#b5527a', weight: 0.004, bracketSide: 'left', box: { x: 0.05, y: 0.28, w: 0.025, h: 0.15 } })], focus: [0.06, 0.355] },
+    {
+      // All three styles, each in its theme's colour, with the style options open.
+      id: 'tool-note',
+      label: 'Note',
+      marks: [
+        mark('n1', 'note', { noteStyle: 'outline', text: 'Reading as keeping company.', box: { x: 0.07, y: 0.465, w: 0.27, h: 0.13 } }),
+        mark('n2', 'note', { color: '#6d6ad8', themeIds: ['2'], themeId: '2', noteStyle: 'solid', text: 'Why a letter, not a talk?', box: { x: 0.365, y: 0.465, w: 0.27, h: 0.13 } }),
+        mark('n3', 'note', { color: '#d97a2b', themeIds: ['3'], themeId: '3', noteStyle: 'translucent', text: 'The margin as a room.', box: { x: 0.66, y: 0.465, w: 0.27, h: 0.13 } })
+      ],
+      focus: [0.5, 0.53],
+      keepOptions: true
+    },
+    {
+      // A handwritten box already on the page, and one being typed (its frame shows while it is).
+      id: 'tool-text',
+      label: 'Text box',
+      marks: [mark('t', 'text', { color: '#b5527a', themeIds: [], themeId: null, text: 'Compare with page 4!', fontSize: 0.034, font: 'hand', box: { x: 0.56, y: 0.47, w: 0.38, h: 0.07 } })],
+      font: 'Hand',
+      draw: { from: [0.08, 0.47], to: [0.52, 0.56], text: 'Read this twice, then once more.' },
+      focus: [0.3, 0.515]
+    },
+    { id: 'tool-erase', label: 'Erase', marks: [mark('t', 'ink', { color: '#d97a2b', weight: 0.004, points: wave(0.47) })], focus: [0.43, 0.475] },
+    {
+      id: 'blackout',
+      label: 'Black it out',
+      marks: [
+        { id: 'b1', page: 1, kind: 'rect', color: '#000000', themeIds: [], filled: true, blackout: true, weight: 0, box: { x: 0.091, y: L(1) - 0.002, w: 0.55, h: 0.03 }, author: 'Reader', createdAt: now },
+        { id: 'b2', page: 1, kind: 'rect', color: '#000000', themeIds: [], filled: true, blackout: true, weight: 0, box: { x: 0.091, y: P(1) - 0.002, w: 0.8, h: 0.058 }, author: 'Reader', createdAt: now },
+        { id: 'b3', page: 1, kind: 'ink', color: '#000000', themeIds: [], blackout: true, weight: 0.02, points: [{ x: 0.12, y: 0.48 }, { x: 0.3, y: 0.475 }, { x: 0.5, y: 0.485 }, { x: 0.68, y: 0.478 }], author: 'Reader', createdAt: now }
+      ],
+      focus: [0.4, L(1) + 0.012],
+      options: true
+    },
+    { id: 'tool-undo', label: 'Undo', marks: [mark('t', 'highlight', { rects: [line(0)], quote: 'Reading slowly' })], focus: 'tool', noTool: true },
+    { id: 'tool-more', label: 'More:', marks: [], focus: 'menu', noTool: true }
+  ];
+  for (const t of TOOLS) {
+    await step(t.id, async () => {
+      await api(`/documents/${pdf.id}/annotations`, 'PUT', { annotations: t.marks });
+      await open('workspace', { ...pdf, format: 'PDF' });
+      await sleep(1500);
+      await js(`await __view('1 page'); window.scrollTo(0, 0); document.querySelector('[data-page-number="1"]').scrollIntoView({ block: 'start' }); return true;`);
+      // Two steps out, so the whole top half of page one (and every example) is in the picture.
+      await js(`document.querySelector('[aria-label^="More:"]').click(); await new Promise((r) => setTimeout(r, 300)); for (let i = 0; i < 2; i++) { document.querySelector('button[aria-label="Zoom out"]').click(); await new Promise((r) => setTimeout(r, 400)); } document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); document.querySelector('[data-page-number="1"]').scrollIntoView({ block: 'start' }); return true;`);
+      await sleep(1200);
+      const tool = await js(`return __pt(__tool(${JSON.stringify(t.label)}));`);
+      await js(`__tool(${JSON.stringify(t.label)}).click(); return true;`);
+      await sleep(500);
+      if (t.font) {
+        await js(`document.querySelector('button[aria-label="${t.font} typeface"]').click(); return true;`);
+        await js(`document.querySelector('button[aria-label="Large text"]')?.click(); return true;`);
+        await sleep(300);
+      }
+      if (t.keepOptions) {
+        // The tool's options stay open: they are part of the picture.
+      } else if (t.options) {
+        await js(`if (![...document.querySelectorAll('button[role="radio"]')].some((b) => b.textContent.trim() === 'Words')) __click('button[aria-label="Black it out options"]'); return true;`);
+      } else if (t.focus !== 'menu') {
+        // Close the tool's options, which open over the page, the way a click elsewhere does.
+        await js(`document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); return true;`);
+      }
+      await sleep(500);
+      if (t.draw) {
+        // Drawn and typed with the real mouse and keyboard, as a reader would.
+        const a = await js(`return __pagePt(${t.draw.from[0]}, ${t.draw.from[1]});`);
+        const b = await js(`return __pagePt(${t.draw.to[0]}, ${t.draw.to[1]});`);
+        const px = (pt) => [Math.round((pt.x / 100) * WIDTH), Math.round((pt.y / 100) * HEIGHT)];
+        const [x1, y1] = px(a);
+        const [x2, y2] = px(b);
+        win.webContents.sendInputEvent({ type: 'mouseMove', x: x1, y: y1 });
+        win.webContents.sendInputEvent({ type: 'mouseDown', x: x1, y: y1, button: 'left', clickCount: 1 });
+        for (let i = 1; i <= 12; i++) {
+          win.webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(x1 + ((x2 - x1) * i) / 12), y: Math.round(y1 + ((y2 - y1) * i) / 12), button: 'left' });
+          await sleep(16);
+        }
+        win.webContents.sendInputEvent({ type: 'mouseUp', x: x2, y: y2, button: 'left', clickCount: 1 });
+        await sleep(600);
+        for (const ch of t.draw.text) {
+          win.webContents.sendInputEvent({ type: 'char', keyCode: ch });
+          await sleep(25);
+        }
+        await sleep(500);
+        // Saved, so the words stand on the page in the box, which stays selected (its frame shows).
+        await js(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim().toLowerCase() === 'save').click(); return true;`);
+        await sleep(700);
+      }
+      if (t.click) {
+        const at = await js(`return __pagePt(${t.click[0]}, ${t.click[1]});`);
+        const x = Math.round((at.x / 100) * WIDTH);
+        const y = Math.round((at.y / 100) * HEIGHT);
+        for (const type of ['mouseMove', 'mouseDown', 'mouseUp']) win.webContents.sendInputEvent({ type, x, y, button: 'left', clickCount: 1 });
+        await sleep(700);
+      }
+      const focus =
+        t.focus === 'tool'
+          ? tool
+          : t.focus === 'menu'
+            ? await js(`return __pt(document.querySelector('[role="radiogroup"][aria-label="Pages in view"]').parentElement);`)
+            : await js(`return __pagePt(${t.focus[0]}, ${t.focus[1]});`);
+      points[t.id] = t.noTool ? { focus } : { tool, focus };
+      await shot(t.id, full);
+    });
+  }
+  // Reader toolbar: add a note, and the marks pill that shows or hides the margin notes.
+  await step('tool-addnote', async () => {
+    await open('reader', essay);
+    const tool = await js(`return __pt(document.querySelector('button[aria-label="Add a note to the current paragraph"]'));`);
+    await js(`__click('button[aria-label="Add a note to the current paragraph"]'); return true;`);
+    await sleep(900);
+    const focus = await js(`const el = document.activeElement && document.activeElement !== document.body ? document.activeElement : document.querySelector('textarea'); return __pt(el);`);
+    points['tool-addnote'] = { tool, focus };
+    await shot('tool-addnote', full);
+  });
+  await step('tool-collapse', async () => {
+    await open('reader', essay);
+    const tool = await js(`return __pt(document.querySelector('button[aria-label="Collapse to marks"]'));`);
+    await js(`__click('button[aria-label="Collapse to marks"]'); return true;`);
+    await sleep(900);
+    await js(`window.scrollTo(0, 0); return true;`);
+    await sleep(300);
+    const focus = await js(`return __pt(document.querySelector('.collapse-fold-btn'));`);
+    points['tool-collapse'] = { tool, focus };
+    await shot('tool-collapse', full);
+  });
+  await step('tool-notes', async () => {
+    await open('reader', night);
+    await js(`document.getElementById('reader-para-2').scrollIntoView({ block: 'center' }); return true;`);
+    await sleep(700);
+    const tool = await js(`return __pt([...document.querySelectorAll('button[title]')].find((b) => /margin notes|Back to reading/.test(b.title)));`);
+    const focus = await js(`const el = [...document.querySelectorAll('*')].reverse().find((e) => e.children.length === 0 && e.textContent.trim() === 'Rereading'); return __pt(el.parentElement);`);
+    points['tool-notes'] = { tool, focus };
+    await shot('tool-notes', full);
+  });
+  fs.writeFileSync(
+    path.join(ROOT, 'src', 'data', 'guidePoints.ts'),
+    `/**\n * Made by scripts/capture-guide.cjs with the pictures: where each toolbar card's pointer clicks the\n * tool, then the mark it made, in percent of the picture. Do not edit by hand; re-run\n * \`npm run guide:capture\`.\n */\n\nexport const GUIDE_POINTS: Record<string, { tool?: { x: number; y: number }; focus: { x: number; y: number } }> = ${JSON.stringify(points, null, 2)};\n`
+  );
 
   console.log(`[guide] made ${made.length} pictures in ${path.relative(ROOT, OUT)}`);
   win.destroy();
