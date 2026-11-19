@@ -131,3 +131,27 @@ export function markExtent(a: ExtentShape): Band | null {
 
 /** PDF context steps (page fractions around each mark), for the bar's 0–3: about a line, a few, a paragraph, more. */
 export const PDF_CONTEXT = [0.022, 0.05, 0.1, 0.18];
+
+/** The bit of a pdf.js document that page sizes are read from. */
+export interface PageSizeSource {
+  getPage(n: number): Promise<{ getViewport(o: { scale: number }): { width: number; height: number } }>;
+}
+
+/**
+ * Each page's size at `scale`. A page pdf.js cannot open is left out (its strips keep their
+ * placeholder height) instead of failing the lot, so landing still happens.
+ */
+export async function readPageSizes(pdf: PageSizeSource, scale: number, pages: number[]): Promise<Map<number, { w: number; h: number }>> {
+  const list = await Promise.all(
+    pages.map((n) =>
+      pdf.getPage(n).then(
+        (p) => {
+          const v = p.getViewport({ scale });
+          return [n, { w: v.width, h: v.height }] as const;
+        },
+        () => null
+      )
+    )
+  );
+  return new Map(list.filter((e) => e !== null));
+}

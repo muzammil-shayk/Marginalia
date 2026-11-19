@@ -5,13 +5,20 @@
  *   npm run test:e2e        (builds first, then runs this with the other suites)
  *
  * PDF (pdf/workspace/PdfCollapsed.tsx):
- * 1. Going in from page 9 lands on page 9's strips, even though page 2's strips above it only
- *    learn their size a moment later.
+ * 1. Going in from page 9 lands with page 9's strips at the top of the scroller, even though page
+ *    2's strips above it only learn their size a moment later. Pages 10-12 carry tall marks so
+ *    page 9 is not last and the scroller can always bring it to the top: no "bottomed out" escape.
+ *    Scroll anchoring is off for this check, so the browser cannot hide an early landing.
  * 2. Clicking a mark in the second strip of a page puts its properties beside that strip, not
  *    where the mark would be on the page's first strip.
- * 3. "Open page" on page 9 shows the whole document with page 9 at the top.
+ * 3. With that mark selected, changing the context resizes the strips without a scroll; the
+ *    properties follow the strip instead of staying where it was.
+ * 4. A drag from the first strip of a page into the second marks only the words in sight, never
+ *    the part of the page folded away between them.
+ * 5. "Open page" on page 9 shows the whole document with page 9 at the top.
  * Text reader (reader/useReaderCollapse.ts):
- * 4. Collapsed to Find hits, then Find closed: the reader falls back to all marks instead of
+ * 6. Collapsed to Find hits shows exactly the paragraphs Find matched (the baseline for 7).
+ * 7. Collapsed to Find hits, then Find closed: the reader falls back to all marks instead of
  *    folding every paragraph away.
  * Exits 0 when every check passes, 1 otherwise, printing each result.
  */
@@ -57,14 +64,16 @@ async function main() {
   const version = /CURRENT_APP_VERSION = '([^']+)'/.exec(fs.readFileSync(path.join(ROOT, 'src', 'data', 'changelog.ts'), 'utf8'))[1];
   await api('/settings', 'PUT', { settings: { name: 'Reader', lastSeenVersion: version, activeThemes: [{ id: 'love', name: 'Love', color: '#b5527a' }] } });
 
-  // Page 2: a tall box near the top and a highlight near the bottom (two strips); page 9: one highlight.
+  // Page 2: a tall box near the top and a highlight near the bottom (two strips); page 9: one highlight;
+  // pages 10-12: a tall box each, so there is room below page 9 to bring it to the top.
   const pdf = await api('/documents', 'POST', { title: 'Sands', text: 'Page 1', format: 'PDF', filename: 'sands.pdf' });
   await fetch(`${base}/api/documents/${pdf.id}/original?filename=sands.pdf`, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: await samplePdf(12) });
   const mark = (id, page, extra) => ({ id, page, color: '#b5527a', themeIds: ['love'], themeId: 'love', createdAt: new Date().toISOString(), ...extra });
   await putMarks(pdf.id, [
     mark('box2', 2, { kind: 'rect', box: { x: 0.1, y: 0.1, w: 0.8, h: 0.4 } }),
     mark('low2', 2, { kind: 'highlight', rects: [{ x: 0.07, y: 0.86, w: 0.6, h: 0.025 }], quote: 'low on page two' }),
-    mark('top9', 9, { kind: 'highlight', rects: [{ x: 0.07, y: 0.08, w: 0.6, h: 0.025 }], quote: 'top of page nine' })
+    mark('top9', 9, { kind: 'highlight', rects: [{ x: 0.07, y: 0.08, w: 0.6, h: 0.025 }], quote: 'top of page nine' }),
+    ...[10, 11, 12].map((p) => mark(`box${p}`, p, { kind: 'rect', box: { x: 0.1, y: 0.1, w: 0.8, h: 0.8 } }))
   ]);
 
   const paras = Array.from({ length: 10 }, (_, i) => (i === 5 || i === 7 ? `Paragraph ${i} carries a lantern through the dark.` : `Paragraph ${i} says nothing much at all.`));
@@ -101,17 +110,19 @@ async function main() {
   await js(`document.querySelector('[data-page-number="9"]').scrollIntoView({ block: 'start' }); return true;`);
   await sleep(1200);
 
-  // 1. In from page 9.
+  // 1. In from page 9. Scroll anchoring is off so the browser cannot quietly correct an early
+  //    landing; near the end of a document it cannot anyway (2.10.0 landed 929 px off there).
+  await js(`document.querySelector('[data-annotation-surface]').style.overflowAnchor = 'none'; return true;`);
   await pressC();
   await sleep(1500);
   const landed = await offsetOf('[data-collapse-page="9"]');
-  // Page 9 is the last strip, so the scroller may bottom out before it reaches the top.
-  const scroller = await js(`const r = document.querySelector('[data-annotation-surface]'); return { atEnd: r.scrollHeight - r.clientHeight - r.scrollTop < 2, h: r.clientHeight };`);
+  const room = await js(`const r = document.querySelector('[data-annotation-surface]'); return { top: Math.round(r.scrollTop), max: r.scrollHeight - r.clientHeight };`);
   check(
     'PDF: going in from page 9 lands on page 9’s strips',
-    typeof landed === 'number' && (Math.abs(landed - 12) <= 24 || (scroller.atEnd && landed >= 0 && landed < scroller.h - 150)),
-    JSON.stringify({ landed, ...scroller })
+    typeof landed === 'number' && Math.abs(landed - 12) <= 24 && room.top < room.max - 2,
+    JSON.stringify({ landed, ...room })
   );
+  await js(`document.querySelector('[data-annotation-surface]').style.overflowAnchor = ''; return true;`);
 
   // 2. A mark in the second strip of page 2.
   await js(`document.querySelectorAll('[data-collapse-page="2"] .pdf-band')[1]?.scrollIntoView({ block: 'center' }); return true;`);
@@ -133,6 +144,36 @@ async function main() {
     return { gap: Math.round(Math.max(0, t.top - s.bottom, s.top - t.bottom)), bar: Math.round(t.top), strip: [Math.round(s.top), Math.round(s.bottom)] };
   `);
   check('PDF: a mark in a page’s second strip gets its properties beside that strip', props && !props.error && props.gap <= 80, JSON.stringify(props));
+
+  // 3. Context resizes the strips; the properties follow without any scroll.
+  const followed = await js(`
+    const root = document.querySelector('[data-annotation-surface]');
+    const strip = () => document.querySelectorAll('[data-collapse-page="2"] .pdf-band')[1];
+    const bar = () => [...document.querySelectorAll('[role="toolbar"]')].find((t) => / mark properties$/.test(t.getAttribute('aria-label') || ''));
+    const radio = document.querySelector('[aria-labelledby="collapse-context-label"] [role="radio"]:nth-child(2)');
+    if (!radio || !bar()) return { error: radio ? 'missing properties toolbar' : 'missing context radio' };
+    root.style.overflowAnchor = 'none';
+    // Where the mark (0.86 down page 2) is on screen, through the page copy in its strip.
+    const markTop = () => {
+      const p = strip()?.querySelector('[data-page-number="2"]')?.getBoundingClientRect();
+      return p ? p.top + 0.86 * p.height : NaN;
+    };
+    const scrollTop = root.scrollTop, before = markTop(), barBefore = bar().getBoundingClientRect().top;
+    radio.click();
+    await new Promise((r) => setTimeout(r, 800));
+    root.style.overflowAnchor = '';
+    const t = bar()?.getBoundingClientRect(), after = markTop();
+    if (!t || Number.isNaN(after)) return { error: t ? 'strip gone' : 'properties toolbar gone' };
+    // The toolbar keeps its place against the mark: it moves by as much as the mark did.
+    return { moved: Math.round(after - before), barMoved: Math.round(t.top - barBefore), scrolled: root.scrollTop !== scrollTop };
+  `);
+  check(
+    'PDF: when the strips resize, the properties follow the mark’s strip',
+    followed && !followed.error && Math.abs(followed.moved) > 40 && !followed.scrolled && Math.abs(followed.barMoved - followed.moved) <= 4,
+    JSON.stringify(followed)
+  );
+  await js(`document.querySelector('[aria-labelledby="collapse-context-label"] [role="radio"]')?.click(); return true;`);
+  await sleep(600);
   await js(`document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); return true;`);
   await sleep(400);
 

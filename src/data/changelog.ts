@@ -22,9 +22,28 @@ export interface ReleaseNote {
   highlights: ChangelogItem[];
 }
 
-export const CURRENT_APP_VERSION = '2.10.1';
+export const CURRENT_APP_VERSION = '2.10.2';
 
 export const CHANGELOG_RELEASES: ReleaseNote[] = [
+  {
+    version: '2.10.2',
+    title: 'Collapse to Marks, Steadier',
+    date: 'November 2026',
+    summary: 'Two more fixes for collapse to marks in a PDF.',
+    highlights: [
+      {
+        category: 'fix',
+        title: 'Toolbar stays by its strip',
+        description: "In a PDF collapsed to marks, a mark's toolbar now stays next to its strip when the strips change size."
+      },
+      {
+        category: 'fix',
+        title: 'Unreadable page no longer blocks collapse',
+        description:
+          'If one page of a PDF cannot be read, collapse to marks still opens and lands on the right place instead of getting stuck.'
+      }
+    ]
+  },
   {
     version: '2.10.1',
     title: 'Collapse to Marks, Tidied Up',

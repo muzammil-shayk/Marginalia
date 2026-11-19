@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { collapseSegments, foldKey, markExtent, markMatches, pageBands, shownCount } from './collapse';
+import { collapseSegments, foldKey, markExtent, markMatches, pageBands, readPageSizes, shownCount } from './collapse';
 
 test('marked paragraphs show, the runs between fold', () => {
   assert.deepEqual(collapseSegments(10, [2, 7]), [
@@ -71,4 +71,16 @@ test('a PDF mark reaches from its highest to its lowest point, whatever its shap
   assert.deepEqual(markExtent({ points: [{ y: 0.4 }, { y: 0.3 }] }), { top: 0.3, bottom: 0.4 });
   assert.deepEqual(markExtent({ from: { y: 0.7 }, to: { y: 0.6 } }), { top: 0.6, bottom: 0.7 });
   assert.equal(markExtent({}), null);
+});
+
+test('page sizes: a page that fails to open is left out, the rest still resolve', async () => {
+  const pdf = {
+    getPage: (n: number) =>
+      n === 3 ? Promise.reject(new Error('bad page')) : Promise.resolve({ getViewport: ({ scale }: { scale: number }) => ({ width: 100 * scale, height: 200 * scale }) })
+  };
+  const sizes = await readPageSizes(pdf, 2, [1, 3, 5]);
+  assert.deepEqual([...sizes], [
+    [1, { w: 200, h: 400 }],
+    [5, { w: 200, h: 400 }]
+  ]);
 });

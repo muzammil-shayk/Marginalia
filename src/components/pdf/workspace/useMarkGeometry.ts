@@ -64,9 +64,27 @@ export function useMarkGeometry(deps: UseMarkGeometryDeps) {
     measure();
     window.addEventListener('scroll', measure, true);
     window.addEventListener('resize', measure);
+    // Collapse to marks swaps the scroller's content, and its strips change height as page sizes
+    // arrive; neither scrolls, so watch the content itself.
+    const root = scrollRef.current;
+    const resized = new ResizeObserver(measure);
+    const watch = () => {
+      resized.disconnect();
+      for (const el of Array.from(root?.children ?? [])) resized.observe(el);
+    };
+    const swapped = new MutationObserver(() => {
+      watch();
+      measure();
+    });
+    if (root) {
+      watch();
+      swapped.observe(root, { childList: true });
+    }
     return () => {
       window.removeEventListener('scroll', measure, true);
       window.removeEventListener('resize', measure);
+      resized.disconnect();
+      swapped.disconnect();
     };
   }, [selectedMark, scale]);
 

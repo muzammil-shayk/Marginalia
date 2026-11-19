@@ -12,7 +12,7 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import type { UserSettings } from '../../../types';
 import type { Annotation } from '../annotationModel';
-import { PDF_CONTEXT, collapseSegments, markExtent, markMatches, pageBands, shownCount, type Band, type CollapseSegment } from '../../../utils/collapse';
+import { PDF_CONTEXT, collapseSegments, markExtent, markMatches, pageBands, readPageSizes, shownCount, type Band, type CollapseSegment } from '../../../utils/collapse';
 import { themeIdsOf } from '../../../utils/markThemes';
 import { plural } from '../../../utils/plural';
 import { isTypingTarget } from '../workspaceKeys';
@@ -121,28 +121,24 @@ function pageInView(root: HTMLElement | null): number | null {
   return null;
 }
 
-/** Each page's size at the current zoom, read from pdf.js as pages come into the plan. */
+/**
+ * Each page's size at the current zoom, read from pdf.js as pages come into the plan. `ready` once
+ * every page in the plan has been asked, even if some failed (those keep placeholder strips).
+ */
 function usePageSizes(pdf: PDFDocumentProxy, scale: number, pages: number[]) {
-  const [sizes, setSizes] = useState<Map<number, { w: number; h: number }>>(new Map());
-  const key = pages.join(',');
+  const [read, setRead] = useState<{ for: string; sizes: Map<number, { w: number; h: number }> }>({ for: '', sizes: new Map() });
+  const key = `${scale}|${pages.join(',')}`;
   useEffect(() => {
     let cancelled = false;
-    void Promise.all(
-      pages.map((n) =>
-        pdf.getPage(n).then((p) => {
-          const v = p.getViewport({ scale });
-          return [n, { w: v.width, h: v.height }] as const;
-        })
-      )
-    ).then((list) => {
-      if (!cancelled) setSizes(new Map(list));
+    void readPageSizes(pdf, scale, pages).then((sizes) => {
+      if (!cancelled) setRead({ for: key, sizes });
     });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pdf, scale, key]);
-  return sizes;
+  }, [pdf, key]);
+  return { sizes: read.sizes, ready: read.for === key };
 }
 
 export const PdfCollapsed: React.FC<{
@@ -154,9 +150,8 @@ export const PdfCollapsed: React.FC<{
 }> = ({ collapse, pdf, scale, renderPage, settings }) => {
   const { plan, filter, context, pageCount } = collapse;
   const pages = useMemo(() => (plan ? [...plan.bands.keys()] : []), [plan]);
-  const sizes = usePageSizes(pdf, scale, pages);
+  const { sizes, ready: sized } = usePageSizes(pdf, scale, pages);
   // Strips are measured before landing: placeholders above the target would push it away after.
-  const sized = pages.every((p) => sizes.has(p));
   const { land } = collapse;
   useLayoutEffect(() => {
     if (sized) land();
