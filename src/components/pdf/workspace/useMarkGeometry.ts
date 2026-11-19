@@ -54,12 +54,16 @@ export function useMarkGeometry(deps: UseMarkGeometryDeps) {
         return;
       }
       const box = pageEl.getBoundingClientRect();
-      setMarkRect({
+      const next = {
         left: box.left + bounds.x * box.width,
         top: box.top + bounds.y * box.height,
         right: box.left + (bounds.x + bounds.w) * box.width,
         bottom: box.top + (bounds.y + bounds.h) * box.height
-      });
+      };
+      // Observers fire often with nothing moved; keep the same object so nothing re-renders.
+      setMarkRect((prev) =>
+        prev && prev.left === next.left && prev.top === next.top && prev.right === next.right && prev.bottom === next.bottom ? prev : next
+      );
     };
     measure();
     window.addEventListener('scroll', measure, true);

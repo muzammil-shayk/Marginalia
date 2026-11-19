@@ -22,9 +22,28 @@ export interface ReleaseNote {
   highlights: ChangelogItem[];
 }
 
-export const CURRENT_APP_VERSION = '2.10.2';
+export const CURRENT_APP_VERSION = '2.10.3';
 
 export const CHANGELOG_RELEASES: ReleaseNote[] = [
+  {
+    version: '2.10.3',
+    title: 'Smoother Behind the Scenes',
+    date: 'November 2026',
+    summary: 'A small behind-the-scenes update. Nothing changes in how the app works.',
+    highlights: [
+      {
+        category: 'improvement',
+        title: 'Less redrawing in collapse to marks',
+        description:
+          "Collapse to marks in a PDF now redraws slightly less when a mark's toolbar is measured again, so it runs a little smoother."
+      },
+      {
+        category: 'improvement',
+        title: 'Page sizes after switching documents',
+        description: "Reading page sizes after you switch documents can no longer reuse the previous document's sizes."
+      }
+    ]
+  },
   {
     version: '2.10.2',
     title: 'Collapse to Marks, Steadier',

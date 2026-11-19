@@ -112,17 +112,21 @@ async function main() {
 
   // 1. In from page 9. Scroll anchoring is off so the browser cannot quietly correct an early
   //    landing; near the end of a document it cannot anyway (2.10.0 landed 929 px off there).
-  await js(`document.querySelector('[data-annotation-surface]').style.overflowAnchor = 'none'; return true;`);
-  await pressC();
-  await sleep(1500);
-  const landed = await offsetOf('[data-collapse-page="9"]');
-  const room = await js(`const r = document.querySelector('[data-annotation-surface]'); return { top: Math.round(r.scrollTop), max: r.scrollHeight - r.clientHeight };`);
+  let landed, room;
+  try {
+    await js(`document.querySelector('[data-annotation-surface]').style.overflowAnchor = 'none'; return true;`);
+    await pressC();
+    await sleep(1500);
+    landed = await offsetOf('[data-collapse-page="9"]');
+    room = await js(`const r = document.querySelector('[data-annotation-surface]'); return { top: Math.round(r.scrollTop), max: r.scrollHeight - r.clientHeight };`);
+  } finally {
+    await js(`document.querySelector('[data-annotation-surface]').style.overflowAnchor = ''; return true;`);
+  }
   check(
     'PDF: going in from page 9 lands on page 9’s strips',
     typeof landed === 'number' && Math.abs(landed - 12) <= 24 && room.top < room.max - 2,
     JSON.stringify({ landed, ...room })
   );
-  await js(`document.querySelector('[data-annotation-surface]').style.overflowAnchor = ''; return true;`);
 
   // 2. A mark in the second strip of page 2.
   await js(`document.querySelectorAll('[data-collapse-page="2"] .pdf-band')[1]?.scrollIntoView({ block: 'center' }); return true;`);
@@ -159,9 +163,12 @@ async function main() {
       return p ? p.top + 0.86 * p.height : NaN;
     };
     const scrollTop = root.scrollTop, before = markTop(), barBefore = bar().getBoundingClientRect().top;
-    radio.click();
-    await new Promise((r) => setTimeout(r, 800));
-    root.style.overflowAnchor = '';
+    try {
+      radio.click();
+      await new Promise((r) => setTimeout(r, 800));
+    } finally {
+      root.style.overflowAnchor = '';
+    }
     const t = bar()?.getBoundingClientRect(), after = markTop();
     if (!t || Number.isNaN(after)) return { error: t ? 'strip gone' : 'properties toolbar gone' };
     // The toolbar keeps its place against the mark: it moves by as much as the mark did.

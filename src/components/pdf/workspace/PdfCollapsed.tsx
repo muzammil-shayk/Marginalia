@@ -121,24 +121,32 @@ function pageInView(root: HTMLElement | null): number | null {
   return null;
 }
 
+const NO_SIZES = new Map<number, { w: number; h: number }>();
+
 /**
  * Each page's size at the current zoom, read from pdf.js as pages come into the plan. `ready` once
  * every page in the plan has been asked, even if some failed (those keep placeholder strips).
  */
 function usePageSizes(pdf: PDFDocumentProxy, scale: number, pages: number[]) {
-  const [read, setRead] = useState<{ for: string; sizes: Map<number, { w: number; h: number }> }>({ for: '', sizes: new Map() });
+  const [read, setRead] = useState<{ pdf: PDFDocumentProxy | null; for: string; sizes: Map<number, { w: number; h: number }> }>({
+    pdf: null,
+    for: '',
+    sizes: new Map()
+  });
   const key = `${scale}|${pages.join(',')}`;
   useEffect(() => {
     let cancelled = false;
     void readPageSizes(pdf, scale, pages).then((sizes) => {
-      if (!cancelled) setRead({ for: key, sizes });
+      if (!cancelled) setRead({ pdf, for: key, sizes });
     });
     return () => {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pdf, key]);
-  return { sizes: read.sizes, ready: read.for === key };
+  // Another document's sizes are never shown or counted as ready, even at the same zoom and pages.
+  const same = read.pdf === pdf;
+  return { sizes: same ? read.sizes : NO_SIZES, ready: same && read.for === key };
 }
 
 export const PdfCollapsed: React.FC<{
