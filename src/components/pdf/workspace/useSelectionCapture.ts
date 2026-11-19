@@ -23,6 +23,28 @@ export interface UseSelectionCaptureDeps {
   applyTextMark: (tool: PdfTool, groups: { page: number; rects: FractionRect[]; quote: string }[]) => void;
 }
 
+/**
+ * Collapsed to marks, a page is shown as strips, each a copy of the whole page clipped to a band:
+ * a drag between two strips runs through the copy's hidden rest. Keeps only the words in sight.
+ */
+function inSight(clip: Range, layer: Element, strip: Element): Range | null {
+  const box = strip.getBoundingClientRect();
+  const seen = Array.from(layer.querySelectorAll('span:not(:has(span))')).filter((n) => {
+    const r = n.getBoundingClientRect();
+    const mid = (r.top + r.bottom) / 2;
+    return mid >= box.top && mid <= box.bottom && clip.intersectsNode(n);
+  });
+  if (!seen.length) return null;
+  const out = clip.cloneRange();
+  const first = document.createRange();
+  first.selectNodeContents(seen[0]);
+  if (out.compareBoundaryPoints(Range.START_TO_START, first) < 0) out.setStart(first.startContainer, first.startOffset);
+  const last = document.createRange();
+  last.selectNodeContents(seen[seen.length - 1]);
+  if (out.compareBoundaryPoints(Range.END_TO_END, last) > 0) out.setEnd(last.endContainer, last.endOffset);
+  return out.collapsed ? null : out;
+}
+
 export function useSelectionCapture(deps: UseSelectionCaptureDeps) {
   const { settings, scrollRef, applyTextMark } = deps;
   const { maskMode, tool, toolColors } = deps.styles;
@@ -52,7 +74,9 @@ export function useSelectionCapture(deps: UseSelectionCaptureDeps) {
     const groups: { page: number; rects: FractionRect[]; quote: string }[] = [];
     for (const pageEl of Array.from(document.querySelectorAll<HTMLElement>('[data-page-number]'))) {
       const layer = pageEl.querySelector('.marginalia-text-layer');
-      const clip = layer ? clippedRange(range, layer) : null;
+      const whole = layer ? clippedRange(range, layer) : null;
+      const strip = pageEl.closest('.pdf-band');
+      const clip = whole && strip ? inSight(whole, layer!, strip) : whole;
       if (!clip) continue;
       const quote = clip.toString().replace(/\s+/g, ' ').trim();
       // Zero-area rects are emitted for collapsed line ends and would render as invisible slivers

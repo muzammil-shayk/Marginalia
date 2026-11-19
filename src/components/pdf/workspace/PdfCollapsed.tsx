@@ -75,17 +75,17 @@ export function usePdfCollapse(deps: {
     }
     setOpened(new Set());
   }, [on, currentPage, goToPage, scrollRef, setOn, setOpened]);
-  useLayoutEffect(() => {
+  /** Lands on `enterAt`; PdfCollapsed calls it once the strips have their real sizes. */
+  const land = useCallback(() => {
     const target = enterAt.current;
-    if (!on || target == null || !plan) return;
-    enterAt.current = null;
     const root = scrollRef.current;
-    if (!root) return;
+    if (target == null || !root) return;
+    enterAt.current = null;
     const sections = Array.from(root.querySelectorAll<HTMLElement>('[data-collapse-page]'));
     const el = sections.find((s) => Number(s.dataset.collapsePage) >= target) ?? sections[sections.length - 1];
     if (el) root.scrollTop += el.getBoundingClientRect().top - root.getBoundingClientRect().top - 12;
     else root.scrollTop = 0;
-  }, [on, plan, scrollRef]);
+  }, [scrollRef]);
 
   const readFrom = (page: number) => {
     setOn(false);
@@ -106,7 +106,7 @@ export function usePdfCollapse(deps: {
     return () => window.removeEventListener('keydown', onKey);
   }, [toggle]);
 
-  return { ...state, toggle, readFrom, pagesFor, plan, pageCount };
+  return { ...state, toggle, readFrom, land, pagesFor, plan, pageCount };
 }
 
 export type PdfCollapse = ReturnType<typeof usePdfCollapse>;
@@ -155,13 +155,19 @@ export const PdfCollapsed: React.FC<{
   const { plan, filter, context, pageCount } = collapse;
   const pages = useMemo(() => (plan ? [...plan.bands.keys()] : []), [plan]);
   const sizes = usePageSizes(pdf, scale, pages);
+  // Strips are measured before landing: placeholders above the target would push it away after.
+  const sized = pages.every((p) => sizes.has(p));
+  const { land } = collapse;
+  useLayoutEffect(() => {
+    if (sized) land();
+  }, [sized, land]);
   if (!plan) return null;
 
   const band = (page: number, b: Band, i: number) => {
     const size = sizes.get(page);
     if (!size) return <div key={i} className="pdf-band pdf-band-loading" style={{ height: 120 }} />;
     return (
-      <div key={i} className="pdf-band" style={{ width: size.w, height: Math.max(24, (b.bottom - b.top) * size.h) }}>
+      <div key={i} className="pdf-band" data-band-top={b.top} data-band-bottom={b.bottom} style={{ width: size.w, height: Math.max(24, (b.bottom - b.top) * size.h) }}>
         <div style={{ marginTop: -b.top * size.h }}>{renderPage(page)}</div>
       </div>
     );

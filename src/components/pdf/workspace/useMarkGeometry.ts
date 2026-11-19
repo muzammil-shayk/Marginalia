@@ -6,6 +6,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Annotation, annotationBounds } from '../annotationModel';
 import type { WorkspaceMarks, WorkspaceSelection, WorkspaceView } from './workspaceState';
+import { pageElementAt } from './pageElement';
 
 export interface UseMarkGeometryDeps {
   focusMode: boolean;
@@ -46,8 +47,8 @@ export function useMarkGeometry(deps: UseMarkGeometryDeps) {
       return;
     }
     const measure = () => {
-      const pageEl = scrollRef.current?.querySelector<HTMLElement>(`[data-page-number="${selectedMark.page}"]`);
       const bounds = annotationBounds(selectedMark);
+      const pageEl = bounds && pageElementAt(scrollRef.current, selectedMark.page, bounds.y + bounds.h / 2);
       if (!pageEl || !bounds) {
         setMarkRect(null);
         return;

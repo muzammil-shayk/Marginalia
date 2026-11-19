@@ -15,6 +15,7 @@ import { isAreaHighlight } from '../../../utils/areaMark';
 import type { DebouncedSaver } from '../../../hooks/debouncedSaver';
 import type { WorkspaceMarks, WorkspaceSelection, WorkspaceStatus, WorkspaceView } from './workspaceState';
 import type { PdfNavigation } from './usePdfNavigation';
+import { pageElementAt } from './pageElement';
 
 export interface UseWorkspaceExtrasDeps {
   docId: string;
@@ -63,14 +64,14 @@ export function useWorkspaceExtras(deps: UseWorkspaceExtrasDeps) {
       return false;
     }
     const container = scrollRef.current;
-    const pageEl = container?.querySelector<HTMLElement>(`[data-page-number="${a.page}"]`);
+    const bounds = annotationBounds(a);
+    const pageEl = pageElementAt(container, a.page, bounds ? bounds.y + bounds.h / 2 : 0);
     // A page that has not been measured yet still has a height — `PdfPage` gives it a 60vh
     // placeholder — so "it rendered" is not the same as "it is the right size". Jumping against a
     // placeholder lands near the mark rather than on it, and the caller's retry never fired
     // because this reported success.
     if (!container || !pageEl || pageEl.dataset.pageSized !== 'true') return false;
 
-    const bounds = annotationBounds(a);
     /**
      * The page's top within the SCROLL CONTAINER's coordinates.
      *
@@ -80,7 +81,11 @@ export function useWorkspaceExtras(deps: UseWorkspaceExtrasDeps) {
      * that much, which on a short window put the mark above the visible area entirely. Both
      * elements share the same offsetParent, so subtracting the container's own offset cancels it.
      */
-    const pageTop = () => pageEl.offsetTop - container.offsetTop;
+    // A strip (collapsed to marks) is positioned, so its page's offsetTop counts from the strip.
+    const pageTop = () =>
+      pageEl.closest('[data-band-top]')
+        ? pageEl.getBoundingClientRect().top - container.getBoundingClientRect().top + container.scrollTop
+        : pageEl.offsetTop - container.offsetTop;
     const destination = () => {
       const raw = bounds
         ? pageTop() + bounds.y * pageEl.offsetHeight - container.clientHeight / 3

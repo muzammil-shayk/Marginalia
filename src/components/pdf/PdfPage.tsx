@@ -270,6 +270,8 @@ export const PdfPage: React.FC<PdfPageProps> = ({
       endOfContent.className = 'endOfContent';
       textLayerDiv.append(endOfContent);
     } catch (err) {
+      // No text layer means nothing to select: Black it out's Words then draws a box, as on a scan.
+      if ((err as { name?: string } | null)?.name !== 'AbortException') setHasText(false);
       console.error(`Text layer failed on page ${pageNumber}:`, err);
       (window as unknown as { __marginaliaTextLayerError?: string }).__marginaliaTextLayerError =
         String((err as Error)?.message || err);

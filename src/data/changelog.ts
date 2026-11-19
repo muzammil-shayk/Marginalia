@@ -22,9 +22,39 @@ export interface ReleaseNote {
   highlights: ChangelogItem[];
 }
 
-export const CURRENT_APP_VERSION = '2.10.0';
+export const CURRENT_APP_VERSION = '2.10.1';
 
 export const CHANGELOG_RELEASES: ReleaseNote[] = [
+  {
+    version: '2.10.1',
+    title: 'Collapse to Marks, Tidied Up',
+    date: 'November 2026',
+    summary: 'Fixes for collapse to marks and for Black it out on pages with no readable text.',
+    highlights: [
+      {
+        category: 'fix',
+        title: 'Strip toolbars and drags in a PDF',
+        description:
+          "Clicking a mark's strip now opens its toolbar next to that strip, not far away. Dragging across two strips marks only the lines you can see, not the whole hidden page."
+      },
+      {
+        category: 'fix',
+        title: 'Collapsing from a later page',
+        description: 'Going into collapse from a later page of a PDF now lands on the right page.'
+      },
+      {
+        category: 'fix',
+        title: 'Find hits after closing Find',
+        description:
+          'In the reader, if Find hits is chosen and you close Find, the view now shows all your marks instead of folding everything shut.'
+      },
+      {
+        category: 'fix',
+        title: 'Black it out on unreadable pages',
+        description: 'On a page whose text could not be read, Black it out > Words now draws a box instead of doing nothing.'
+      }
+    ]
+  },
   {
     version: '2.10.0',
     title: 'Collapse to Marks and a Card Tutorial',

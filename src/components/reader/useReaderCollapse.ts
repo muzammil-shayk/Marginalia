@@ -19,6 +19,7 @@ export const COLLAPSE_HOTKEY = 'C';
 
 /** What the document collapses to: a mark filter, or what Find has found. */
 export type ReaderCollapseFilter = CollapseFilter | { type: 'find' };
+const ALL_MARKS: ReaderCollapseFilter = { type: 'all' };
 
 export function useCollapseState() {
   const [on, setOn] = useState(false);
@@ -59,7 +60,9 @@ export function useReaderCollapse(deps: {
   topInset: () => number;
 }) {
   const { state, paragraphCount, marks, findHits, topInset } = deps;
-  const { on, setOn, filter, context, opened, setOpened } = state;
+  const { on, setOn, context, opened, setOpened } = state;
+  // Collapsed to Find hits, then Find closed (or nothing found): every mark again, not a blank page.
+  const filter: ReaderCollapseFilter = state.filter.type === 'find' && !findHits.length ? ALL_MARKS : state.filter;
 
   /** Which paragraphs each filter would keep, so the bar can show counts. */
   const keepFor = useCallback(
@@ -124,7 +127,7 @@ export function useReaderCollapse(deps: {
     return () => window.removeEventListener('keydown', onKey);
   }, [toggle]);
 
-  return { ...state, toggle, openFold, expandAt, keepFor, segments, shown, total: paragraphCount, remember };
+  return { ...state, filter, toggle, openFold, expandAt, keepFor, segments, shown, total: paragraphCount, remember };
 }
 
 export type ReaderCollapse = ReturnType<typeof useReaderCollapse>;
