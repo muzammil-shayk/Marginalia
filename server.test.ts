@@ -101,3 +101,47 @@ test('ordinary JSON routes still read their bodies', async () => {
   assert.equal((await json('POST', '/api/motifs/trace', { terms: ['two'] })).status, 200);
   assert.equal((await store.getDocument(meta.id))!.title, 'Renamed');
 });
+
+test('OCR of a scanned page: saved per page, read back for the document, checked before it is written', async () => {
+  const meta = await store.saveDocument({ title: 'Scan', text: '', format: 'PDF', filename: 'scan.pdf' });
+  const page = { words: [{ text: 'شام', x: 0.5, y: 0.1, w: 0.1, h: 0.03, line: 0, rtl: true }], langs: 'eng+urd', createdAt: '2026-11-20T10:00:00.000Z' };
+  const empty = await fetch(`${base}/api/documents/${meta.id}/ocr`);
+  assert.equal(empty.status, 200);
+  assert.deepEqual(await empty.json(), { pages: {} });
+
+  const saved = await json('PUT', `/api/documents/${meta.id}/ocr/4`, page);
+  assert.equal(saved.status, 200);
+  assert.deepEqual(await saved.json(), { saved: true });
+  assert.deepEqual(await (await fetch(`${base}/api/documents/${meta.id}/ocr`)).json(), { pages: { 4: page } });
+
+  const bad = await json('PUT', `/api/documents/${meta.id}/ocr/4`, { ...page, words: [{ ...page.words[0], x: 7 }] });
+  assert.equal(bad.status, 400);
+  assert.equal((await bad.json()).error, 'A valid OCR page is required.');
+  const badPage = await json('PUT', `/api/documents/${meta.id}/ocr/0`, page);
+  assert.equal(badPage.status, 404);
+  assert.equal((await badPage.json()).error, 'Document or page not found.');
+  const missing = await json('PUT', `/api/documents/${'b'.repeat(32)}/ocr/1`, page);
+  assert.equal(missing.status, 404);
+  assert.equal((await missing.json()).error, 'Document or page not found.');
+  // The page was not overwritten by the refused writes.
+  assert.deepEqual(await (await fetch(`${base}/api/documents/${meta.id}/ocr`)).json(), { pages: { 4: page } });
+});
+
+test('OCR page numbers above 100000 are refused with 400; 100000 itself is fine', async () => {
+  const meta = await store.saveDocument({ title: 'Scan', text: 'x', format: 'PDF', filename: 'scan.pdf' });
+  const page = { words: [], langs: 'eng+urd', createdAt: '2026-11-20T10:00:00.000Z' };
+  const high = await json('PUT', `/api/documents/${meta.id}/ocr/100001`, page);
+  assert.equal(high.status, 400);
+  assert.equal((await high.json()).error, 'The page number is out of range.');
+  const top = await json('PUT', `/api/documents/${meta.id}/ocr/100000`, page);
+  assert.equal(top.status, 200);
+});
+
+test('an OCR page at the 20,000-word cap fits under its route body limit', async () => {
+  const meta = await store.saveDocument({ title: 'Scan', text: 'x', format: 'PDF', filename: 'scan.pdf' });
+  const words = Array.from({ length: 20000 }, (_, i) => ({ text: 'w'.repeat(200), x: 0.123456789, y: 0.123456789, w: 0.012345678, h: 0.012345678, line: i, rtl: true }));
+  const body = { words, langs: 'eng+urd', createdAt: '2026-11-20T10:00:00.000Z' };
+  assert.ok(JSON.stringify(body).length > 5 * 1024 * 1024, 'the fixture is past the 5 MB default');
+  const res = await json('PUT', `/api/documents/${meta.id}/ocr/1`, body);
+  assert.equal(res.status, 200);
+});

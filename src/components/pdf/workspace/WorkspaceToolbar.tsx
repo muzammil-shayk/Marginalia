@@ -7,12 +7,17 @@ import React from 'react';
 import { StickyNote } from '../../icons';
 import { FocusChrome, FocusExit, FOCUS_HOTKEY } from '../../FocusMode';
 import { HoverTooltip } from '../../HoverTooltip';
-import { CollapseIcon, Maximize2, Minimize2, Search } from '../../icons';
+import { CollapseIcon, Maximize2, Minimize2, Redo2, Search, Undo2 } from '../../icons';
 import { COLLAPSE_HOTKEY } from '../../reader/useReaderCollapse';
 import type { PdfCollapse } from './PdfCollapsed';
 import { FindBar, FIND_SHORTCUT } from '../../FindBar';
 import { UserSettings } from '../../../types';
-import { PdfToolbar } from '../PdfToolbar';
+import { PdfToolbar, TOOL_GROUPS } from '../PdfToolbar';
+import { OcrDocumentMenu } from '../OcrControls';
+import { FocusPalette, type PaletteTool } from '../../FocusPalette';
+import type { PaletteSpot } from '../../paletteSpot';
+import { TOOL_HOTKEYS } from '../workspaceKeys';
+import type { PdfTool } from '../annotationModel';
 import { archiveRows } from '../../MarksArchive';
 import { classPackHasBlackouts } from '../../../utils/classPack';
 import type { WorkspaceMarks, WorkspaceSelection, WorkspaceStatus, WorkspaceView } from './workspaceState';
@@ -23,10 +28,12 @@ import type { WorkspaceExtras } from './useWorkspaceExtras';
 import type { PageEdits } from './usePageEdits';
 
 export interface WorkspaceToolbarProps {
+  docId?: string;
   settings: UserSettings;
   isDark: boolean;
   focusMode: boolean;
   onToggleFocus: (() => void) | undefined;
+  onFocusPaletteChange?: (spot: PaletteSpot) => void;
   zoomTouchedRef: React.RefObject<boolean>;
   styles: Pick<PdfToolStyles, 'maskMode' | 'setMaskMode' | 'activeThemeId' | 'setActiveThemeId' | 'bracketSide' | 'noteStyle' | 'textAlign' | 'textBold' | 'textFont' | 'textItalic' | 'textSize' | 'tool' | 'toolColors' | 'toolStrokeStyles' | 'toolWeights'>;
   marking: Pick<TextMarking, 'handleBracketSideChange' | 'handleNoteStyleChange' | 'handleTextAlignChange' | 'handleTextBoldChange' | 'handleTextFontChange' | 'handleTextItalicChange' | 'handleTextSizeChange' | 'handleToolColorChange' | 'handleToolStrokeStyleChange' | 'handleToolTap' | 'handleToolWeightChange'>;
@@ -40,7 +47,11 @@ export interface WorkspaceToolbarProps {
   collapse: Pick<PdfCollapse, 'on' | 'toggle'>;
 }
 
-export const WorkspaceToolbar: React.FC<WorkspaceToolbarProps> = ({ settings, isDark, focusMode, onToggleFocus, zoomTouchedRef, styles, marking, marks, selection, view, status, nav, extras, pageEdits, collapse }) => {
+/** Focus mode's floating tools (FocusPalette): the marking and drawing tools, grouped as on the toolbar. */
+const PALETTE_TOOLS: PdfTool[][] = [['select', 'highlight', 'underline'], ['ink', 'inkArrow', 'arrow', 'rect', 'ellipse', 'note'], ['erase']];
+const TOOL_BY_ID = new Map(TOOL_GROUPS.flat().map((t) => [t.id, t]));
+
+export const WorkspaceToolbar: React.FC<WorkspaceToolbarProps> = ({ docId, settings, isDark, focusMode, onToggleFocus, onFocusPaletteChange, zoomTouchedRef, styles, marking, marks, selection, view, status, nav, extras, pageEdits, collapse }) => {
   const { maskMode, setMaskMode, activeThemeId, setActiveThemeId, bracketSide, noteStyle, textAlign, textBold, textFont, textItalic, textSize, tool, toolColors, toolStrokeStyles, toolWeights } = styles;
   const { handleBracketSideChange, handleNoteStyleChange, handleTextAlignChange, handleTextBoldChange, handleTextFontChange, handleTextItalicChange, handleTextSizeChange, handleToolColorChange, handleToolStrokeStyleChange, handleToolTap, handleToolWeightChange } = marking;
   const { annotations, canUndo, canRedo, undo, redo } = marks;
@@ -60,6 +71,7 @@ export const WorkspaceToolbar: React.FC<WorkspaceToolbarProps> = ({ settings, is
         compact={!settings.sidebarCollapsed}
         panelControls={
           <>
+            {docId && <OcrDocumentMenu docId={docId} isDark={isDark} />}
             <HoverTooltip label={collapse.on ? `Show everything (${COLLAPSE_HOTKEY})` : `Collapse to marks (${COLLAPSE_HOTKEY})`}>
               <button
                 type="button"
@@ -180,6 +192,29 @@ export const WorkspaceToolbar: React.FC<WorkspaceToolbarProps> = ({ settings, is
       )}
       </FocusChrome>
       {focusMode && onToggleFocus && <FocusExit onExit={onToggleFocus} isDark={isDark} />}
+      {focusMode && (
+        <FocusPalette
+          isDark={isDark}
+          spot={settings.focusPalette}
+          onSpotChange={(spot) => onFocusPaletteChange?.(spot)}
+          groups={[
+            ...PALETTE_TOOLS.map((ids) =>
+              ids.map((id): PaletteTool => {
+                const t = TOOL_BY_ID.get(id)!;
+                return { id, label: t.label, icon: t.icon, hotkey: TOOL_HOTKEYS[id], active: tool === id, color: id === 'select' || id === 'erase' ? undefined : toolColors[id], onClick: () => {
+                    handleToolTap(id);
+                    // Arming a tool opens its options under the toolbar's chip; in focus mode that chip is out of sight.
+                    setOpenSubmenuFor(null);
+                  } };
+              })
+            ),
+            [
+              { id: 'undo', label: 'Undo', icon: Undo2, disabled: !canUndo, onClick: undo },
+              { id: 'redo', label: 'Redo', icon: Redo2, disabled: !canRedo, onClick: redo }
+            ]
+          ]}
+        />
+      )}
   </>
   );
 };

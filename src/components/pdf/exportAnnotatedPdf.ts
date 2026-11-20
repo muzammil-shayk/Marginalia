@@ -48,8 +48,12 @@ import {
   TextAlign,
   bracketPoints,
   fontStack,
+  arrowHeadPath,
+  inkArrowReach,
+  inkArrowShaft,
   isReaction,
-  reactionChar
+  reactionChar,
+  tailAnchor
 } from './annotationModel';
 import { pageTransform } from './pageBox';
 import { fitText, type FitOptions } from './noteFit';
@@ -469,7 +473,9 @@ export async function exportAnnotatedPdf(
       }
 
       if (a.kind === 'ink' && a.points?.length) {
-        const flat = a.points.map((p) => toPdf(p.x, p.y));
+        // A freehand arrow's shaft runs straight into its head, as on screen (`inkArrowShaft`).
+        const drawn = a.arrowHead ? inkArrowShaft(a.points, a.weight ?? DEFAULT_WEIGHT) : a.points;
+        const flat = drawn.map((p) => toPdf(p.x, p.y));
         const xs = a.points.map((p) => p.x);
         const ys = a.points.map((p) => p.y);
         const bounds = rectToPdf({
@@ -480,6 +486,13 @@ export async function exportAnnotatedPdf(
         });
         const widthPts = Math.max(1, (a.weight ?? DEFAULT_WEIGHT) * pw);
         drawStroke(flat, { r, g, b }, widthPts, dashPattern(a.strokeStyle, widthPts));
+        if (a.arrowHead && a.points.length > 1) {
+          // The same smoothed direction the screen uses (`tailAnchor`), mapped into PDF space.
+          const [tx, ty] = flat[flat.length - 1];
+          const anchor = tailAnchor(a.points, inkArrowReach(a.weight ?? DEFAULT_WEIGHT));
+          const [ax, ay] = toPdf(anchor.x, anchor.y);
+          if (tx !== ax || ty !== ay) page.drawSvgPath(arrowHeadPath(tx, ty, Math.atan2(ty - ay, tx - ax), widthPts), { x: 0, y: 0, color: rgb(r, g, b) });
+        }
         common(
           a,
           bounds,
@@ -552,31 +565,7 @@ export async function exportAnnotatedPdf(
         if (a.kind === 'arrow') {
           // A solid triangle at the far end, never dashed whatever the shaft is — the same rule
           // the on-screen SVG marker follows.
-          const angle = Math.atan2(y2 - y1, x2 - x1);
-          // Matched to the on-screen marker rather than guessed: it is a 4x4 box in stroke-width
-          // units (`markerUnits="strokeWidth"`), so the head is 4 widths long and 4 wide — and
-          // its `refX=3` puts the tip one width PAST the line's end. The exported head was 3.2
-          // long and 2.8 wide, ending exactly at the line, which read as visibly smaller.
-          const headLen = widthPts * 4;
-          const headHalfWidth = widthPts * 2;
-          const tipX = x2 + widthPts * Math.cos(angle);
-          const tipY = y2 + widthPts * Math.sin(angle);
-          const back: [number, number] = [tipX - headLen * Math.cos(angle), tipY - headLen * Math.sin(angle)];
-          const left: [number, number] = [
-            back[0] - headHalfWidth * Math.sin(angle),
-            back[1] + headHalfWidth * Math.cos(angle)
-          ];
-          const right: [number, number] = [
-            back[0] + headHalfWidth * Math.sin(angle),
-            back[1] - headHalfWidth * Math.cos(angle)
-          ];
-          const d = [
-            `M ${tipX.toFixed(2)} ${(-tipY).toFixed(2)}`,
-            `L ${left[0].toFixed(2)} ${(-left[1]).toFixed(2)}`,
-            `L ${right[0].toFixed(2)} ${(-right[1]).toFixed(2)}`,
-            'Z'
-          ].join(' ');
-          page.drawSvgPath(d, { x: 0, y: 0, color: rgb(r, g, b) });
+          page.drawSvgPath(arrowHeadPath(x2, y2, Math.atan2(y2 - y1, x2 - x1), widthPts), { x: 0, y: 0, color: rgb(r, g, b) });
         }
         common(
           a,

@@ -145,6 +145,21 @@ const ShortcutScene: React.FC<{ demo: ShortcutDemo }> = ({ demo }) => {
         </svg>
       )}
       {demo === 'note' && <span className="sd-sticky">Answer it!</span>}
+      {demo === 'palette' && (
+        <span className="sd-tools">
+          <i /> <i /> <i /> <i /> <i />
+        </span>
+      )}
+      {demo === 'noteKeys' && (
+        <>
+          <span className="sd-notebox">
+            Answer it,
+            <span className="sd-nl2">line by line.</span>
+          </span>
+          <span className="sd-keycap sd-k1">Shift+Enter</span>
+          <span className="sd-keycap sd-k2">Enter: saved</span>
+        </>
+      )}
       {demo === 'escape' && (
         <span className="sd-menu">
           <i /> <i /> <i />

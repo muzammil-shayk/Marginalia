@@ -15,6 +15,11 @@ const SUITES = [
   [ELECTRON, 'e2e-views.cjs'],
   [ELECTRON, 'e2e-blackout.cjs'],
   [ELECTRON, 'e2e-collapse.cjs'],
+  [ELECTRON, 'e2e-ocr.cjs'],
+  [ELECTRON, 'e2e-find.cjs'],
+  [ELECTRON, 'e2e-inkarrow.cjs'],
+  [ELECTRON, 'e2e-focus.cjs'],
+  [ELECTRON, 'e2e-ocr-ui.cjs'],
   [process.execPath, 'e2e-first-run.cjs']
 ];
 

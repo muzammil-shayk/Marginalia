@@ -9,6 +9,8 @@
  *    the selection menu and marking them again files the same mark under both, shown with a dot.
  * 3. Text reader: a selection becomes a highlight with its words and the active theme, and
  *    re-marking it under a second theme adds that theme to it.
+ * 4. PDF in Urdu: a line written as runs placed left to right (as LibreOffice and Word write
+ *    Arabic script) is quoted right to left, without the control characters of unmapped glyphs.
  * Exits 0 when every check passes, 1 otherwise, printing each result.
  */
 
@@ -35,6 +37,30 @@ async function samplePdf() {
   return Buffer.from(await doc.save());
 }
 
+/**
+ * One Urdu line, "یہ ایک خوبصورت شام", in Noto Nastaliq (subset, so unmapped glyphs come through as
+ * control characters). Each word is its own run, drawn leftmost first and nudged up or down, so
+ * pdf.js keeps the runs apart in page order, the way real Urdu PDFs come out.
+ */
+async function urduPdf() {
+  const { PDFDocument } = require(path.join(ROOT, 'node_modules', 'pdf-lib'));
+  const fontkit = require(path.join(ROOT, 'node_modules', '@pdf-lib/fontkit'));
+  const doc = await PDFDocument.create();
+  doc.registerFontkit(fontkit);
+  const fontFile = path.join(ROOT, 'node_modules/@fontsource/noto-nastaliq-urdu/files/noto-nastaliq-urdu-arabic-400-normal.woff2');
+  const font = await doc.embedFont(fs.readFileSync(fontFile), { subset: true });
+  const page = doc.addPage([420, 595]);
+  let x = 380;
+  const placed = ['یہ', 'ایک', 'خوبصورت', 'شام'].map((w) => {
+    x -= font.widthOfTextAtSize(w, 28);
+    const at = x;
+    x -= 8;
+    return { w, at };
+  });
+  placed.reverse().forEach((p, i) => page.drawText(p.w, { x: p.at, y: 500 + (i % 2) * 10, size: 28, font }));
+  return Buffer.from(await doc.save());
+}
+
 async function main() {
   const store = fs.mkdtempSync(path.join(os.tmpdir(), 'marginalia-e2e-'));
   Object.assign(process.env, { MARGINALIA_STORE_DIR: store, MARGINALIA_EMBEDDED: '1', NODE_ENV: 'production', PORT: '0' });
@@ -58,6 +84,8 @@ async function main() {
   });
   const pdf = await api('/documents', 'POST', { title: 'Ozymandias', text: 'I met a traveller', format: 'PDF', filename: 'ozymandias.pdf' });
   await fetch(`${base}/api/documents/${pdf.id}/original?filename=ozymandias.pdf`, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: await samplePdf() });
+  const urdu = await api('/documents', 'POST', { title: 'Shaam', text: 'یہ ایک', format: 'PDF', filename: 'shaam.pdf' });
+  await fetch(`${base}/api/documents/${urdu.id}/original?filename=shaam.pdf`, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: await urduPdf() });
   const txt = await api('/documents', 'POST', { title: 'Sonnet', text: 'Look on my works, ye Mighty, and despair!\nNothing beside remains.', format: 'TXT', layout: 'verbatim' });
 
   // E2E_WIDTH=1024 matches the Windows runner, whose offscreen window is clamped to 1024 wide.
@@ -164,6 +192,22 @@ async function main() {
   const tm2 = await marksOf(txt.id);
   const readerDots = await js(`return document.querySelectorAll('#reader-para-text-0 [aria-label="Also filed under Ruin"]').length;`);
   check('Reader: re-marking under a second theme adds it to the same mark, with a dot', tm2.length === 1 && JSON.stringify(tm2[0].themeIds) === '["love","ruin"]' && readerDots === 1, JSON.stringify({ themeIds: tm2.map((m) => m.themeIds), readerDots }));
+
+  // 4. Urdu PDF: the whole line selected, then highlighted.
+  await open('workspace', urdu, 'PDF', '[data-page-number="1"][data-painted] .marginalia-text-layer span');
+  await select(null, '.marginalia-text-layer', 'ش');
+  await js(`
+    const layer = document.querySelector('[data-page-number="1"] .marginalia-text-layer');
+    const r = document.createRange();
+    r.selectNodeContents(layer);
+    getSelection().removeAllRanges(); getSelection().addRange(r);
+    document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+    return true;
+  `);
+  await menuButton('Highlight');
+  await sleep(1500);
+  const um = await marksOf(urdu.id);
+  check('PDF: an Urdu line is quoted right to left, with no control characters', um.length === 1 && um[0].quote === 'یہ ایک خ وب صورت شام', JSON.stringify(um.map((m) => m.quote)));
 
   win.destroy();
   fs.rmSync(store, { recursive: true, force: true });

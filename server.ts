@@ -14,6 +14,8 @@ import {
   getSettings,
   saveClientSettings,
   editPdfPages,
+  getOcrPages,
+  saveOcrPage,
   checkpointPendingMarkBackups,
   RETENTION_DAYS
 } from "./src/services/documentStore";
@@ -30,6 +32,7 @@ import { setAiEnabled } from "./src/services/aiGate";
 import { wordWindow, markSearchHits } from "./searchSnippet";
 import { mainThemeId, themeIdsOf } from "./src/utils/markThemes";
 import { withSafeColors } from "./src/utils/marksExport";
+import { isValidOcrPage, type OcrPage } from "./src/utils/ocrWords";
 
 /**
  * Re-exported for the desktop shell, which owns the folder picker and calls this to re-point the
@@ -143,6 +146,8 @@ app.post("/api/documents", express.json({ limit: "50mb" }));
 app.post("/api/export/notes-pdf", express.json({ limit: "50mb" }));
 app.put("/api/documents/:id/annotations", express.json({ limit: "25mb" }));
 app.post("/api/motifs/trace", express.json({ limit: "1mb" }));
+// An OCR page at its 20,000-word cap (isValidOcrPage) runs to about 6.5 MB.
+app.put("/api/documents/:id/ocr/:page", express.json({ limit: "10mb" }));
 app.use(express.json({ limit: "5mb" }));
 
 // Health check endpoint
@@ -619,6 +624,33 @@ app.put("/api/documents/:id/reading-state", async (req, res) => {
   const meta = await updateDocument(req.params.id, { readingState });
   if (!meta) {
     res.status(404).json({ error: "Document not found." });
+    return;
+  }
+  res.json({ saved: true });
+});
+
+/** Text read off a scanned PDF's pages (OCR, run in the app only when the reader asks for it). */
+app.get("/api/documents/:id/ocr", async (req, res) => {
+  res.json({ pages: await getOcrPages(req.params.id) });
+});
+
+/** Far past any real book; keeps a bad request from naming a file like `9e99.json`. */
+const MAX_OCR_PAGE = 100000;
+
+app.put("/api/documents/:id/ocr/:page", async (req, res) => {
+  if (Number(req.params.page) > MAX_OCR_PAGE) {
+    res.status(400).json({ error: "The page number is out of range." });
+    return;
+  }
+  if (!isValidOcrPage(req.body)) {
+    res.status(400).json({ error: "A valid OCR page is required." });
+    return;
+  }
+  const { words, langs, createdAt } = req.body as OcrPage;
+  // Only the known fields are kept.
+  const clean = words.map(({ text, x, y, w, h, line, rtl }) => ({ text, x, y, w, h, line, ...(rtl && { rtl }) }));
+  if (!(await saveOcrPage(req.params.id, Number(req.params.page), { words: clean, langs, createdAt }))) {
+    res.status(404).json({ error: "Document or page not found." });
     return;
   }
   res.json({ saved: true });

@@ -320,3 +320,10 @@ test('the stored marks given to an export are not changed', () => {
   marksToJson(blackedOut, pdfDoc, themes);
   assert.equal(blackedOut[1].quote, 'secret name');
 });
+
+test('a freehand arrow is labelled as one in exports; a plain pen stroke stays a drawing', () => {
+  const marks = collectExportMarks([...pdfMarks, { id: 'fa', page: 2, kind: 'ink', arrowHead: true, color: '#000', themeId: null, points: [{ x: 0.3, y: 0.3 }, { x: 0.4, y: 0.4 }], createdAt: '2026-10-05T09:00:00.000Z' }], pdfDoc, themes);
+  assert.equal(marks.find((m) => m.id === 'fa')?.label, 'Freehand arrow');
+  assert.equal(marks.find((m) => m.id === 'i1')?.label, 'Drawing');
+  assert.match(marksToMarkdown([...pdfMarks, { id: 'fa', page: 2, kind: 'ink', arrowHead: true, color: '#000', points: [], createdAt: '2026-10-05T09:00:00.000Z' }], pdfDoc, themes), /### \d+\. Freehand arrow/);
+});

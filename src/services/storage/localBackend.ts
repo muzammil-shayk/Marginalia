@@ -41,6 +41,7 @@ import {
 import { migrateTextEntries } from '../../utils/textMarks';
 import { isOldThemeShape, readAllThemes, writeAllThemes } from '../../utils/markThemes';
 import { pruneLinks } from '../../utils/markLinks';
+import type { OcrPage } from '../../utils/ocrWords';
 
 /** Writes a file and fsyncs it before returning, so a later rename never exposes unflushed bytes. */
 async function writeDurable(target: string, data: string | Uint8Array): Promise<void> {
@@ -95,6 +96,7 @@ export class LocalDocumentBackend implements DocumentBackend {
 
   private settingsPath: string;
   private backupsDir: string;
+  private ocrDir: string;
 
   /** Documents whose marks changed inside the backup window and are not backed up yet. */
   private pendingBackups = new Set<string>();
@@ -107,6 +109,7 @@ export class LocalDocumentBackend implements DocumentBackend {
     this.originalsDir = path.join(root, 'originals');
     this.settingsPath = path.join(root, 'settings.json');
     this.backupsDir = path.join(root, 'backups');
+    this.ocrDir = path.join(root, 'ocr');
     this.name = `local disk (${root})`;
   }
 
@@ -308,6 +311,8 @@ export class LocalDocumentBackend implements DocumentBackend {
     await fs.rename(next, originalPath);
     const { pendingOriginal: _pending, ...settled } = committed;
     await this.write(settled);
+    // Pages moved or went: the saved OCR's page numbers no longer match. Read again on request.
+    await fs.rm(path.join(this.ocrDir, id), { recursive: true, force: true });
     return result;
   }
 
@@ -569,7 +574,38 @@ export class LocalDocumentBackend implements DocumentBackend {
     if (original) await unlink(original);
     for (const suffix of ['prev', 'next']) await unlink(path.join(this.originalsDir, `${id}.${suffix}`));
     await fs.rm(this.backupDir(id), { recursive: true, force: true });
+    await fs.rm(path.join(this.ocrDir, id), { recursive: true, force: true });
     return deleted;
+  }
+
+  /** Text read off a scanned PDF's pages (OCR), one file per page: `ocr/{id}/{page}.json`. */
+  async getOcrPages(id: string): Promise<Record<number, OcrPage>> {
+    if (!isValidId(id)) return {};
+    const dir = path.join(this.ocrDir, id);
+    const names = await fs.readdir(dir).catch(() => [] as string[]);
+    const out: Record<number, OcrPage> = {};
+    for (const name of names) {
+      const m = /^(\d+)\.json$/.exec(name);
+      if (!m) continue;
+      try {
+        out[Number(m[1])] = JSON.parse(await fs.readFile(path.join(dir, name), 'utf-8'));
+      } catch {
+        // An unreadable page is read again on request; nothing else depends on it.
+      }
+    }
+    return out;
+  }
+
+  /** Saves one page's OCR. False when the document does not exist or `page` is not a page number. */
+  async saveOcrPage(id: string, page: number, data: OcrPage): Promise<boolean> {
+    if (!isValidId(id) || !Number.isInteger(page) || page < 1) return false;
+    return this.withLock(id, async () => {
+      if (!(await this.getDocument(id))) return false;
+      const dir = path.join(this.ocrDir, id);
+      await fs.mkdir(dir, { recursive: true });
+      await writeFileAtomic(path.join(dir, `${page}.json`), JSON.stringify(data));
+      return true;
+    });
   }
 
   async sweepExpiredDocuments(): Promise<number> {

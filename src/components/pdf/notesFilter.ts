@@ -5,7 +5,8 @@
 import { Annotation, AnnotationKind, annotationBounds } from './annotationModel';
 
 /** What the kind chips filter by: a stored kind, or terminology (a flagged highlight). */
-export type NoteFilterKind = AnnotationKind | 'terminology';
+/** `inkArrow`: a pen stroke with an arrowhead (Freehand arrow), listed apart from plain pen strokes. */
+export type NoteFilterKind = AnnotationKind | 'terminology' | 'inkArrow';
 
 export const NOTE_KIND_LABELS: Record<NoteFilterKind, string> = {
   highlight: 'Highlight',
@@ -18,6 +19,7 @@ export const NOTE_KIND_LABELS: Record<NoteFilterKind, string> = {
   note: 'Note',
   text: 'Text box',
   ink: 'Pen',
+  inkArrow: 'Freehand arrow',
   rect: 'Rectangle',
   ellipse: 'Ellipse',
   arrow: 'Arrow',
@@ -29,6 +31,7 @@ export const NOTE_KIND_LABELS: Record<NoteFilterKind, string> = {
 const KIND_ORDER = Object.keys(NOTE_KIND_LABELS) as NoteFilterKind[];
 
 export function filterKindOf(a: Annotation): NoteFilterKind {
+  if (a.kind === 'ink' && a.arrowHead) return 'inkArrow';
   return a.kind === 'highlight' && a.isTerminology ? 'terminology' : a.kind;
 }
 

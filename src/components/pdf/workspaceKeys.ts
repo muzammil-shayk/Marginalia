@@ -40,6 +40,15 @@ export interface KeyLike {
   shiftKey?: boolean;
 }
 
+/**
+ * In a note's text field: plain Enter saves it; Shift+Enter is left to the field, a new line.
+ * Never while an input method is still composing (its Enter picks a word), and no modifier
+ * chords (Cmd/Ctrl/Alt+Enter) — one key to save, nothing to learn.
+ */
+export function noteKeySaves(e: KeyLike & { isComposing?: boolean }): boolean {
+  return e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey && !e.isComposing;
+}
+
 /** Maps a keydown to what it means in the workspace, or null when the key is not ours. */
 export function resolveWorkspaceKey(e: KeyLike): WorkspaceKeyAction | null {
   if (e.key === 'Escape') return { type: 'escape' };

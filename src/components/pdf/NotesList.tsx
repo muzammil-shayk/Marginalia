@@ -16,6 +16,7 @@ import {
   Underline,
   Strikethrough,
   PenLine,
+  PenArrow,
   Square,
   Circle,
   ArrowUpRight,
@@ -29,7 +30,7 @@ import {
 } from '../icons';
 import { Annotation, AnnotationKind } from './annotationModel';
 import { UserSettings } from '../../types';
-import { NOTE_KIND_LABELS, NoteFilterKind, presentKinds, visibleNotes } from './notesFilter';
+import { NOTE_KIND_LABELS, NoteFilterKind, filterKindOf, presentKinds, visibleNotes } from './notesFilter';
 
 /** A reaction's icon is the literal mark it stamps, not a lookalike glyph. */
 const charIcon =
@@ -216,7 +217,7 @@ export const NotesList: React.FC<NotesListProps> = ({
           </div>
 
           {group.items.map((a) => {
-            const Icon = KIND_ICONS[a.kind] || StickyNote;
+            const Icon = a.kind === 'ink' && a.arrowHead ? PenArrow : KIND_ICONS[a.kind] || StickyNote;
             const isHovered = hoveredId === a.id;
             return (
               <div
@@ -261,7 +262,7 @@ export const NotesList: React.FC<NotesListProps> = ({
                           &ldquo;{a.quote}&rdquo;
                         </p>
                       ) : (
-                        <p className="text-[12px] italic text-muted capitalize">{a.kind}</p>
+                        <p className="text-[12px] italic text-muted">{NOTE_KIND_LABELS[filterKindOf(a)]}</p>
                       )}
                       {a.text && a.quote && (
                         <p

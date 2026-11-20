@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { locateSpan, type TextPiece } from './findHighlight';
-import { findCountLabel, startHit } from './FindBar';
+import { findCountLabel, keepHit, startHit } from './FindBar';
 import { backupTimeLabel, fileStem, importSummary } from './marksArchiveFormat';
 import { excerpt } from './MarksArchive';
 import { createTextAnnotationSession } from '../hooks/textAnnotationSession';
@@ -97,4 +97,17 @@ test('exports warn about black-outs only when the document has some', async () =
   assert.equal(warn('Full record'), BLACKOUT_TEXT_WARNING);
   assert.equal(warn('Class pack'), BLACKOUT_PACK_WARNING);
   assert.equal(warn('Bring marks back'), undefined);
+});
+
+test('find: when the text searched changes under the same query, the current hit stays where it was', () => {
+  const hits = [{ paragraphIndex: 0, start: 4 }, { paragraphIndex: 3, start: 10 }, { paragraphIndex: 8, start: 2 }, { paragraphIndex: 9, start: 0 }];
+  // The same hit, wherever it now sits in the list.
+  assert.equal(keepHit({ paragraphIndex: 3, start: 10 }, hits), 1);
+  assert.equal(keepHit({ paragraphIndex: 8, start: 2 }, hits), 2);
+  // Gone: the next one after where it was.
+  assert.equal(keepHit({ paragraphIndex: 3, start: 50 }, hits), 2);
+  assert.equal(keepHit({ paragraphIndex: 5, start: 0 }, hits), 2);
+  // Past the last: the first.
+  assert.equal(keepHit({ paragraphIndex: 12, start: 0 }, hits), 0);
+  assert.equal(keepHit({ paragraphIndex: 3, start: 10 }, []), -1);
 });

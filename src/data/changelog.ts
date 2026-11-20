@@ -22,9 +22,65 @@ export interface ReleaseNote {
   highlights: ChangelogItem[];
 }
 
-export const CURRENT_APP_VERSION = '2.10.3';
+export const CURRENT_APP_VERSION = '2.11.0';
 
 export const CHANGELOG_RELEASES: ReleaseNote[] = [
+  {
+    version: '2.11.0',
+    title: 'Freehand Arrows, Focus Tools and Scanned Pages',
+    date: 'November 2026',
+    summary:
+      'Draw arrows by hand, mark up without leaving focus mode, make scanned PDFs selectable on your computer, and read Urdu quotes in the right order.',
+    highlights: [
+      {
+        category: 'feature',
+        title: 'Freehand arrow',
+        description:
+          'Draw a stroke and an arrowhead is added at the end for you. The plain pen and the straight arrow stay as they were. The straight arrow\'s head now looks the same on screen and in the exported PDF. The notes panel and the Markdown export call it "Freehand arrow".'
+      },
+      {
+        category: 'feature',
+        title: 'Tools in focus mode',
+        description:
+          'A floating tool bar waits at the edge of the window. Move your mouse to the edge, or press T, and drag it to either side. It holds the annotation tools, so you can mark up without leaving focus mode. In a text document it carries the tools the reader has: highlight, underline, strikeout, terminology, note, undo and redo.'
+      },
+      {
+        category: 'feature',
+        title: 'Make scanned pages selectable',
+        description:
+          'On a scanned PDF, press "Make text selectable" on a page, or "Make whole document selectable" in the toolbar. It reads English and Urdu on your computer, only when you press it. Nothing is sent anywhere. English scans read accurately. On Urdu Nastaliq scans, highlights land on the right lines, but the recognised words and Find may be inaccurate. Inserting or deleting a page clears the read text for that document. The installer is about 6-7 MB larger.'
+      },
+      {
+        category: 'fix',
+        title: 'Urdu quotes in the right order',
+        description:
+          'Quotes taken from a PDF that has a real Urdu text layer used to come out reversed, with stray characters. They now read in the right order.'
+      },
+      {
+        category: 'fix',
+        title: 'Find in document',
+        description:
+          'Esc closes Find from anywhere. In book view the page turns to the one with the hit. In collapsed view Find lands on hits you can see. Scanned pages are searchable once they have been read.'
+      },
+      {
+        category: 'improvement',
+        title: 'Sticky notes: Enter saves',
+        description:
+          'Enter saves a sticky note and Shift+Enter starts a new line. There is now a visible Save button too, and the tutorial explains both. Fixed a bug where a new sticky note on a PDF did not take typing until you clicked it.'
+      },
+      {
+        category: 'improvement',
+        title: 'Tutorial pictures and new cards',
+        description:
+          'Every picture in the tutorial is recaptured to show its feature in a real state. There are new cards for Freehand arrow and Scanned pages, and the shortcuts card now covers Enter, Shift+Enter and T.'
+      },
+      {
+        category: 'fix',
+        title: 'Tool options in the focus palette',
+        description: 'The tool options menu no longer appears off-screen after you pick a tool in the focus palette.'
+      }
+    ]
+  },
   {
     version: '2.10.3',
     title: 'Smoother Behind the Scenes',

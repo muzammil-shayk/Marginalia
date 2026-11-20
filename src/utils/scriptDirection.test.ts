@@ -4,7 +4,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { hasRtlText, isArabicScript, paragraphTypeface, textDirection } from './scriptDirection';
+import { hasRtlText, isArabicScript, isMostlyRtl, paragraphTypeface, textDirection } from './scriptDirection';
 
 test('direction follows the first letter, skipping digits and punctuation', () => {
   assert.equal(textDirection('دل ہی تو ہے نہ سنگ و خشت'), 'rtl');
@@ -35,4 +35,12 @@ test('Urdu gets Nastaliq with tall lines by default, Naskh when chosen, Latin is
   assert.match(paragraphTypeface('ہزاروں', 'Literata', 'naskh').fontFamily, /Naskh/);
   assert.deepEqual(paragraphTypeface('To be', 'Literata'), { dir: 'ltr', fontFamily: 'Literata', lineHeight: '1.75' });
   assert.equal(paragraphTypeface('שלום', 'Literata').dir, 'rtl');
+});
+
+test('a line is mostly right-to-left when at least half its letters are', () => {
+  assert.equal(isMostlyRtl('شام تھی اور'), true);
+  assert.equal(isMostlyRtl('Iqbal اقبال'), true);
+  assert.equal(isMostlyRtl('Iqbal wrote اقبال'), false);
+  assert.equal(isMostlyRtl('שלום עולם world'), true);
+  assert.equal(isMostlyRtl('123 , .'), false);
 });

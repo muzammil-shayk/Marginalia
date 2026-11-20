@@ -7,6 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs/promises';
+import { existsSync } from 'fs';
 import os from 'os';
 import path from 'path';
 import { LocalDocumentBackend } from './localBackend';
@@ -535,4 +536,45 @@ test('a mark backup kept before the change comes back with themeIds when restore
   await backend.restoreMarkBackup(meta.id, '1700000000000');
   const doc = await backend.getDocument(meta.id);
   assert.deepEqual(doc!.annotations.map((a) => a.themeIds), [['love']]);
+});
+
+// ── OCR of scanned pages ─────────────────────────────────────────────────────
+
+const ocrPage = (text = 'and') => ({ words: [{ text, x: 0.1, y: 0.2, w: 0.1, h: 0.02, line: 0 }], langs: 'eng+urd', createdAt: '2026-11-20T10:00:00.000Z' });
+
+test('an OCR page is saved beside the library, outside documents/, and read back by page', async (t) => {
+  const { root, backend } = await tempStore(t);
+  const id = await makeDoc(backend);
+  assert.equal(await backend.saveOcrPage(id, 3, ocrPage('three')), true);
+  assert.equal(await backend.saveOcrPage(id, 12, ocrPage('twelve')), true);
+  assert.deepEqual(await backend.getOcrPages(id), { 3: ocrPage('three'), 12: ocrPage('twelve') });
+  assert.deepEqual((await fs.readdir(path.join(root, 'ocr', id))).sort(), ['12.json', '3.json']);
+  assert.deepEqual((await fs.readdir(path.join(root, 'documents'))).filter((n) => !n.startsWith(id)), []);
+});
+
+test('OCR for an unknown document or a bad page number is refused and writes nothing', async (t) => {
+  const { root, backend } = await tempStore(t);
+  const id = await makeDoc(backend);
+  assert.equal(await backend.saveOcrPage('a'.repeat(32), 1, ocrPage()), false);
+  assert.equal(await backend.saveOcrPage('../x', 1, ocrPage()), false);
+  for (const page of [0, -1, 1.5, Number.NaN]) assert.equal(await backend.saveOcrPage(id, page, ocrPage()), false, String(page));
+  assert.equal(existsSync(path.join(root, 'ocr')), false);
+  assert.deepEqual(await backend.getOcrPages('a'.repeat(32)), {});
+});
+
+test('deleting a document deletes its OCR too', async (t) => {
+  const { root, backend } = await tempStore(t);
+  const id = await makeDoc(backend);
+  await backend.saveOcrPage(id, 1, ocrPage());
+  await backend.deleteDocument(id);
+  assert.equal(existsSync(path.join(root, 'ocr', id)), false);
+});
+
+test('a page edit drops the OCR, whose page numbers no longer match the PDF', async (t) => {
+  const { root, backend } = await tempStore(t);
+  const id = await makeDoc(backend);
+  await backend.saveOcrPage(id, 2, ocrPage());
+  await backend.editPdfPages(id, async ({ annotations }) => ({ pdf: Buffer.from('%PDF-new'), annotations, result: true }));
+  assert.deepEqual(await backend.getOcrPages(id), {});
+  assert.equal(existsSync(path.join(root, 'ocr', id)), false);
 });

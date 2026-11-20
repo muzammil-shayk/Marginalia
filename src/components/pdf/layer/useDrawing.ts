@@ -72,6 +72,9 @@ export function useDrawing(deps: UseDrawingDeps) {
     const point = pointToFraction(e.clientX, e.clientY, box);
 
     if (tool === 'note') {
+      // The note's editor takes focus as it opens; without this the press's own mousedown then
+      // moved focus back to the page, and typing went nowhere until the field was clicked.
+      e.preventDefault();
       // Placed centred on the click and clamped inside the page, so a note dropped near an edge
       // is not left hanging half outside the paper.
       const w = DEFAULT_NOTE_SIZE.w;
@@ -94,12 +97,12 @@ export function useDrawing(deps: UseDrawingDeps) {
       return;
     }
 
-    if (tool === 'ink' || tool === 'maskPen' || tool === 'mask' || tool === 'area' || BOX_KINDS.includes(tool as never) || LINE_KINDS.includes(tool as never)) {
+    if (tool === 'ink' || tool === 'inkArrow' || tool === 'maskPen' || tool === 'mask' || tool === 'area' || BOX_KINDS.includes(tool as never) || LINE_KINDS.includes(tool as never)) {
       drawingRef.current = true;
       // Capture keeps the drag following the pointer when it leaves the page box, which would
       // otherwise truncate the mark at the edge.
       e.currentTarget.setPointerCapture(e.pointerId);
-      if (tool === 'ink' || tool === 'maskPen') setDraftStroke([point]);
+      if (tool === 'ink' || tool === 'inkArrow' || tool === 'maskPen') setDraftStroke([point]);
       else {
         setDraftStart(point);
         setDraftEnd(point);
@@ -113,7 +116,7 @@ export function useDrawing(deps: UseDrawingDeps) {
     if (!box) return;
     const point = pointToFraction(e.clientX, e.clientY, box);
 
-    if (tool === 'ink' || tool === 'maskPen') {
+    if (tool === 'ink' || tool === 'inkArrow' || tool === 'maskPen') {
       setDraftStroke((prev) => {
         if (!prev) return [point];
         // Thin out near-duplicate samples: a high-frequency pointer emits far more points than
@@ -162,7 +165,7 @@ export function useDrawing(deps: UseDrawingDeps) {
       return;
     }
 
-    if (tool === 'ink' || tool === 'maskPen') {
+    if (tool === 'ink' || tool === 'inkArrow' || tool === 'maskPen') {
       setDraftStroke((points) => {
         // A tap with the pen is a mis-click, not a one-point drawing.
         if (points && points.length > 1) {
@@ -172,7 +175,8 @@ export function useDrawing(deps: UseDrawingDeps) {
             weight: toolWeight ?? DEFAULT_WEIGHT,
             strokeStyle: toolStrokeStyle,
             // Black it out, freehand: an opaque stroke to blot content out.
-            ...(tool === 'maskPen' && { blackout: true as const, themeIds: [] })
+            ...(tool === 'maskPen' && { blackout: true as const, themeIds: [] }),
+            ...(tool === 'inkArrow' && { arrowHead: true as const })
           });
         }
         return null;

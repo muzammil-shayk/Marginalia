@@ -1,3 +1,5 @@
+import { isMostlyRtl } from './scriptDirection';
+
 /**
  * A selection clipped to one container (2.8.0).
  *
@@ -16,4 +18,61 @@ export function clippedRange(range: Range, root: Element): Range | null {
   if (root.contains(range.startContainer)) clip.setStart(range.startContainer, range.startOffset);
   if (root.contains(range.endContainer)) clip.setEnd(range.endContainer, range.endOffset);
   return clip.collapsed ? null : clip;
+}
+
+/** One text node's selected part and the box it is drawn in (viewport pixels). */
+export interface TextFragment {
+  text: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Glyphs a PDF gives no Unicode for come through as C0 control characters; tab and newline stay. */
+const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
+
+/**
+ * A quote in reading order from a selection's fragments, given in document order.
+ *
+ * PDFs write Arabic-script lines (Urdu, Persian, Arabic) as runs placed left to right on the page,
+ * so document order reads such a line backwards: the last word first. Consecutive fragments on the
+ * same line are one line; a line that is mostly right-to-left is read by position, right to left.
+ * Other lines keep document order, so two columns side by side are never interleaved.
+ */
+export function quoteFromFragments(fragments: TextFragment[]): string {
+  const lines: TextFragment[][] = [];
+  for (const f of fragments) {
+    const line = lines[lines.length - 1];
+    const mid = f.y + f.h / 2;
+    const onLine = line?.some((o) => mid >= o.y && mid <= o.y + o.h);
+    if (line && onLine) line.push(f);
+    else lines.push([f]);
+  }
+  return lines
+    .map((line) => {
+      const ordered = isMostlyRtl(line.map((f) => f.text).join('')) ? [...line].sort((a, b) => b.x + b.w - (a.x + a.w)) : line;
+      return ordered.map((f) => f.text.replace(CONTROL, '')).join('');
+    })
+    .join(' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/** The selected part of each text node in `range`, in document order, with its element's box. */
+export function rangeFragments(range: Range): TextFragment[] {
+  const root = range.commonAncestorContainer;
+  const walker = (root.ownerDocument ?? (root as Document)).createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const out: TextFragment[] = [];
+  for (let n = root.nodeType === Node.TEXT_NODE ? root : walker.nextNode(); n; n = walker.nextNode()) {
+    const node = n as Text;
+    if (!range.intersectsNode(node)) continue;
+    const start = node === range.startContainer ? range.startOffset : 0;
+    const end = node === range.endContainer ? range.endOffset : node.data.length;
+    const box = node.parentElement?.getBoundingClientRect();
+    if (!box || end <= start) continue;
+    out.push({ text: node.data.slice(start, end), x: box.left, y: box.top, w: box.width, h: box.height });
+    if (n === root) break;
+  }
+  return out;
 }

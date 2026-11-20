@@ -5,8 +5,8 @@
 const fs = require('fs');
 const path = require('path');
 
-/** The library's folders, copied whole (mark backups are nested: backups/{id}/{ms}.json). */
-const FOLDERS = ['documents', 'originals', 'backups'];
+/** The library's folders, copied whole (nested: mark backups backups/{id}/{ms}.json, OCR ocr/{id}/{page}.json). */
+const FOLDERS = ['documents', 'originals', 'backups', 'ocr'];
 
 /**
  * Copies one file without ever replacing a different file already at `to`. An identical file

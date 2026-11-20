@@ -22,6 +22,7 @@ import {
   saveAnnotations
 } from '../../../utils/documentStorage';
 import { PDF_WASM_URL, SAVE_DEBOUNCE_MS } from './docState';
+import { ocrStore } from '../ocr/usePageOcr';
 import type { WorkspaceMarks, WorkspaceStatus, WorkspaceView } from './workspaceState';
 
 export interface UsePdfDocumentDeps {
@@ -46,7 +47,10 @@ export function usePdfDocument(deps: UsePdfDocumentDeps) {
     const task = getDocument({ url: fileUrl, wasmUrl: PDF_WASM_URL });
     task.promise.then(
       (doc) => {
-        if (!cancelled) setPdf(doc);
+        if (cancelled) return;
+        // Pages read by OCR before (saved on disk) get their text layer back. No OCR runs here.
+        void ocrStore.attach(docId, doc);
+        setPdf(doc);
       },
       (err) => {
         if (cancelled) return;
@@ -58,6 +62,8 @@ export function usePdfDocument(deps: UsePdfDocumentDeps) {
     // only teardown pdf.js exposes at this level.
     return () => {
       cancelled = true;
+      // A read in progress needs this document's pages; it stops with it, saving nothing.
+      ocrStore.cancel(docId);
       void task.destroy();
     };
   }, [fileUrl]);

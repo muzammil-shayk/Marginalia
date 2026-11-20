@@ -1,4 +1,5 @@
 import type { TextStyle } from '../../utils/pastedText';
+import type { OcrPage } from '../../utils/ocrWords';
 import { themeIdsOf } from '../../utils/markThemes';
 
 /**
@@ -225,6 +226,10 @@ export interface DocumentBackend {
    * or its original is missing. Keeps the previous PDF as `originals/{id}.prev`.
    */
   editPdfPages<T>(id: string, edit: (input: PdfPageEditInput) => Promise<PdfPageEditOutput<T>>): Promise<T | null>;
+  /** OCR of a scanned PDF's pages, by page number (1-based). `{}` when none or an unknown id. */
+  getOcrPages(id: string): Promise<Record<number, OcrPage>>;
+  /** Saves one page's OCR. False for an unknown document or a page number below 1. */
+  saveOcrPage(id: string, page: number, data: OcrPage): Promise<boolean>;
   /** Up to 5 time-spaced mark backups, newest first. `[]` for an unknown id. */
   listMarkBackups(id: string): Promise<MarkBackupInfo[]>;
   /** Puts a backup back (the live set becomes a backup first). Null if document or backup is missing. */

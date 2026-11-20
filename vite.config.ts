@@ -48,6 +48,40 @@ function pdfjsWasm(): Plugin {
 }
 
 /**
+ * Ships OCR (tesseract.js) for scanned pages, offline, under `/ocr/`: the worker script, the one
+ * core build Electron's Chromium runs (SIMD, LSTM only), and English and Urdu models. The packages
+ * are devDependencies, so only these files reach the installer. Nothing is fetched from the web:
+ * `ocr/tesseractEngine.ts` points tesseract.js at these paths.
+ */
+function ocrAssets(): Plugin {
+  const pkg = (name: string) => path.dirname(require.resolve(`${name}/package.json`));
+  const FILES: Record<string, string> = {
+    'worker.min.js': path.join(pkg('tesseract.js'), 'dist', 'worker.min.js'),
+    'tesseract-core-simd-lstm.wasm.js': path.join(pkg('tesseract.js-core'), 'tesseract-core-simd-lstm.wasm.js'),
+    'eng.traineddata.gz': path.join(pkg('@tesseract.js-data/eng'), '4.0.0_best_int', 'eng.traineddata.gz'),
+    'urd.traineddata.gz': path.join(pkg('@tesseract.js-data/urd'), '4.0.0_best_int', 'urd.traineddata.gz')
+  };
+  const PREFIX = '/ocr/';
+  return {
+    name: 'marginalia:ocr-assets',
+    generateBundle() {
+      for (const [name, file] of Object.entries(FILES)) {
+        this.emitFile({ type: 'asset', fileName: `ocr/${name}`, source: fs.readFileSync(file) });
+      }
+    },
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (!req.url?.startsWith(PREFIX)) return next();
+        const file = FILES[path.basename(req.url)];
+        if (!file) return next();
+        res.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript' : 'application/octet-stream');
+        fs.createReadStream(file).pipe(res);
+      });
+    }
+  };
+}
+
+/**
  * Serves the project's own legal documents at a fixed path, the same way `pdfjsWasm` above serves
  * binaries that live outside `src/`. Only the two long, non-prose ones go through this — the MIT
  * license text and the full third-party notices dump — since linking out to them (opened by
@@ -88,7 +122,7 @@ function legalDocs(): Plugin {
 
 export default defineConfig(() => {
   return {
-    plugins: [react(), tailwindcss(), pdfjsWasm(), legalDocs()],
+    plugins: [react(), tailwindcss(), pdfjsWasm(), ocrAssets(), legalDocs()],
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

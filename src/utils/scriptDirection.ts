@@ -61,3 +61,15 @@ export function paragraphTypeface(
     ? { dir, fontFamily: `${NASKH_STACK}, ${latinFont}`, lineHeight: '1.9' }
     : { dir, fontFamily: `${NASTALIQ_STACK}, ${latinFont}`, lineHeight: '2.4' };
 }
+
+/** Whether at least half the letters in a passage are right-to-left (Urdu, Arabic, Hebrew…). */
+export function isMostlyRtl(text: string): boolean {
+  let rtl = 0;
+  let letters = 0;
+  for (const ch of text) {
+    if (!STRONG.test(ch)) continue;
+    letters++;
+    if (RTL_CHAR.test(ch)) rtl++;
+  }
+  return letters > 0 && rtl * 2 >= letters;
+}

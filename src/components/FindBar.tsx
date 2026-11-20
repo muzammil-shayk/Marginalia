@@ -25,6 +25,14 @@ export interface DocumentFindConfig {
   units: string[] | null;
   /** The unit's element on the page (a paragraph, a page's text layer), or null when not drawn. */
   unitElement: (index: number) => Element | null;
+  /**
+   * Every copy of the unit on the page, when there can be several (a PDF page in the book's hidden
+   * neighbours, or as strips when collapsed to marks). All are painted; the current hit is taken
+   * from a copy where `shown` says it can be seen.
+   */
+  unitElements?: (index: number) => Element[];
+  /** Whether a hit can be seen where it is drawn. Not shown anywhere: `reveal` gets null. */
+  shown?: (range: Range) => boolean;
   /** Brings unit `index` into view; `range` is the current hit when the unit is drawn. */
   reveal: (index: number, range: Range | null) => void;
   /** Where units are drawn, watched so newly drawn pages are painted too. */
@@ -57,6 +65,16 @@ export function startHit(hits: { paragraphIndex: number }[], unit: number): numb
   return i === -1 ? 0 : i;
 }
 
+/**
+ * The text searched changed under the same query (a page read by OCR joined, a paragraph redrawn):
+ * the same hit if it is still there, else the next one after it, else the first. Pure.
+ */
+export function keepHit(hit: { paragraphIndex: number; start: number }, hits: { paragraphIndex: number; start: number }[]): number {
+  if (!hits.length) return -1;
+  const after = hits.findIndex((h) => h.paragraphIndex > hit.paragraphIndex || (h.paragraphIndex === hit.paragraphIndex && h.start >= hit.start));
+  return after === -1 ? 0 : after;
+}
+
 /** "3 of 12", "No results", or '' for an empty query. Pure. */
 export function findCountLabel(query: string, count: number, current: number, loading: boolean): string {
   if (!query.trim()) return '';
@@ -80,10 +98,18 @@ export function useDocumentFind(cfg: DocumentFindConfig): DocumentFind {
     () => (open && cfg.units ? findInParagraphs(cfg.units, deferred, options) : []),
     [open, cfg.units, deferred, options]
   );
-  // A new search starts at the first hit from where the reader is.
+  // A new search starts at the first hit from where the reader is; the same search over changed
+  // text (a page read by OCR joined it) stays on the hit it was on.
+  const last = useRef<{ query: string; options: FindOptions; hit: ParagraphHit | null }>({ query: '', options: {}, hit: null });
   useEffect(() => {
-    setCurrent(startHit(hits, c.current.startUnit?.() ?? 0));
+    const prev = last.current;
+    const same = prev.hit && prev.query === deferred && prev.options === options;
+    setCurrent(same ? keepHit(prev.hit!, hits) : startHit(hits, c.current.startUnit?.() ?? 0));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hits]);
+  useEffect(() => {
+    last.current = { query: deferred, options, hit: hits[current] ?? null };
+  }, [deferred, options, hits, current]);
 
   const openFind = useCallback(() => {
     if (!open) opener.current = document.activeElement as HTMLElement | null;
@@ -128,6 +154,19 @@ export function useDocumentFind(cfg: DocumentFindConfig): DocumentFind {
     if (!cfg.enabled && open) close();
   }, [cfg.enabled, open, close]);
   useEffect(() => () => paintFindHits([], null), []);
+  // Escape closes it wherever focus is (the field handles its own), unless something on the page
+  // already used that Escape (a tool put down, a mark deselected). On the document, so focus mode's
+  // window listener sees it used and stays on.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented || document.querySelector('[aria-modal="true"]')) return;
+      e.preventDefault();
+      close();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, close]);
 
   // Paint: every hit on a drawn unit, matched by its ordinal inside that unit.
   const pendingReveal = useRef(false);
@@ -147,16 +186,18 @@ export function useDocumentFind(cfg: DocumentFindConfig): DocumentFind {
     const all: Range[] = [];
     let currentRange: Range | null = null;
     for (const [unit, members] of byUnit) {
-      const el = c.current.unitElement(unit);
-      if (!el) continue;
-      const pieces = readPieces(el);
-      const dom = findInParagraphs([piecesText(pieces)], deferred, options);
-      for (const i of members) {
-        const h = dom[ordinals[i]];
-        const r = h && rangeFor(pieces, h.start, h.end);
-        if (!r) continue;
-        all.push(r);
-        if (i === current) currentRange = r;
+      const one = c.current.unitElement(unit);
+      const els = c.current.unitElements?.(unit) ?? (one ? [one] : []);
+      for (const el of els) {
+        const pieces = readPieces(el);
+        const dom = findInParagraphs([piecesText(pieces)], deferred, options);
+        for (const i of members) {
+          const h = dom[ordinals[i]];
+          const r = h && rangeFor(pieces, h.start, h.end);
+          if (!r) continue;
+          all.push(r);
+          if (i === current && !currentRange && (c.current.shown?.(r) ?? true)) currentRange = r;
+        }
       }
     }
     paintFindHits(all, currentRange);
@@ -186,7 +227,8 @@ export function useDocumentFind(cfg: DocumentFindConfig): DocumentFind {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => void paint());
     });
-    obs.observe(root, { childList: true, subtree: true, characterData: true });
+    // Attributes too: a book page coming out of hiding or a strip moving changes no children.
+    obs.observe(root, { childList: true, subtree: true, characterData: true, attributes: true, attributeFilter: ['data-offstage', 'data-band-top'] });
     paint();
     return () => {
       obs.disconnect();

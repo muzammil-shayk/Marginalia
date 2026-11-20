@@ -84,7 +84,8 @@ const KIND_LABELS: Record<string, string> = {
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
-function labelOf(kind: string, e: { isTerminology?: unknown; area?: unknown; title?: unknown }): string {
+function labelOf(kind: string, e: { isTerminology?: unknown; area?: unknown; title?: unknown; arrowHead?: unknown }): string {
+  if (kind === 'ink' && e.arrowHead === true) return 'Freehand arrow';
   if (e.area === true) return 'Area highlight';
   if (e.isTerminology === true) return 'Term';
   if (kind === 'note' && str(e.title)) return str(e.title);
@@ -144,7 +145,7 @@ function pdfEntries(entries: StoredEntry[], themes: Theme[]): ExportMark[] {
       const entry: ExportMark = {
         ...base(e, themes),
         kind,
-        label: labelOf(kind, { isTerminology: e.isTerminology, area: e.area, title: e.title }),
+        label: labelOf(kind, { isTerminology: e.isTerminology, area: e.area, title: e.title, arrowHead: e.arrowHead }),
         location: markLocation(e),
         quote: str(e.quote),
         note: str(e.text)

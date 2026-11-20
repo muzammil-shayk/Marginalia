@@ -2518,6 +2518,108 @@ main[data-annotation-surface] ::selection {
   from { background-color: transparent; }
   to { background-color: rgb(79 143 122 / 0.42); }
 }
+/* T in focus mode: the tools fade in at the side of the window. */
+.sd-tools {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 6px;
+  border-radius: 10px;
+  border: 1px solid var(--color-stone-200);
+  background: #fff;
+  box-shadow: 0 4px 12px -6px rgb(42 38 33 / 0.35);
+  opacity: 0;
+  translate: -6px -50%;
+}
+.sd-tools i {
+  width: 12px;
+  height: 12px;
+  border-radius: 4px;
+  background: var(--color-stone-300);
+}
+.sd-tools i:nth-child(2) {
+  background: #4f8f7a;
+}
+.dark .sd-tools {
+  background: var(--color-night-2);
+  border-color: var(--color-stone-700);
+}
+.dark .sd-tools i {
+  background: var(--color-stone-600);
+}
+.dark .sd-tools i:nth-child(2) {
+  background: #4f8f7a;
+}
+.sd-palette .sd-page {
+  padding-left: 30px;
+}
+.is-playing .sd-palette .sd-tools {
+  animation: sd-palette-in 0.35s 0.7s var(--ease-out) forwards;
+}
+@keyframes sd-palette-in {
+  to { opacity: 1; translate: 0 -50%; }
+}
+/* Enter · Shift+Enter: a note gains a second line, then is saved (its editing ring settles). */
+.sd-notebox {
+  position: absolute;
+  right: 12px;
+  bottom: 10px;
+  display: flex;
+  flex-direction: column;
+  min-width: 112px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  border: 1.5px dashed var(--color-gold);
+  border-left: 3px solid #6d6ad8;
+  background: rgb(109 106 216 / 0.14);
+  font-family: 'Caveat Variable', Caveat, cursive;
+  font-size: 17px;
+  line-height: 1.05;
+}
+.sd-nl2 {
+  opacity: 0;
+}
+.sd-keycap {
+  position: absolute;
+  left: 14px;
+  bottom: 14px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--color-stone-300);
+  background: #fff;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--color-ink);
+  opacity: 0;
+}
+.dark .sd-keycap {
+  background: var(--color-night-2);
+  border-color: var(--color-stone-600);
+  color: var(--color-paper);
+}
+.is-playing .sd-noteKeys .sd-k1 {
+  animation: sd-pop-in 0.3s 0.5s var(--ease-out) forwards, sd-key-off 0.3s 1.6s var(--ease-out) forwards;
+}
+.is-playing .sd-noteKeys .sd-nl2 {
+  animation: sd-pop-in 0.35s 1s var(--ease-out) forwards;
+}
+.is-playing .sd-noteKeys .sd-k2 {
+  animation: sd-pop-in 0.3s 1.9s var(--ease-out) forwards;
+}
+.is-playing .sd-noteKeys .sd-notebox {
+  animation: sd-note-saved 0.4s 2.2s var(--ease-out) forwards;
+}
+@keyframes sd-key-off {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes sd-note-saved {
+  to { border-color: transparent; border-left-color: #6d6ad8; }
+}
 /* Esc: the open menu closes. */
 .sd-menu {
   position: absolute;

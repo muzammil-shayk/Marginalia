@@ -31,7 +31,7 @@ export interface GuideFeature {
 const MOD = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || '') ? '⌘' : 'Ctrl+';
 
 /** The little scene the shortcuts card plays for each key (GuideSection.tsx). */
-export type ShortcutDemo = 'collapse' | 'highlight' | 'underline' | 'strike' | 'area' | 'pen' | 'note' | 'selectErase' | 'theme' | 'turn' | 'find' | 'focus' | 'undo' | 'delete' | 'escape';
+export type ShortcutDemo = 'collapse' | 'highlight' | 'underline' | 'strike' | 'area' | 'pen' | 'note' | 'selectErase' | 'theme' | 'turn' | 'find' | 'focus' | 'undo' | 'delete' | 'escape' | 'noteKeys' | 'palette';
 
 /** The keys the app answers to, as the workspace and reader define them (workspaceKeys.ts, FocusMode, FindBar). */
 export const SHORTCUTS: { keys: string; does: string; demo: ShortcutDemo }[] = [
@@ -41,11 +41,13 @@ export const SHORTCUTS: { keys: string; does: string; demo: ShortcutDemo }[] = [
   { keys: 'A', does: 'Area highlight: drag a box over a figure or a scanned page (PDF)', demo: 'area' },
   { keys: 'P', does: 'Pen: draw freehand on the page (PDF)', demo: 'pen' },
   { keys: 'N', does: 'Sticky note: click where it goes, then write (PDF)', demo: 'note' },
+  { keys: 'Enter · Shift+Enter', does: 'Writing a note: Enter saves it, Shift+Enter starts a new line', demo: 'noteKeys' },
   { keys: 'V · E', does: 'Select a mark to change it; erase a mark with a click (PDF)', demo: 'selectErase' },
   { keys: '1 – 9', does: 'File new marks under that theme; over a selected mark, turn the theme on or off', demo: 'theme' },
   { keys: '← →', does: 'Turn the pages of a two-page spread (Page Up and Page Down too)', demo: 'turn' },
   { keys: `${MOD}F`, does: 'Find words in the open document and step through them', demo: 'find' },
   { keys: 'F', does: 'Focus mode: everything but the page steps back', demo: 'focus' },
+  { keys: 'T', does: 'In focus mode: bring the tools in from the side of the window, or put them away', demo: 'palette' },
   { keys: 'C', does: 'Collapse to marks: only what you marked stays, the rest folds away', demo: 'collapse' },
   { keys: `${MOD}Z · ${MOD}Shift+Z`, does: 'Undo the last change, then redo it (Ctrl+Y redoes on Windows too)', demo: 'undo' },
   { keys: 'Delete', does: 'Remove the selected mark', demo: 'delete' },
@@ -71,7 +73,7 @@ const GROUPS: GuideGroup[] = [
       { id: 'spread', title: 'Two pages, turned like a book', caption: 'The open-book button shows two pages. Turn with the arrows at the edges, the arrow keys, or a sideways swipe.', focus: { x: 91.7, y: 16.7, zoom: 1.5 } },
       { id: 'poetry', title: 'Poetry view', caption: 'The feather button keeps a poem’s lines, numbers lines or shers, and underlines the radif and rhyme. Urdu reads right to left in Nastaliq.', focus: { x: 38.9, y: 16.7, zoom: 1.6 } },
       { id: 'pdfgrid', title: 'One, two, four or six PDF pages', caption: 'In a PDF, choose 1 page, 2 as a book, 4 or 6 in view, or Fit page. In 4 or 6, click a page to open it at reading size.', focus: { x: 40, y: 40, zoom: 1.4 } },
-      { id: 'focus', title: 'Focus mode', caption: 'Press F (or the focus button) and everything but the page steps back. Esc brings it all back.', focus: { x: 31, y: 41, zoom: 1.4 } }
+      { id: 'focus', title: 'Focus mode', caption: 'Press F (or the focus button) and everything but the page steps back. Your tools wait at the side of the window: move the pointer to that edge, or press T, and they fade in. Drag them by the grip to either side. Esc brings it all back.', focus: { x: 31, y: 41, zoom: 1.4 } }
     ]
   },
   {
@@ -84,18 +86,19 @@ const GROUPS: GuideGroup[] = [
       { id: 'tool-underline', title: 'Underline', caption: 'Press U and drag across words to underline them in the theme’s colour.', focus: at(1.6) },
       { id: 'tool-strikeout', title: 'Strike out', caption: 'Press S and drag across words to strike them through: a claim you doubt, or a word to cut.', focus: at(1.6) },
       { id: 'tool-pen', title: 'Pen', caption: 'Press P and draw freehand: a squiggle under a line, a ring round a word. Its options set colour, thickness and dashes.', focus: at(1.5) },
+      { id: 'tool-inkarrow', title: 'Freehand arrow', caption: 'Draw a curve by hand, round the text in the way, and an arrowhead lands where you lift the pen, pointing the way the line was heading. Its options set colour, thickness and dashes.', focus: at(1.6) },
       { id: 'blackout', title: 'Black it out', caption: 'Hide words or anything on the page. In its options pick Words (select text), Box (drag) or Freehand (draw); on a scanned page Words draws a box. Export can remove the hidden words from the PDF too.', focus: at(1.6) },
       { id: 'tool-rect', title: 'Rectangle', caption: 'Drag a rectangle round a passage. Its options set colour, thickness, and solid, dashed or dotted lines.', focus: at(1.4) },
       { id: 'tool-ellipse', title: 'Ellipse', caption: 'Drag an ellipse to ring a word or a phrase.', focus: at(1.8) },
       { id: 'tool-arrow', title: 'Arrow', caption: 'Drag from where the arrow starts to what it points at, to tie a thought to a line.', focus: at(1.6) },
       { id: 'tool-line', title: 'Line', caption: 'Drag a straight line: a rule under a paragraph, or a stroke down the margin.', focus: at(1.5) },
       { id: 'tool-bracket', title: 'Bracket', caption: 'Drag down beside the lines you mean and a brace gathers them, on the left or the right as set in its options.', focus: at(1.8) },
-      { id: 'tool-note', title: 'Sticky note', caption: 'Press N and click to place a note, then write in it. Three styles in its options: outline, solid or see-through. Its colour is the theme it is filed under: with the starting themes, green is Key Concepts, violet Questions, orange Metaphors.', focus: at(1.3) },
+      { id: 'tool-note', title: 'Sticky note', caption: 'Press N and click to place a note, then write in it: Enter saves, Shift+Enter starts a new line, or press Save. Three styles in its options: outline, solid or see-through. Its colour is the theme it is filed under: with the starting themes, green is Key Concepts, violet Questions, orange Metaphors.', focus: at(1.3) },
       { id: 'tool-text', title: 'Text box', caption: 'Drag a box and write straight onto the page. Pick Hand in its options for handwriting; size, bold, italic, alignment and colour are there too. Select a box later to change any of them.', focus: at(1.3) },
       { id: 'tool-erase', title: 'Erase', caption: 'Press E and click any mark to remove it. Undo brings it back.', focus: at(1.6) },
       { id: 'tool-undo', title: 'Undo and redo', caption: `Took back a mark, an edit or a delete? Undo with ${MOD}Z and redo with ${MOD}Shift+Z, or the curved arrows.`, focus: at(2) },
       { id: 'tool-more', title: 'The ··· menu', caption: 'Holds the rest: page up and down, zoom, fit to width or page, 1, 2, 4 or 6 pages in view, and inserting or deleting a page.', focus: at(1.7) },
-      { id: 'tool-addnote', title: 'Add a note', caption: 'In a TXT, EPUB or DOCX book, + writes a note on the paragraph you are reading, with a title and quote if you like. Enter saves it.', focus: at(1.3) },
+      { id: 'tool-addnote', title: 'Add a note', caption: 'In a TXT, EPUB or DOCX book, + writes a note on the paragraph you are reading, with a title and quote if you like. Enter saves it, Shift+Enter starts a new line.', focus: at(1.3) },
       { id: 'tool-collapse', title: 'Collapse to marks', caption: 'Press C, or the pinch button, and the document folds shut around what you marked: one theme, notes, terminology or Find hits if you like, with a little context around each. Open any fold, or read on from it.', focus: at(1.4) },
       { id: 'tool-notes', title: 'Marks and notes', caption: 'The pill counts the document’s marks and notes. Click it to show or hide the notes in the margin.', focus: at(1.5) }
     ]
@@ -107,6 +110,7 @@ const GROUPS: GuideGroup[] = [
       { id: 'popover', title: 'Select words to mark them', caption: 'Select a passage and a menu appears: pick a theme, then highlight, underline, strike out, react, or write a sticky note.', focus: { x: 87, y: 45, zoom: 1.6 } },
       { id: 'overlap', title: 'One passage, several themes', caption: 'Turn on more than one theme in the selection menu, or mark the same words again under another theme: the mark is filed under each, with a small dot for every extra theme.', focus: { x: 10, y: 20, zoom: 1.6 } },
       { id: 'terminology', title: 'Terminology', caption: 'The tag button marks a term or piece of jargon, always in the terminology colour set in Settings, and gathers terms in My Margins Tracker.', focus: { x: 14, y: 20, zoom: 1.8 } },
+      { id: 'ocr', title: 'Scanned pages', caption: 'A page that is only a picture has no words to select. Press Make text selectable on it, or the text-cursor button for the whole document, and its words are read on your computer: then highlight, underline and Find work there. English scans read accurately; on Urdu (Nastaliq) scans highlights land on the right lines but the words may be off. Inserting or deleting a page clears what was read.', focus: { x: 50, y: 30, zoom: 1.5 } },
       { id: 'pdftools', title: 'Drawing on a PDF', caption: 'Pen, shapes, arrows, brackets, sticky notes, text boxes and area highlights over figures and tables.', focus: { x: 33.5, y: 9.5, zoom: 1.7 } },
       { id: 'links', title: 'Linked marks', caption: 'Link two marks that answer each other, even pages apart, and jump from one to the other.', focus: { x: 92, y: 65.7, zoom: 1.7 } },
       { id: 'shortcuts', title: 'Keyboard shortcuts', caption: 'Each shortcut in turn: the keys, what they do, and the effect on a page. Click the dots to pick one.', keys: SHORTCUTS }

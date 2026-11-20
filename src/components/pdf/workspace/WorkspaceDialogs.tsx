@@ -9,6 +9,7 @@ import type { WorkspaceSelection, WorkspaceView } from './workspaceState';
 import type { MarkMutations } from './useMarkMutations';
 import type { MarkGeometry } from './useMarkGeometry';
 import type { PageEdits } from './usePageEdits';
+import { noteKeySaves } from '../workspaceKeys';
 
 export interface WorkspaceDialogsProps {
   isDark: boolean;
@@ -64,7 +65,7 @@ export const WorkspaceDialogs: React.FC<WorkspaceDialogsProps> = ({ isDark, muta
                 // Enter saves; Shift+Enter starts a new line. Notes are usually one line long,
                 // so the key people reach for first should be the one that finishes the job —
                 // and the paragraph break is still there for the occasions it is wanted.
-                if (e.key === 'Enter' && !e.shiftKey) {
+                if (noteKeySaves(e.nativeEvent)) {
                   e.preventDefault();
                   saveEditing();
                 }

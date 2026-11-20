@@ -8,7 +8,7 @@ import React, { useEffect, useCallback } from 'react';
 import { UserSettings } from '../../../types';
 import { FractionRect, PdfTool, isTextAnchored, mergeRectsIntoLines, rectToFraction } from '../annotationModel';
 import { isTypingTarget } from '../workspaceKeys';
-import { clippedRange } from '../../../utils/selectionText';
+import { clippedRange, quoteFromFragments, rangeFragments } from '../../../utils/selectionText';
 import { blackoutMarks } from '../textMarking';
 import type { WorkspaceMarks, WorkspaceSelection } from './workspaceState';
 import type { PdfToolStyles } from './usePdfToolStyles';
@@ -78,7 +78,8 @@ export function useSelectionCapture(deps: UseSelectionCaptureDeps) {
       const strip = pageEl.closest('.pdf-band');
       const clip = whole && strip ? inSight(whole, layer!, strip) : whole;
       if (!clip) continue;
-      const quote = clip.toString().replace(/\s+/g, ' ').trim();
+      // In reading order: an Urdu line's runs sit left to right in the layer (selectionText.ts).
+      const quote = quoteFromFragments(rangeFragments(clip));
       // Zero-area rects are emitted for collapsed line ends and would render as invisible slivers
       // that are impossible to click or erase.
       const rects = Array.from(clip.getClientRects()).filter((r) => r.width >= 0.5 && r.height >= 0.5);

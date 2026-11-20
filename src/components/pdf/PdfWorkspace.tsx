@@ -13,6 +13,7 @@ import { Loader2, ArrowLeft, Check } from '../icons';
 import type { ThemeStore } from '../themeStore';
 import { AnnotationFocus, Screen, TransitionType, UserSettings } from '../../types';
 import { pageToolFor } from './annotationModel';
+import type { PaletteSpot } from '../paletteSpot';
 import { usePdfCollapse } from './workspace/PdfCollapsed';
 import { BlackoutExportDialog } from './workspace/BlackoutExportDialog';
 import { ErrorDialog } from '../ErrorDialog';
@@ -59,6 +60,8 @@ interface PdfWorkspaceProps {
   /** Focus mode: header and toolbar step away (App owns it; F and Escape). */
   focusMode?: boolean;
   onToggleFocus?: () => void;
+  /** Saves where focus mode's floating tools were moved to (`settings.focusPalette`). */
+  onFocusPaletteChange?: (spot: PaletteSpot) => void;
   /** Themes, for the selection menu's "+ New theme". */
   themeStore?: ThemeStore;
   /** Adds the themes a marks import brought with it. */
@@ -77,6 +80,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   onNavigate,
   focusMode = false,
   onToggleFocus,
+  onFocusPaletteChange,
   themeStore,
   onAddThemes,
   jumpToPage
@@ -95,10 +99,10 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   const marking = useTextMarking({ settings, styles, marks, selection, scrollRef: view.scrollRef, startEditingId: mutations.startEditingId });
   const themePicker = useWorkspaceKeys({ settings, themeStore, styles, marks, selection, mutations, marking });
   const nav = usePdfNavigation({ tool, docId, jumpToPage, resumeReading, zoomTouchedRef, view });
-  const extras = useWorkspaceExtras({ docId, documentTitle, isDark, onAddThemes, saver, settings, marks, selection, view, status, nav });
+  const collapse = usePdfCollapse({ annotations: marks.annotations, pageCount: view.pageCount, currentPage: view.currentPage, goToPage: nav.goToPage, scrollRef: view.scrollRef });
+  const extras = useWorkspaceExtras({ docId, documentTitle, isDark, onAddThemes, saver, settings, marks, selection, view, status, nav, collapse });
   const pageEdits = usePageEdits({ docId, goToPage: nav.goToPage, saver, marks, view, status });
   const geometry = useMarkGeometry({ focusMode, marks, selection, view });
-  const collapse = usePdfCollapse({ annotations: marks.annotations, pageCount: view.pageCount, currentPage: view.currentPage, goToPage: nav.goToPage, scrollRef: view.scrollRef });
   const { saveState, failure, setFailure } = status;
   const { archive, askRedact, setAskRedact, exportPdf, blackoutPages } = extras;
 
@@ -144,7 +148,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
         </span>
       </header>
 
-      <WorkspaceToolbar settings={settings} isDark={isDark} focusMode={focusMode} onToggleFocus={onToggleFocus} zoomTouchedRef={zoomTouchedRef} styles={styles} marking={marking} marks={marks} selection={selection} view={view} status={status} nav={nav} extras={extras} pageEdits={pageEdits} collapse={collapse} />
+      <WorkspaceToolbar docId={docId} settings={settings} isDark={isDark} focusMode={focusMode} onToggleFocus={onToggleFocus} onFocusPaletteChange={onFocusPaletteChange} zoomTouchedRef={zoomTouchedRef} styles={styles} marking={marking} marks={marks} selection={selection} view={view} status={status} nav={nav} extras={extras} pageEdits={pageEdits} collapse={collapse} />
 
       <WorkspaceBody settings={settings} isDark={isDark} styles={styles} pageTools={{ tool: pageTool, toolStrokeStyles: pageToolStrokeStyles, toolWeights: pageToolWeights }} marks={marks} mutations={mutations} geometry={geometry} selection={selection} view={view} status={status} nav={nav} extras={extras} pageEdits={pageEdits} collapse={collapse} />
 

@@ -20,6 +20,8 @@
  * 6. Collapsed to Find hits shows exactly the paragraphs Find matched (the baseline for 7).
  * 7. Collapsed to Find hits, then Find closed: the reader falls back to all marks instead of
  *    folding every paragraph away.
+ * 8. A PDF with only margin notes, in the older record shape (themeId, no themeIds): a real click
+ *    on the toolbar's Collapse button and a real C key press each fold it to the noted pages.
  * Exits 0 when every check passes, 1 otherwise, printing each result.
  */
 
@@ -262,6 +264,34 @@ async function main() {
   const allOn = await js(`return [...document.querySelectorAll('[aria-label="Collapse to"] button')].find((b) => b.textContent.startsWith('All marks'))?.getAttribute('aria-pressed') ?? 'missing';`);
   check('Reader: collapsed to Find hits shows the two hits', /^Showing 2 of 10/.test(onFind), onFind);
   check('Reader: closing Find falls back to all marks, not an empty page', /^Showing 1 of 10/.test(afterClose) && allOn === 'true', JSON.stringify({ afterClose, allOn }));
+
+  // 8. Margin notes only, older record shape; real mouse and keyboard.
+  const notes = await api('/documents', 'POST', { title: 'Notes', text: 'Page 1', format: 'PDF', filename: 'notes.pdf' });
+  await fetch(`${base}/api/documents/${notes.id}/original?filename=notes.pdf`, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: await samplePdf(6) });
+  const legacyNote = (id, page, box, extra = {}) => ({ id, page, kind: 'note', color: '#b5527a', themeId: 'love', box, text: `note ${id}`, noteStyle: 'sticky', createdAt: new Date().toISOString(), ...extra });
+  await putMarks(notes.id, [
+    legacyNote('n3', 3, { x: 0.85, y: 0.62, w: 0.15, h: 0.06 }, { anchorRects: [{ x: 0.07, y: 0.6, w: 0.5, h: 0.02 }] }),
+    legacyNote('n5', 5, { x: 0.35, y: 0.33, w: 0.26, h: 0.11 })
+  ]);
+  await open('workspace', notes, 'PDF', '[data-page-number="1"][data-painted]');
+  await sleep(800);
+  const sections = () => js(`return [...document.querySelectorAll('[data-collapse-page]')].map((s) => s.dataset.collapsePage).join(',');`);
+  const button = JSON.parse(await js(`const r = document.querySelector('[aria-label="Collapse to marks"]').getBoundingClientRect(); return JSON.stringify({ x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2) });`));
+  const click = () => {
+    for (const type of ['mouseMove', 'mouseDown', 'mouseUp']) win.webContents.sendInputEvent({ type, x: button.x, y: button.y, button: 'left', clickCount: 1 });
+  };
+  click();
+  await sleep(1500);
+  const byClick = await sections();
+  click();
+  await sleep(1000);
+  const outAgain = await sections();
+  await js(`document.activeElement?.blur(); return true;`);
+  win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'C' });
+  win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'C' });
+  await sleep(1500);
+  const byKey = await sections();
+  check('PDF with margin notes: the toolbar button and the C key each fold it to the noted pages', byClick === '3,5' && outAgain === '' && byKey === '3,5', JSON.stringify({ byClick, outAgain, byKey }));
 
   win.destroy();
   fs.rmSync(store, { recursive: true, force: true });

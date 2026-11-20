@@ -58,6 +58,7 @@ export function usePdfToolStyles(deps: UsePdfToolStylesDeps) {
       star: pick(4),
       exclamation: pick(5),
       ink: pick(0),
+      inkArrow: pick(2),
       // Redaction reads as black by convention, independent of whatever theme colours are active.
       mask: '#000000',
       note: pick(0),
@@ -71,6 +72,7 @@ export function usePdfToolStyles(deps: UsePdfToolStylesDeps) {
   /** Stroke weight per tool, so a heavy pen and a fine box can coexist. */
   const [toolWeights, setToolWeights] = useState<Record<string, number>>({
     ink: 0.0028,
+    inkArrow: 0.0028,
     // Much thicker than the pen by default — a mask needs to fully cover a line of text, not
     // trace it.
     mask: 0.02,

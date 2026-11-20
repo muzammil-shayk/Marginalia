@@ -11,7 +11,7 @@
  * when it is close to the viewport and releases its canvas once it is far away again.
  */
 
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { PDFDocumentProxy, PDFPageProxy, RenderTask } from 'pdfjs-dist';
 import { TextLayer } from 'pdfjs-dist';
 import { pageHasText } from './textMarking';
@@ -35,6 +35,10 @@ const docKeys = new WeakMap<object, string>();
 let nextDocKey = 0;
 const docKeyOf = (pdf: object) => docKeys.get(pdf) ?? (docKeys.set(pdf, `pdf${++nextDocKey}`), docKeys.get(pdf)!);
 import './pdfTextLayer.css';
+import { ocrStore } from './ocr/usePageOcr';
+import { fillOcrLayer } from './ocr/ocrLayer';
+import { OcrPageButton } from './OcrControls';
+import type { OcrWord } from '../../utils/ocrWords';
 
 interface PdfPageProps {
   pdf: PDFDocumentProxy;
@@ -79,6 +83,8 @@ interface PdfPageProps {
   /** Four or six pages in view: drawn at screen resolution, not the device's, for speed. */
   lowRes?: boolean;
 }
+
+const NO_WORDS: OcrWord[] = [];
 
 export const PdfPage: React.FC<PdfPageProps> = ({
   pdf,
@@ -133,6 +139,12 @@ export const PdfPage: React.FC<PdfPageProps> = ({
    * doing nothing.
    */
   const [hasText, setHasText] = useState<boolean | null>(null);
+
+  // A scanned page the reader had read by OCR (ocr/usePageOcr.ts): its words, as a text layer.
+  const docId = ocrStore.docIdOf(pdf);
+  const ocrWords = useSyncExternalStore(ocrStore.subscribe, () => (docId ? ocrStore.page(docId, pageNumber).words : NO_WORDS));
+  const ocrWordsRef = useRef(ocrWords);
+  ocrWordsRef.current = ocrWords;
   /** A second tap to confirm, right where the first one was, rather than a separate dialog —
    *  removing a page is destructive (it takes any marks on it with it) but common enough while
    *  cleaning up an inserted page that a modal every time would be a tax on the common case. */
@@ -247,7 +259,9 @@ export const PdfPage: React.FC<PdfPageProps> = ({
       textLayerDiv.replaceChildren();
       const textLayer = new TextLayer({
         textContentSource: await page.getTextContent().then((content) => {
-          setHasText(pageHasText(content.items));
+          const has = pageHasText(content.items);
+          setHasText(has);
+          if (docId) ocrStore.reportText(docId, pageNumber, has);
           return content;
         }),
         container: textLayerDiv,
@@ -269,6 +283,10 @@ export const PdfPage: React.FC<PdfPageProps> = ({
       const endOfContent = document.createElement('div');
       endOfContent.className = 'endOfContent';
       textLayerDiv.append(endOfContent);
+      // No text of its own but read by OCR: the OCR words are the text layer.
+      if (!textLayerDiv.querySelector('span') && ocrWordsRef.current.length) {
+        fillOcrLayer(textLayerDiv, ocrWordsRef.current, viewport.width, viewport.height);
+      }
     } catch (err) {
       // No text layer means nothing to select: Black it out's Words then draws a box, as on a scan.
       if ((err as { name?: string } | null)?.name !== 'AbortException') setHasText(false);
@@ -278,7 +296,14 @@ export const PdfPage: React.FC<PdfPageProps> = ({
     }
 
     setIsRendered(true);
-  }, [pdf, pageNumber, scale, lowRes]);
+  }, [pdf, pageNumber, scale, lowRes, docId]);
+
+  // OCR words that arrive once the page is drawn (the reader just had it read).
+  useEffect(() => {
+    const layer = textLayerRef.current;
+    if (!isRendered || hasText !== false || !layer || !size || !ocrWords.length) return;
+    fillOcrLayer(layer, ocrWords, size.width, size.height);
+  }, [isRendered, hasText, ocrWords, size]);
 
   // Offstage pages are always drawn (they sit out of view, where the observer never sees them).
   const shouldRender = isNear || offstage;
@@ -330,8 +355,8 @@ export const PdfPage: React.FC<PdfPageProps> = ({
   // should not be selectable while it is armed. It only escaped notice because the annotation
   // layer's drag capture happens to swallow the pointer first.
   // Black it out, Words, on a page with no text (a scan): there is nothing to select, so it draws a box.
-  const pageTool: PdfTool = tool === 'maskWords' && hasText === false ? 'mask' : tool;
-  const selectable = !['ink', 'mask', 'maskPen', 'note', 'rect', 'ellipse', 'arrow', 'line', 'bracket', 'text'].includes(pageTool);
+  const pageTool: PdfTool = tool === 'maskWords' && hasText === false && !ocrWords.length ? 'mask' : tool;
+  const selectable = !['ink', 'inkArrow', 'mask', 'maskPen', 'note', 'rect', 'ellipse', 'arrow', 'line', 'bracket', 'text'].includes(pageTool);
 
   return (
     <div
@@ -421,6 +446,7 @@ export const PdfPage: React.FC<PdfPageProps> = ({
         </div>
       )}
 
+      {hasText === false && painted && !offstage && docId && <OcrPageButton docId={docId} pageNumber={pageNumber} lowered={pageTool !== tool} />}
       {pageTool !== tool && painted && (
         <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 pointer-events-none rounded-full px-3 py-1 text-[11.5px] bg-ink/85 text-paper shadow-sm whitespace-nowrap">
           This page is a picture with no text, so drag a box to black it out.

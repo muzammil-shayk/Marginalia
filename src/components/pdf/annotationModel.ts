@@ -110,7 +110,8 @@ export function fontStack(font: TextFont | undefined): string {
  *   those stay as they are.)
  */
 /** `area` drags a rectangle that is stored as a highlight (`utils/areaMark`). */
-export type PdfTool = AnnotationKind | 'select' | 'erase' | 'terminology' | 'mask' | 'maskWords' | 'maskPen' | 'area';
+/** `inkArrow` (Freehand arrow) draws an ordinary `kind: 'ink'` stroke with `arrowHead: true`. */
+export type PdfTool = AnnotationKind | 'select' | 'erase' | 'terminology' | 'mask' | 'maskWords' | 'maskPen' | 'area' | 'inkArrow';
 
 /**
  * "Black it out" (the `mask` tool) has three modes, chosen in its options:
@@ -177,6 +178,8 @@ export type Annotation = {
   rects?: FractionRect[];
   /** `ink`: the freehand stroke. */
   points?: FractionPoint[];
+  /** `ink` only: an arrowhead at the stroke's end (the Freehand arrow tool). Absent means a plain pen stroke. */
+  arrowHead?: true;
   /** `rect`, `ellipse`, `text`, `note`, `bracket`: the mark's box. */
   box?: FractionRect;
   /** `arrow`, `line`: the two endpoints. */
@@ -259,6 +262,7 @@ export const LINE_KINDS: readonly AnnotationKind[] = ['arrow', 'line'];
  *  controls in its chip. */
 export const STROKED_KINDS: readonly PdfTool[] = [
   'ink',
+  'inkArrow',
   'mask',
   'rect',
   'ellipse',
@@ -432,6 +436,93 @@ export function rectStyle(rect: FractionRect): React.CSSProperties {
 /** An SVG polyline `points` attribute for an ink stroke, in a 0–100 viewBox. */
 export function pointsToPolyline(points: FractionPoint[]): string {
   return points.map((p) => `${(p.x * 100).toFixed(3)},${(p.y * 100).toFixed(3)}`).join(' ');
+}
+
+/**
+ * Where a freehand arrow's head takes its direction from: the point `reach` back along the stroke
+ * from its end (never more than half the stroke). The head points along the chord from there to
+ * the tip, which is the length-weighted average of the last segments' directions, so the jitter
+ * and the little hook a hand leaves as it lifts do not swing the head the way the last two points
+ * alone would. Works on any x/y space; `reach` is in that space's units.
+ */
+export function tailAnchor<P extends { x: number; y: number }>(points: readonly P[], reach: number): { x: number; y: number } {
+  return tail(points, reach).anchor;
+}
+
+/**
+ * The stroke a freehand arrow is drawn with: as drawn up to the anchor, then straight into the tip,
+ * so the shaft runs into its head instead of a lift-off hook poking out beside it. The stored
+ * points are never changed; this is only how they are drawn, on screen and in an export.
+ */
+export function inkArrowShaft<P extends { x: number; y: number }>(points: readonly P[], weight: number): { x: number; y: number }[] {
+  if (points.length < 2) return [...points];
+  const { anchor, keep } = tail(points, inkArrowReach(weight));
+  return [...points.slice(0, keep), anchor, points[points.length - 1]];
+}
+
+function tail<P extends { x: number; y: number }>(points: readonly P[], reach: number): { anchor: { x: number; y: number }; keep: number } {
+  let total = 0;
+  for (let i = 1; i < points.length; i++) total += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  let left = Math.min(reach, total / 2);
+  for (let i = points.length - 1; i > 0; i--) {
+    const a = points[i];
+    const b = points[i - 1];
+    const seg = Math.hypot(a.x - b.x, a.y - b.y);
+    if (seg >= left && seg > 0) {
+      const t = left / seg;
+      return { anchor: { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }, keep: i };
+    }
+    left -= seg;
+  }
+  return { anchor: points[0], keep: 0 };
+}
+
+/** How far back the head reads its direction: a few heads' lengths, as a fraction of page width. */
+export function inkArrowReach(weight: number): number {
+  return Math.max(0.04, weight * 14);
+}
+
+/**
+ * A solid arrowhead ending at (x, y) pointing along `angle`: tip, then the two back corners.
+ * 4 widths long and 4 wide, its tip one width PAST the stroke's end (the size the straight arrow's
+ * SVG marker had before both arrows drew this polygon). Any y direction; the triangle is symmetric.
+ */
+export function arrowHeadPoints(x: number, y: number, angle: number, width: number): [number, number][] {
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const tipX = x + width * cos;
+  const tipY = y + width * sin;
+  const backX = tipX - width * 4 * cos;
+  const backY = tipY - width * 4 * sin;
+  const half = width * 2;
+  return [
+    [tipX, tipY],
+    [backX - half * sin, backY + half * cos],
+    [backX + half * sin, backY - half * cos]
+  ];
+}
+
+/** `arrowHeadPoints` as a path for pdf-lib's `drawSvgPath`, which flips Y (hence the negated y). Never dashed. */
+export function arrowHeadPath(x: number, y: number, angle: number, widthPts: number): string {
+  const [t, l, r] = arrowHeadPoints(x, y, angle, widthPts).map(([px, py]) => `${px.toFixed(2)} ${(-py).toFixed(2)}`);
+  return `M ${t} L ${l} L ${r} Z`;
+}
+
+/**
+ * A freehand arrow's head on screen, as SVG polygon `points` in the 0–100 viewBox. Worked out in
+ * pixels (the viewBox is stretched to the page and strokes are non-scaling, so an SVG marker came
+ * out a few pixels across and aimed by the last tiny segment), then mapped back, so it is the same
+ * size and direction as the head `exportAnnotatedPdf` draws. Null when there is no direction.
+ */
+export function inkArrowHead(points: readonly FractionPoint[], weight: number, pageW: number, pageH: number): string | null {
+  if (points.length < 2 || !pageW || !pageH) return null;
+  const tip = points[points.length - 1];
+  const from = tailAnchor(points, inkArrowReach(weight));
+  if (from.x === tip.x && from.y === tip.y) return null;
+  const angle = Math.atan2((tip.y - from.y) * pageH, (tip.x - from.x) * pageW);
+  return arrowHeadPoints(tip.x * pageW, tip.y * pageH, angle, Math.max(1, weight * pageW))
+    .map(([x, y]) => `${((x / pageW) * 100).toFixed(3)},${((y / pageH) * 100).toFixed(3)}`)
+    .join(' ');
 }
 
 /** The box that bounds a mark of any kind, for hit-testing and for scrolling to it. */

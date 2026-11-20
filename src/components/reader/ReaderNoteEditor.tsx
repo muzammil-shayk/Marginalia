@@ -7,6 +7,7 @@ import React from 'react';
 import type { ReaderEditor } from './readerState';
 import type { ReaderMarkViews } from './useReaderMarkViews';
 import type { ReaderMarking } from './useReaderMarking';
+import { noteKeySaves } from '../pdf/workspaceKeys';
 
 export interface ReaderNoteEditorProps {
   isDark: boolean;
@@ -87,7 +88,7 @@ export const ReaderNoteEditor: React.FC<ReaderNoteEditorProps> = ({ isDark, edit
               onChange={(e) => setDraftText(e.target.value)}
               aria-label={editorIsNote ? 'Note' : 'Comment'}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
+                if (noteKeySaves(e.nativeEvent)) {
                   e.preventDefault();
                   saveEditing();
                 }

@@ -15,7 +15,10 @@ import { isAreaHighlight } from '../../../utils/areaMark';
 import type { DebouncedSaver } from '../../../hooks/debouncedSaver';
 import type { WorkspaceMarks, WorkspaceSelection, WorkspaceStatus, WorkspaceView } from './workspaceState';
 import type { PdfNavigation } from './usePdfNavigation';
+import { ocrStore } from '../ocr/usePageOcr';
+import { ocrPageText } from '../../../utils/ocrWords';
 import { pageElementAt } from './pageElement';
+import type { PdfCollapse } from './PdfCollapsed';
 
 export interface UseWorkspaceExtrasDeps {
   docId: string;
@@ -29,6 +32,7 @@ export interface UseWorkspaceExtrasDeps {
   view: Pick<WorkspaceView, 'currentPage' | 'pdf' | 'scrollRef'>;
   status: Pick<WorkspaceStatus, 'fileUrl' | 'setFailure' | 'setIsExporting'>;
   nav: Pick<PdfNavigation, 'bookTurnRef' | 'goToPage' | 'pageRef' | 'reduceMotion' | 'scrollAnimation'>;
+  collapse: Pick<PdfCollapse, 'on' | 'readFrom'>;
 }
 
 export function useWorkspaceExtras(deps: UseWorkspaceExtrasDeps) {
@@ -38,6 +42,7 @@ export function useWorkspaceExtras(deps: UseWorkspaceExtrasDeps) {
   const { currentPage, pdf, scrollRef } = deps.view;
   const { fileUrl, setFailure, setIsExporting } = deps.status;
   const { bookTurnRef, goToPage, pageRef, reduceMotion, scrollAnimation } = deps.nav;
+  const { collapse } = deps;
 
   /**
    * Brings a mark into view, reporting whether it could.
@@ -173,14 +178,31 @@ export function useWorkspaceExtras(deps: UseWorkspaceExtrasDeps) {
   useEffect(() => setPageTexts(null), [pdf]);
   const pageTextLayer = (i: number) =>
     scrollRef.current?.querySelector(`[data-page-number="${i + 1}"] .marginalia-text-layer`) ?? null;
+  // A page can be drawn more than once: the book's hidden neighbours, strips when collapsed.
+  const pageTextLayers = (i: number) =>
+    Array.from(scrollRef.current?.querySelectorAll(`[data-page-number="${i + 1}"] .marginalia-text-layer`) ?? []);
+  /** A hit the reader can see: not on a hidden book page, and inside its strip when collapsed. */
+  const hitShown = (range: Range) => {
+    const el = range.startContainer.parentElement;
+    if (!el || el.closest('[data-offstage]')) return false;
+    const band = el.closest('.pdf-band');
+    if (!band) return true;
+    const r = range.getBoundingClientRect();
+    const b = band.getBoundingClientRect();
+    return r.top >= b.top && r.bottom <= b.bottom;
+  };
   const find = useDocumentFind({
     enabled: Boolean(pdf) && !editingId,
     units: pageTexts,
     unitElement: pageTextLayer,
+    unitElements: pageTextLayers,
+    shown: hitShown,
     root: () => scrollRef.current,
     startUnit: () => currentPage - 1,
     reveal: (i, range) => {
       const box = scrollRef.current?.getBoundingClientRect();
+      // Not in sight: collapsed to marks, the document opens at that page; otherwise go (or turn) there.
+      if (!range && collapse.on) return collapse.readFrom(i + 1);
       if (!range || !box) return goToPage(i + 1);
       const r = range.getBoundingClientRect();
       if (r.top >= box.top + 24 && r.bottom <= box.bottom - 72 && r.left >= box.left && r.right <= box.right) return;
@@ -203,11 +225,27 @@ export function useWorkspaceExtras(deps: UseWorkspaceExtrasDeps) {
           .then((tc) => tc.items.map((it) => ('str' in it ? it.str + (it.hasEOL ? ' ' : '') : '')).join(''))
           .catch(() => '')
       )
-    ).then((texts) => !cancelled && setPageTexts(texts));
+    ).then((texts) => !cancelled && setPageTexts(withOcrText(texts)));
     return () => {
       cancelled = true;
     };
   }, [find.open, pageTexts, pdf]);
+  /** A scanned page has no text of its own; once read by OCR, its OCR words are what Find searches. */
+  const withOcrText = useCallback(
+    (texts: string[]) => texts.map((t, i) => (t.trim() ? t : ocrPageText(ocrStore.page(docId, i + 1).words))),
+    [docId]
+  );
+  // A page read while Find is open joins the search.
+  useEffect(() => {
+    if (!find.open || !pageTexts) return;
+    return ocrStore.subscribe(() =>
+      setPageTexts((prev) => {
+        if (!prev) return prev;
+        const next = withOcrText(prev);
+        return next.some((t, i) => t !== prev[i]) ? next : prev;
+      })
+    );
+  }, [find.open, pageTexts, withOcrText]);
 
   // ── Linked marks ──
   const linkOption = (a: Annotation): LinkOption => ({

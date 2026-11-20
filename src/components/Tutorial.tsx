@@ -167,7 +167,7 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
   },
   {
     title: 'Highlight, then write in the margin',
-    body: 'Select words to highlight, underline or tag them. A note sits in the margin, level with its line.',
+    body: 'Select words to highlight, underline or tag them. A note sits in the margin, level with its line: Enter saves it, Shift+Enter starts a new line.',
     art: MarkArt
   },
   {

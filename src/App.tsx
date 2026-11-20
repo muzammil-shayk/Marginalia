@@ -734,6 +734,7 @@ export default function App() {
               onNavigate={navigate}
               focusMode={focusOn}
               onToggleFocus={() => setFocusMode((on) => !on)}
+              onFocusPaletteChange={(spot) => setSettings((prev) => ({ ...prev, focusPalette: spot }))}
               themeStore={themeStore}
               onAddThemes={addImportedThemes}
               jumpToPage={readerJump ? readerJump.paragraphIndex + 1 : undefined}

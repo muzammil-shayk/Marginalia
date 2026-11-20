@@ -21,6 +21,10 @@ import { useReaderLayout } from './reader/useReaderLayout';
 import { useReaderMarkUi } from './reader/useReaderMarkUi';
 import { useReaderSelectionKeys } from './reader/useReaderSelectionKeys';
 import { useReaderMarking } from './reader/useReaderMarking';
+import { FocusPalette } from './FocusPalette';
+import { TEXT_TOOLS } from './reader/readerParts';
+import { TOOL_HOTKEYS } from './pdf/workspaceKeys';
+import { Plus, Redo2, Undo2 } from './icons';
 import { useReaderMarkViews } from './reader/useReaderMarkViews';
 import { ReaderNoteEditor } from './reader/ReaderNoteEditor';
 import { ReaderPopovers } from './reader/ReaderPopovers';
@@ -229,6 +233,41 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
       <ReaderPopovers settings={settings} isDark={isDark} annotations={annotations} popoverTopInset={popoverTopInset} selectionInView={selectionInView} themes={themes} panels={panels} selection={selection} markViews={markViews} marking={marking} markUi={markUi} layout={layout} extras={extras} />
 
       <ReaderNoteEditor isDark={isDark} editor={editor} markViews={markViews} marking={marking} />
+
+      {focusMode && (
+        // The text reader's tools (no pen or shapes here: those draw on PDF pages only).
+        <FocusPalette
+          isDark={isDark}
+          spot={settings.focusPalette}
+          onSpotChange={(spot) => onUpdateSettings?.((prev) => ({ ...prev, focusPalette: spot }))}
+          groups={[
+            TEXT_TOOLS.map(({ id, label, icon }) => ({
+              id,
+              label,
+              icon,
+              hotkey: TOOL_HOTKEYS[id],
+              active: selection.tool === id,
+              color: id === 'terminology' ? settings.terminologyColor : themes.activeColor,
+              onClick: () => marking.handleToolTap(id)
+            })),
+            [
+              {
+                id: 'note',
+                label: 'Add a note to the current paragraph',
+                icon: Plus,
+                onClick: () => {
+                  panels.handleSwitchTab('notes');
+                  marking.createParagraphNote(activeParagraphIndex ?? 0);
+                }
+              }
+            ],
+            [
+              { id: 'undo', label: 'Undo', icon: Undo2, disabled: !annotations.canUndo, onClick: annotations.undo },
+              { id: 'redo', label: 'Redo', icon: Redo2, disabled: !annotations.canRedo, onClick: annotations.redo }
+            ]
+          ]}
+        />
+      )}
     </div>
   );
 };

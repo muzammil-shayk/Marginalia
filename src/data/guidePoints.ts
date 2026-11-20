@@ -5,44 +5,14 @@
  */
 
 export const GUIDE_POINTS: Record<string, { tool?: { x: number; y: number }; focus: { x: number; y: number } }> = {
-  "tool-select": {
+  "tool-inkarrow": {
     "tool": {
-      "x": 18.9,
+      "x": 35.9,
       "y": 8.9
     },
     "focus": {
-      "x": 37.9,
-      "y": 57.4
-    }
-  },
-  "tool-highlight": {
-    "tool": {
-      "x": 21.2,
-      "y": 8.9
-    },
-    "focus": {
-      "x": 53.7,
-      "y": 33.5
-    }
-  },
-  "tool-underline": {
-    "tool": {
-      "x": 25.9,
-      "y": 8.9
-    },
-    "focus": {
-      "x": 53.7,
-      "y": 37.5
-    }
-  },
-  "tool-strikeout": {
-    "tool": {
-      "x": 28.2,
-      "y": 8.9
-    },
-    "focus": {
-      "x": 53.7,
-      "y": 36.7
+      "x": 49.6,
+      "y": 61.5
     }
   },
   "tool-area": {
@@ -52,7 +22,65 @@ export const GUIDE_POINTS: Record<string, { tool?: { x: number; y: number }; foc
     },
     "focus": {
       "x": 58.6,
-      "y": 57.4
+      "y": 63.2
+    }
+  },
+  "find": {
+    "focus": {
+      "x": 29.5,
+      "y": 66.7
+    }
+  },
+  "focus": {
+    "focus": {
+      "x": 2.9,
+      "y": 50
+    }
+  },
+  "ocr": {
+    "focus": {
+      "x": 58.6,
+      "y": 24.8
+    }
+  },
+  "tool-select": {
+    "tool": {
+      "x": 18.9,
+      "y": 8.9
+    },
+    "focus": {
+      "x": 37.9,
+      "y": 57.6
+    }
+  },
+  "tool-highlight": {
+    "tool": {
+      "x": 21.3,
+      "y": 8.9
+    },
+    "focus": {
+      "x": 53.7,
+      "y": 33.6
+    }
+  },
+  "tool-underline": {
+    "tool": {
+      "x": 25.9,
+      "y": 8.9
+    },
+    "focus": {
+      "x": 53.7,
+      "y": 37.6
+    }
+  },
+  "tool-strikeout": {
+    "tool": {
+      "x": 28.3,
+      "y": 8.9
+    },
+    "focus": {
+      "x": 53.7,
+      "y": 36.8
     }
   },
   "tool-pen": {
@@ -62,115 +90,115 @@ export const GUIDE_POINTS: Record<string, { tool?: { x: number; y: number }; foc
     },
     "focus": {
       "x": 56.1,
-      "y": 70.8
+      "y": 71
     }
   },
   "tool-rect": {
-    "tool": {
-      "x": 38.1,
-      "y": 8.9
-    },
-    "focus": {
-      "x": 58.6,
-      "y": 30.7
-    }
-  },
-  "tool-ellipse": {
     "tool": {
       "x": 40.5,
       "y": 8.9
     },
     "focus": {
-      "x": 57.1,
-      "y": 33.5
+      "x": 58.6,
+      "y": 52
     }
   },
-  "tool-arrow": {
+  "tool-ellipse": {
     "tool": {
-      "x": 42.8,
+      "x": 42.9,
       "y": 8.9
     },
     "focus": {
-      "x": 64.5,
-      "y": 58.5
+      "x": 57.1,
+      "y": 33.6
     }
   },
-  "tool-line": {
+  "tool-arrow": {
     "tool": {
       "x": 45.2,
       "y": 8.9
     },
     "focus": {
+      "x": 64.5,
+      "y": 58.7
+    }
+  },
+  "tool-line": {
+    "tool": {
+      "x": 47.6,
+      "y": 8.9
+    },
+    "focus": {
       "x": 58.6,
-      "y": 68.3
+      "y": 68.5
     }
   },
   "tool-bracket": {
     "tool": {
-      "x": 47.5,
+      "x": 49.9,
       "y": 8.9
     },
     "focus": {
-      "x": 37,
-      "y": 58
+      "x": 36.9,
+      "y": 58.1
     }
   },
   "tool-note": {
     "tool": {
-      "x": 50.4,
+      "x": 52.8,
       "y": 8.9
     },
     "focus": {
-      "x": 58.6,
-      "y": 77.5
+      "x": 50,
+      "y": 49
     }
   },
   "tool-text": {
     "tool": {
-      "x": 52.7,
+      "x": 55.2,
       "y": 8.9
     },
     "focus": {
       "x": 48.8,
-      "y": 75.8
+      "y": 76
     }
   },
   "tool-erase": {
     "tool": {
-      "x": 55.1,
+      "x": 57.5,
       "y": 8.9
     },
     "focus": {
       "x": 55.1,
-      "y": 71.3
+      "y": 71.5
     }
   },
   "blackout": {
     "tool": {
-      "x": 35.8,
+      "x": 38.2,
       "y": 8.9
     },
     "focus": {
       "x": 53.7,
-      "y": 36.6
+      "y": 36.7
     }
   },
   "tool-undo": {
     "focus": {
-      "x": 58.1,
+      "x": 60.5,
       "y": 9.6
     }
   },
   "tool-more": {
     "focus": {
-      "x": 63.8,
+      "x": 61.4,
       "y": 15.6
     }
   },
   "tool-addnote": {
     "tool": {
-      "x": 31.5,
-      "y": 16.6
+      "x": 31.6,
+      "y": 16.7
     },
     "focus": {
       "x": 50,
@@ -180,16 +208,16 @@ export const GUIDE_POINTS: Record<string, { tool?: { x: number; y: number }; foc
   "tool-collapse": {
     "tool": {
       "x": 88.9,
-      "y": 16.6
+      "y": 16.7
     },
     "focus": {
       "x": 43.4,
-      "y": 63
+      "y": 63.1
     }
   },
   "tool-notes": {
     "tool": {
-      "x": 24.4,
+      "x": 24.5,
       "y": 12
     },
     "focus": {

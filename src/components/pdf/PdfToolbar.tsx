@@ -18,6 +18,7 @@ import {
   Underline,
   Strikethrough,
   PenLine,
+  PenArrow,
   StickyNote,
   Square,
   Circle,
@@ -137,7 +138,7 @@ interface PdfToolbarProps {
   isDark?: boolean;
 }
 
-const TOOL_GROUPS: { id: PdfTool; label: string; icon: React.ElementType; hint: string }[][] = [
+export const TOOL_GROUPS: { id: PdfTool; label: string; icon: React.ElementType; hint: string }[][] = [
   [
     // Select: the resting state. Text is freely selectable, marks can be picked, nothing is
     // drawn. Returning to it is how you stop a drawing tool being armed.
@@ -155,6 +156,7 @@ const TOOL_GROUPS: { id: PdfTool; label: string; icon: React.ElementType; hint: 
   ],
   [
     { id: 'ink', label: 'Pen', icon: PenLine, hint: 'Draw freehand' },
+    { id: 'inkArrow', label: 'Freehand arrow', icon: PenArrow, hint: 'Draw freehand; an arrowhead is added where you lift the pen' },
     { id: 'mask', label: 'Black it out', icon: EyeOff, hint: 'Black out words, a box or a freehand stroke (choose in its options)' },
     { id: 'rect', label: 'Rectangle', icon: Square, hint: 'Drag a rectangle' },
     { id: 'ellipse', label: 'Ellipse', icon: Circle, hint: 'Drag an ellipse' },

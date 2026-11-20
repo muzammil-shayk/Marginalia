@@ -55,6 +55,16 @@ test('moving the library takes the mark backups (backups/{id}/{ms}.json) along',
   await assert.rejects(fs.access(path.join(from, 'backups')));
 });
 
+test('moving the library takes the saved OCR of scanned pages (ocr/{id}/{page}.json) along', async (t) => {
+  const { from, to } = await library(t);
+  await fs.mkdir(path.join(from, 'ocr', 'a'), { recursive: true });
+  await fs.writeFile(path.join(from, 'ocr', 'a', '3.json'), '{"words":[]}');
+  const result = await tryMigrateLibrary(from, to);
+  assert.deepEqual(result, { ok: true, moved: 4 });
+  assert.equal(await fs.readFile(path.join(to, 'ocr', 'a', '3.json'), 'utf-8'), '{"words":[]}');
+  await assert.rejects(fs.access(path.join(from, 'ocr')));
+});
+
 test('a different file already in the new folder is never overwritten: the move fails and nothing is removed', async (t) => {
   const { from, to } = await library(t);
   await fs.mkdir(path.join(to, 'documents'), { recursive: true });

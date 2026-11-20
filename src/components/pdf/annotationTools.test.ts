@@ -6,7 +6,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveWorkspaceKey, isTypingTarget, withShortcut, themeShortcut, popoverTakesTab, escapeConsumes } from './workspaceKeys';
+import { resolveWorkspaceKey, noteKeySaves, isTypingTarget, withShortcut, themeShortcut, popoverTakesTab, escapeConsumes } from './workspaceKeys';
 import { placePanel } from './panelPlacement';
 import { visibleNotes, presentKinds, compareReadingOrder, matchesNoteQuery } from './notesFilter';
 import type { Annotation } from './annotationModel';
@@ -212,4 +212,22 @@ test('Escape is consumed only when it puts a tool down or clears a selection (el
   assert.equal(escapeConsumes({ tool: 'highlight', markSelected: false, textSelected: false }), true);
   assert.equal(escapeConsumes({ tool: 'select', markSelected: true, textSelected: false }), true);
   assert.equal(escapeConsumes({ tool: 'select', markSelected: false, textSelected: true }), true);
+});
+
+test('note editors: Enter saves, Shift+Enter is a new line, no chords, not mid-composition', () => {
+  assert.equal(noteKeySaves({ key: 'Enter' }), true);
+  // Shift+Enter is left to the textarea, which inserts the line break.
+  assert.equal(noteKeySaves({ key: 'Enter', shiftKey: true }), false);
+  assert.equal(noteKeySaves({ key: 'Enter', metaKey: true }), false);
+  assert.equal(noteKeySaves({ key: 'Enter', ctrlKey: true }), false);
+  assert.equal(noteKeySaves({ key: 'Enter', altKey: true }), false);
+  assert.equal(noteKeySaves({ key: 'Enter', isComposing: true }), false);
+  assert.equal(noteKeySaves({ key: 'a' }), false);
+});
+
+test('notes panel: a freehand arrow gets its own kind and label, apart from the pen', () => {
+  const ink = (id: string, arrowHead?: true) => ({ id, page: 1, kind: 'ink', color: '#000', themeIds: [], points: [{ x: 0, y: 0 }, { x: 0.1, y: 0.1 }], createdAt: '', ...(arrowHead && { arrowHead }) }) as Annotation;
+  assert.deepEqual(presentKinds([ink('a', true), ink('b')]), ['ink', 'inkArrow']);
+  assert.deepEqual(visibleNotes([ink('a', true), ink('b')], '', 'inkArrow').map((a) => a.id), ['a']);
+  assert.ok(matchesNoteQuery(ink('a', true), 'freehand arrow'));
 });

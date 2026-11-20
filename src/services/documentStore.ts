@@ -69,6 +69,8 @@ export const restoreMarkBackup: DocumentBackend['restoreMarkBackup'] = (id, back
 export const checkpointMarkBackup: DocumentBackend['checkpointMarkBackup'] = (id) => getBackend().checkpointMarkBackup(id);
 export const checkpointPendingMarkBackups: DocumentBackend['checkpointPendingMarkBackups'] = () =>
   getBackend().checkpointPendingMarkBackups();
+export const getOcrPages: DocumentBackend['getOcrPages'] = (id) => getBackend().getOcrPages(id);
+export const saveOcrPage: DocumentBackend['saveOcrPage'] = (id, page, data) => getBackend().saveOcrPage(id, page, data);
 export const editPdfPages: DocumentBackend['editPdfPages'] = (id, edit) => getBackend().editPdfPages(id, edit);
 export const saveClientSettings: DocumentBackend['saveClientSettings'] = (incoming) =>
   getBackend().saveClientSettings(incoming);

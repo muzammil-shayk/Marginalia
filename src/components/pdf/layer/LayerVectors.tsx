@@ -15,6 +15,8 @@ import {
   blackoutBoxFromPoints,
   bracketPath,
   dashArray,
+  inkArrowHead,
+  inkArrowShaft,
   pointsToPolyline
 } from '../annotationModel';
 import { DEFAULT_WEIGHT } from './layerHelpers';
@@ -32,6 +34,7 @@ export interface LayerVectorsProps {
   live: (a: Annotation) => Annotation;
   marksClickable: boolean;
   pageWidth: number;
+  pageHeight: number;
   strokeProps: (a: Annotation) => { stroke: string; strokeWidth: number; strokeDasharray: string | undefined; strokeLinecap: "round"; vectorEffect: "non-scaling-stroke"; filter: string | undefined; };
   tool: PdfTool;
   toolBracketSide: BracketSide | undefined;
@@ -39,7 +42,7 @@ export interface LayerVectorsProps {
   toolWeight: number | undefined;
 }
 
-export const LayerVectors: React.FC<LayerVectorsProps> = ({ activeColor, annotations, bracketBoxFrom, draftBox, draftEnd, draftStart, draftStroke, draftWidth, handleMarkClick, live, marksClickable, pageWidth, strokeProps, tool, toolBracketSide, toolStrokeStyle, toolWeight }) => (
+export const LayerVectors: React.FC<LayerVectorsProps> = ({ activeColor, annotations, bracketBoxFrom, draftBox, draftEnd, draftStart, draftStroke, draftWidth, handleMarkClick, live, marksClickable, pageWidth, pageHeight, strokeProps, tool, toolBracketSide, toolStrokeStyle, toolWeight }) => (
   <>
       {/* Vector marks share one normalized 0–100 viewBox, so the same path data scales with the
           page. `vector-effect` keeps strokes a constant visual weight instead of ballooning with
@@ -51,26 +54,6 @@ export const LayerVectors: React.FC<LayerVectorsProps> = ({ activeColor, annotat
         preserveAspectRatio="none"
         style={{ pointerEvents: 'none' }}
       >
-        <defs>
-          {annotations
-            .filter((a) => a.kind === 'arrow')
-            .map((a) => (
-              <marker
-                key={`head-${a.id}`}
-                id={`arrowhead-${a.id}`}
-                markerWidth="4"
-                markerHeight="4"
-                refX="3"
-                refY="2"
-                orient="auto"
-                markerUnits="strokeWidth"
-              >
-                {/* The head is never dashed, whatever the shaft does — a broken arrowhead reads
-                    as a rendering fault rather than as a style. */}
-                <path d="M0,0 L4,2 L0,4 z" fill={a.color} />
-              </marker>
-            ))}
-        </defs>
 
         {annotations.map((raw) => {
           const a = live(raw);
@@ -83,34 +66,57 @@ export const LayerVectors: React.FC<LayerVectorsProps> = ({ activeColor, annotat
           const marker = { 'data-mark-ui': '' };
 
           if (a.kind === 'ink' && a.points && a.points.length > 1) {
+            const stroke = strokeProps(a);
+            // Freehand arrow: the head is a solid triangle, never dashed, clickable like the stroke.
+            const head = a.arrowHead ? inkArrowHead(a.points, a.weight ?? DEFAULT_WEIGHT, pageWidth, pageHeight) : null;
             return (
-              <polyline
-                key={a.id}
-                {...marker}
-                points={pointsToPolyline(a.points)}
-                fill="none"
-                {...strokeProps(a)}
-                strokeLinejoin="round"
-                style={interactive}
-                onClick={(e) => handleMarkClick(e, raw)}
-              />
+              <g key={a.id} {...marker} data-arrow-head={head ? '' : undefined}>
+                <polyline
+                  points={pointsToPolyline(a.arrowHead ? inkArrowShaft(a.points, a.weight ?? DEFAULT_WEIGHT) : a.points)}
+                  fill="none"
+                  {...stroke}
+                  strokeLinejoin="round"
+                  style={interactive}
+                  onClick={(e) => handleMarkClick(e, raw)}
+                />
+                {head && (
+                  <polygon
+                    points={head}
+                    fill={a.color}
+                    filter={stroke.filter}
+                    style={{ ...interactive, pointerEvents: marksClickable ? 'fill' : 'none' }}
+                    onClick={(e) => handleMarkClick(e, raw)}
+                  />
+                )}
+              </g>
             );
           }
 
           if ((a.kind === 'arrow' || a.kind === 'line') && a.from && a.to) {
+            const stroke = strokeProps(a);
+            // The head is the freehand arrow's: a solid triangle worked out in pixels, never dashed.
+            const head = a.kind === 'arrow' ? inkArrowHead([a.from, a.to], a.weight ?? DEFAULT_WEIGHT, pageWidth, pageHeight) : null;
             return (
-              <line
-                key={a.id}
-                {...marker}
-                x1={a.from.x * 100}
-                y1={a.from.y * 100}
-                x2={a.to.x * 100}
-                y2={a.to.y * 100}
-                {...strokeProps(a)}
-                markerEnd={a.kind === 'arrow' ? `url(#arrowhead-${a.id})` : undefined}
-                style={interactive}
-                onClick={(e) => handleMarkClick(e, raw)}
-              />
+              <g key={a.id} {...marker} data-arrow-head={head ? '' : undefined}>
+                <line
+                  x1={a.from.x * 100}
+                  y1={a.from.y * 100}
+                  x2={a.to.x * 100}
+                  y2={a.to.y * 100}
+                  {...stroke}
+                  style={interactive}
+                  onClick={(e) => handleMarkClick(e, raw)}
+                />
+                {head && (
+                  <polygon
+                    points={head}
+                    fill={a.color}
+                    filter={stroke.filter}
+                    style={{ ...interactive, pointerEvents: marksClickable ? 'fill' : 'none' }}
+                    onClick={(e) => handleMarkClick(e, raw)}
+                  />
+                )}
+              </g>
             );
           }
 
@@ -168,7 +174,7 @@ export const LayerVectors: React.FC<LayerVectorsProps> = ({ activeColor, annotat
         {/* Live preview of whatever is being dragged right now. */}
         {draftStroke && draftStroke.length > 1 && (
           <polyline
-            points={pointsToPolyline(draftStroke)}
+            points={pointsToPolyline(tool === 'inkArrow' ? inkArrowShaft(draftStroke, toolWeight ?? DEFAULT_WEIGHT) : draftStroke)}
             fill="none"
             stroke={activeColor}
             strokeWidth={draftWidth}
@@ -178,6 +184,10 @@ export const LayerVectors: React.FC<LayerVectorsProps> = ({ activeColor, annotat
             vectorEffect="non-scaling-stroke"
           />
         )}
+        {draftStroke && tool === 'inkArrow' && (() => {
+          const head = inkArrowHead(draftStroke, toolWeight ?? DEFAULT_WEIGHT, pageWidth, pageHeight);
+          return head && <polygon points={head} fill={activeColor} />;
+        })()}
         {draftBox && tool === 'bracket' && (
           <path
             d={bracketPath(bracketBoxFrom(draftStart!, draftEnd!), toolBracketSide ?? 'left')}
@@ -220,6 +230,10 @@ export const LayerVectors: React.FC<LayerVectorsProps> = ({ activeColor, annotat
             vectorEffect="non-scaling-stroke"
           />
         )}
+        {draftStart && draftEnd && tool === 'arrow' && (() => {
+          const head = inkArrowHead([draftStart, draftEnd], toolWeight ?? DEFAULT_WEIGHT, pageWidth, pageHeight);
+          return head && <polygon points={head} fill={activeColor} />;
+        })()}
         {draftStart && draftEnd && LINE_KINDS.includes(tool as never) && (
           <line
             x1={draftStart.x * 100}

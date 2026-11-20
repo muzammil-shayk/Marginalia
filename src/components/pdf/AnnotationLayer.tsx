@@ -163,7 +163,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
    * tools would mean nothing could be drawn.
    */
   const capturesDrag =
-    tool === 'ink' || tool === 'maskPen' || tool === 'mask' || tool === 'note' || tool === 'area' || BOX_KINDS.includes(tool as never) || LINE_KINDS.includes(tool as never);
+    tool === 'ink' || tool === 'inkArrow' || tool === 'maskPen' || tool === 'mask' || tool === 'note' || tool === 'area' || BOX_KINDS.includes(tool as never) || LINE_KINDS.includes(tool as never);
 
   // Marks stay clickable whatever the tool, so Select can pick one and Erase can remove one. The
   // exception is mid-drag, when a mark under the pointer must not steal the gesture.
@@ -389,7 +389,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       style={{
         pointerEvents: capturesDrag ? 'auto' : 'none',
         cursor:
-          tool === 'ink' || tool === 'maskPen' ? 'crosshair' : tool === 'note' ? 'copy' : tool === 'erase' ? 'not-allowed' : capturesDrag ? 'crosshair' : 'default',
+          tool === 'ink' || tool === 'inkArrow' || tool === 'maskPen' ? 'crosshair' : tool === 'note' ? 'copy' : tool === 'erase' ? 'not-allowed' : capturesDrag ? 'crosshair' : 'default',
         touchAction: capturesDrag ? 'none' : 'auto'
       }}
       onPointerDown={handlePointerDown}
@@ -397,7 +397,7 @@ export const AnnotationLayer: React.FC<AnnotationLayerProps> = ({
       onPointerUp={finishDrag}
       onPointerCancel={finishDrag}
     >
-      <LayerVectors activeColor={activeColor} annotations={annotations} bracketBoxFrom={bracketBoxFrom} draftBox={draftBox} draftEnd={draftEnd} draftStart={draftStart} draftStroke={draftStroke} draftWidth={draftWidth} handleMarkClick={handleMarkClick} live={live} marksClickable={marksClickable} pageWidth={pageWidth} strokeProps={strokeProps} tool={tool} toolBracketSide={toolBracketSide} toolStrokeStyle={toolStrokeStyle} toolWeight={toolWeight} />
+      <LayerVectors activeColor={activeColor} annotations={annotations} bracketBoxFrom={bracketBoxFrom} draftBox={draftBox} draftEnd={draftEnd} draftStart={draftStart} draftStroke={draftStroke} draftWidth={draftWidth} handleMarkClick={handleMarkClick} live={live} marksClickable={marksClickable} pageWidth={pageWidth} pageHeight={pageHeight} strokeProps={strokeProps} tool={tool} toolBracketSide={toolBracketSide} toolStrokeStyle={toolStrokeStyle} toolWeight={toolWeight} />
 
       <LayerBoxes annotations={annotations} gestureHandlers={gestureHandlers} gestureRef={gestureRef} handleMarkClick={handleMarkClick} hoveredId={hoveredId} live={live} onEdit={onEdit} onHover={onHover} onUpdate={onUpdate} pageHeight={pageHeight} pageWidth={pageWidth} selectedId={selectedId} />
 

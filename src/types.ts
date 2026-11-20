@@ -83,6 +83,8 @@ export interface UserSettings {
   collapsedHomeSections?: Record<string, boolean>;
   /** Whether the desktop sidebar is collapsed to icons-only. */
   sidebarCollapsed?: boolean;
+  /** Focus mode's floating tools: which screen edge, and the height of their centre (0-1 of the window). */
+  focusPalette?: { side: 'left' | 'right'; y: number };
   /** The text reader's two-page spread (on wide windows), kept across launches. */
   readerSpread?: boolean;
   /**
