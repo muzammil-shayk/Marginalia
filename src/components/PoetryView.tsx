@@ -1,6 +1,6 @@
 /**
  * Poetry-aware reading in the text reader: the settings pop-over, and the overlay that numbers
- * lines or shers in the gutter and underlines the radif and rhyme. The overlay never touches the
+ * lines or couplets in the gutter and underlines the rhymes. The overlay never touches the
  * paragraphs' text: numbers are positioned spans beside each line, and the underlines are painted
  * with the CSS Custom Highlight API, so marks and selection offsets are unchanged.
  */
@@ -8,18 +8,16 @@
 import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import { Feather, Plus, X } from './icons';
 import type { PoetryPrefs } from '../types';
-import { poemNumber, type PoemAnalysis } from '../utils/poetry';
+import type { PoemAnalysis } from '../utils/poetry';
 import { paintHighlight, rangeFor, readPieces } from './findHighlight';
-import { isArabicScript } from '../utils/scriptDirection';
 import { useDialogFocus } from '../hooks/useDialogFocus';
 
 export const DEFAULT_POETRY: PoetryPrefs = { on: false, numbering: 'couplets', prosody: true };
 
-/** The themes "Add prosody themes" offers: metre, rhyme and radif, each its own colour. */
+/** The themes "Add prosody themes" offers: metre and rhyme, each its own colour. */
 export const PROSODY_THEMES = [
   { name: 'Metre', color: '#7c6aa6' },
-  { name: 'Rhyme', color: '#5b8070' },
-  { name: 'Radif', color: '#a17828' }
+  { name: 'Rhyme', color: '#5b8070' }
 ];
 
 /**
@@ -39,7 +37,6 @@ export function usePoemOverlay(opts: {
   useLayoutEffect(() => {
     const clear = () => {
       document.querySelectorAll('[data-poem-num]').forEach((n) => n.remove());
-      paintHighlight('poem-radif', []);
       paintHighlight('poem-rhyme', []);
     };
     clear();
@@ -55,9 +52,8 @@ export function usePoemOverlay(opts: {
         }
         return pieces.get(i)!;
       };
-      const arabic = analysis.lines.length > 0 && isArabicScript(document.getElementById(textId(analysis.lines[0].paragraphIndex))?.textContent ?? '');
       for (const line of analysis.lines) {
-        const show = prefs.numbering === 'lines' ? true : line.sherLine === 0;
+        const show = prefs.numbering === 'lines' ? true : line.coupletLine === 0;
         if (!show) continue;
         const text = document.getElementById(textId(line.paragraphIndex));
         const box = text?.parentElement;
@@ -68,26 +64,14 @@ export function usePoemOverlay(opts: {
         const n = document.createElement('span');
         n.dataset.poemNum = '';
         n.setAttribute('aria-hidden', 'true');
-        // Beside where the line starts: on the right of a right-to-left line.
-        n.className = text.dir === 'rtl' ? 'poem-num poem-num-rtl' : 'poem-num';
-        n.textContent = prefs.numbering === 'lines' ? poemNumber(line.lineNo, arabic) : poemNumber(line.sherNo, arabic);
+        n.className = 'poem-num';
+        n.textContent = String(prefs.numbering === 'lines' ? line.lineNo : line.coupletNo);
         if (prefs.numbering === 'lines' && line.rhyme) n.title = `Rhyme ${line.rhyme}`;
         n.style.top = `${Math.round(top + rect.height / 2)}px`;
         box.appendChild(n);
       }
-      if (prefs.prosody) {
-        const radif: Range[] = [];
-        const rhyme: Range[] = [];
-        for (const s of analysis.spans) {
-          const r = rangeFor(piecesOf(s.paragraphIndex), s.start, s.end);
-          if (r) (s.kind === 'radif' ? radif : rhyme).push(r);
-        }
-        paintHighlight('poem-radif', radif);
-        paintHighlight('poem-rhyme', rhyme);
-      } else {
-        paintHighlight('poem-radif', []);
-        paintHighlight('poem-rhyme', []);
-      }
+      const rhyme = prefs.prosody ? analysis.spans.map((s) => rangeFor(piecesOf(s.paragraphIndex), s.start, s.end)).filter((r): r is Range => Boolean(r)) : [];
+      paintHighlight('poem-rhyme', rhyme);
     };
     draw();
     let frame = 0;
@@ -96,7 +80,7 @@ export function usePoemOverlay(opts: {
       frame = requestAnimationFrame(draw);
     });
     observer.observe(flow);
-    // Webfonts (Nastaliq especially) change line heights when they arrive.
+    // Webfonts change line heights when they arrive.
     void document.fonts?.ready.then(() => requestAnimationFrame(draw));
     return () => {
       cancelAnimationFrame(frame);
@@ -106,7 +90,7 @@ export function usePoemOverlay(opts: {
   }, [analysis, prefs, flow, textId, layoutKey]);
 }
 
-/** The pop-over under the poetry button: on/off, numbering, radif and rhyme, metre, prosody themes. */
+/** The pop-over under the poetry button: on/off, numbering, rhyme, metre, prosody themes. */
 export const PoetryPanel: React.FC<{
   open: boolean;
   prefs: PoetryPrefs;
@@ -114,7 +98,7 @@ export const PoetryPanel: React.FC<{
   isDark: boolean;
   onChange: (next: PoetryPrefs) => void;
   onClose: () => void;
-  /** Adds Metre / Rhyme / Radif themes the reader does not have yet; absent when all exist. */
+  /** Adds Metre / Rhyme themes the reader does not have yet; absent when all exist. */
   onAddProsodyThemes?: () => void;
 }> = ({ open, prefs, analysis, isDark, onChange, onClose, onAddProsodyThemes }) => {
   const ref = useRef<HTMLDivElement>(null);
@@ -127,7 +111,7 @@ export const PoetryPanel: React.FC<{
       on ? 'bg-accent text-on-accent' : 'text-stone-700 dark:text-stone-300 hover:bg-black/5 dark:hover:bg-white/10'
     }`;
   const lines = analysis?.lines.length ?? 0;
-  const shers = analysis?.lines.at(-1)?.sherNo ?? 0;
+  const couplets = analysis?.lines.at(-1)?.coupletNo ?? 0;
   return (
     <div
       ref={ref}
@@ -157,34 +141,33 @@ export const PoetryPanel: React.FC<{
               Lines
             </button>
             <button type="button" role="radio" aria-checked={prefs.numbering === 'couplets'} onClick={() => onChange({ ...prefs, numbering: 'couplets' })} className={seg(prefs.numbering === 'couplets')}>
-              Couplets (sher)
+              Couplets
             </button>
           </div>
           {analysis && (
             <p className="mt-1 text-[11.5px] text-muted">
-              {lines} lines · {shers} shers{analysis.radif ? ` · radif “${analysis.radif}”` : ''}
+              {lines} lines · {couplets} couplets
             </p>
           )}
         </div>
         <label className="flex items-start justify-between gap-3 text-[13px] cursor-pointer">
           <span>
-            Underline radif and rhyme
+            Underline rhymes
             <span className="block text-[11.5px] text-muted">
-              <span className="poem-key-radif">dotted gold</span>: radif · <span className="poem-key-rhyme">solid green</span>: rhyme (qafiya)
+              <span className="poem-key-rhyme">solid green</span>: the sound each line ends on
             </span>
           </span>
           <input type="checkbox" checked={prefs.prosody} onChange={(e) => onChange({ ...prefs, prosody: e.target.checked })} className="w-4 h-4 mt-0.5 accent-[var(--color-accent)]" />
         </label>
         <label className="block text-[13px]">
-          Metre (bahr)
+          Metre
           <input
             type="text"
             value={metre}
             onChange={(e) => setMetre(e.target.value)}
             onBlur={() => metre.trim() !== (prefs.metre ?? '') && onChange({ ...prefs, metre: metre.trim() || undefined })}
             onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLInputElement).blur()}
-            placeholder="e.g. hazaj musamman saalim, iambic pentameter"
-            dir="auto"
+            placeholder="e.g. iambic pentameter"
             className={`mt-1 w-full px-3 py-2 rounded-xl border text-[13px] focus:outline-none focus:ring-1 focus:ring-gold ${
               isDark ? 'bg-night-2 border-stone-700 placeholder:text-paper/50' : 'bg-white border-stone-300 placeholder:text-muted'
             }`}
@@ -192,11 +175,11 @@ export const PoetryPanel: React.FC<{
         </label>
         {onAddProsodyThemes && (
           <button type="button" onClick={onAddProsodyThemes} className="w-full flex items-center justify-center gap-1.5 rounded-full caps text-[12px] px-4 py-2 border border-stone-300 dark:border-stone-600 hover:border-gold hover:bg-gold/10 cursor-pointer">
-            <Plus className="w-3.5 h-3.5 text-gold" /> Add Metre, Rhyme and Radif themes
+            <Plus className="w-3.5 h-3.5 text-gold" /> Add Metre and Rhyme themes
           </button>
         )}
         <p className="text-[11.5px] text-muted leading-snug">
-          Mark scansion, rhymes or a radif yourself with those themes; they export with your other marks.
+          Mark scansion or rhymes yourself with those themes; they export with your other marks.
         </p>
       </fieldset>
     </div>

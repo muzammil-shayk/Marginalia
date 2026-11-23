@@ -22,9 +22,54 @@ export interface ReleaseNote {
   highlights: ChangelogItem[];
 }
 
-export const CURRENT_APP_VERSION = '2.11.0';
+export const CURRENT_APP_VERSION = '2.12.0';
 
 export const CHANGELOG_RELEASES: ReleaseNote[] = [
+  {
+    version: '2.12.0',
+    title: 'Folding Page Turns and Scans That Read Themselves',
+    date: 'November 2026',
+    summary:
+      'Pages now fold like paper, scanned pages are read for you as you go, Find is steadier, and Marginalia focuses on English books.',
+    highlights: [
+      {
+        category: 'feature',
+        title: 'Folding page turn',
+        description:
+          'In the text reader and the PDF book view, pages now fold and curl like paper, in both directions. A turn takes about half a second and starts the moment you click. The next pages are ready before the turn, so you never see a blank page. With reduced motion on, it is a quick fade. In light mode the paper has a warm shade.'
+      },
+      {
+        category: 'fix',
+        title: 'Page turns stay tidy',
+        description:
+          'Notes, underlines and highlights from the old page no longer show over the new page while it turns. Quick swipes or key presses turn one pair of pages at a time and never skip a pair. A second swipe during a wait turns at once.'
+      },
+      {
+        category: 'feature',
+        title: 'Scanned pages read on the spot',
+        description:
+          'Drag across a scanned page and it is read right then, with a small "Reading this page…" note. The black "Make text selectable" button is gone.'
+      },
+      {
+        category: 'improvement',
+        title: 'Scans read automatically',
+        description:
+          'Scanned pages in view, plus the one before and after, are read automatically, one at a time. The text is saved on your computer and nothing leaves it. "Read pages" reads the whole book. If you press Cancel on an automatic read, automatic reading pauses for that book until you drag on a page or press Read pages.'
+      },
+      {
+        category: 'fix',
+        title: 'Find in document',
+        description:
+          'Esc closes Find. In book view it no longer jumps to a neighbouring hit, and it works with collapsed strips. Scanned pages become searchable once they are read. When some pages have no text yet, Find says "N pages have no text to search yet" and offers a Read pages button. Pages that contain only unreadable symbols count as having no text.'
+      },
+      {
+        category: 'improvement',
+        title: 'English books only',
+        description:
+          'Marginalia now focuses on English books. Urdu and right-to-left features are removed: Urdu reading of scans, the Nastaliq font, right-to-left export, and radif and qafiya. Your existing Urdu books and their marks are kept and open as plain left-to-right text. The poem view stays for English.'
+      }
+    ]
+  },
   {
     version: '2.11.0',
     title: 'Freehand Arrows, Focus Tools and Scanned Pages',

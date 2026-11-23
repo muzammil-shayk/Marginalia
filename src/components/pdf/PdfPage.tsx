@@ -27,7 +27,7 @@ import {
   isTextAnchored
 } from './annotationModel';
 import { AnnotationLayer, TextMarkLayer } from './AnnotationLayer';
-import { TURN_MS } from '../pageTurn';
+import { DRAW_NOW_EVENT, TURN_MS } from '../pageTurn';
 import { pageImageKey, pageImages } from './pageImageCache';
 
 /** One key per loaded PDF (a page edit loads a new one), for the page image cache. */
@@ -36,8 +36,10 @@ let nextDocKey = 0;
 const docKeyOf = (pdf: object) => docKeys.get(pdf) ?? (docKeys.set(pdf, `pdf${++nextDocKey}`), docKeys.get(pdf)!);
 import './pdfTextLayer.css';
 import { ocrStore } from './ocr/usePageOcr';
-import { fillOcrLayer } from './ocr/ocrLayer';
-import { OcrPageButton } from './OcrControls';
+import { fillOcrLayer, selectBetween, type PagePoint } from './ocr/ocrLayer';
+import { OcrPageStatus } from './OcrControls';
+import { trackDrag } from './ocr/trackDrag';
+import { readsOnSelect } from './ocrView';
 import type { OcrWord } from '../../utils/ocrWords';
 
 interface PdfPageProps {
@@ -312,8 +314,17 @@ export const PdfPage: React.FC<PdfPageProps> = ({
     // An offstage page waits out the page turn that brought it next door, so drawing it never
     // competes with the turn for the main thread.
     const wait = offstage && !isNear ? TURN_MS + 150 : 0;
-    const timer = window.setTimeout(() => void renderPage(), wait);
+    // Unless a turn is already waiting on this page (usePdfNavigation): then now.
+    const el = containerRef.current;
+    const draw = () => {
+      el?.removeEventListener(DRAW_NOW_EVENT, draw);
+      window.clearTimeout(timer);
+      void renderPage();
+    };
+    const timer = window.setTimeout(draw, wait);
+    if (wait) el?.addEventListener(DRAW_NOW_EVENT, draw);
     return () => {
+      el?.removeEventListener(DRAW_NOW_EVENT, draw);
       window.clearTimeout(timer);
       renderTaskRef.current?.cancel();
       textLayerInstanceRef.current?.cancel();
@@ -358,11 +369,39 @@ export const PdfPage: React.FC<PdfPageProps> = ({
   const pageTool: PdfTool = tool === 'maskWords' && hasText === false && !ocrWords.length ? 'mask' : tool;
   const selectable = !['ink', 'inkArrow', 'mask', 'maskPen', 'note', 'rect', 'ellipse', 'arrow', 'line', 'bracket', 'text'].includes(pageTool);
 
+  // Selecting on a scanned page: read its words first (this page only, on this press), then make
+  // the selection the drag would have made, so the armed tool or the selection menu takes it.
+  const readOnSelect = (e: React.PointerEvent) => {
+    const page = containerRef.current;
+    if (!docId || offstage || !page) return;
+    if (!readsOnSelect({ hasText, tool: pageTool, status: ocrStore.page(docId, pageNumber).status, button: e.button })) return;
+    const box = page.getBoundingClientRect();
+    const at = (x: number, y: number): PagePoint => ({ x: (x - box.left) / box.width, y: (y - box.top) / box.height });
+    const from = at(e.clientX, e.clientY);
+    trackDrag(window, at, (to) => {
+      const dragged = Math.hypot((to.x - from.x) * box.width, (to.y - from.y) * box.height) > 4;
+      void ocrStore.runPage(docId, pageNumber).then(() => {
+        if (!dragged || ocrStore.page(docId, pageNumber).status !== 'done') return;
+        // The words reach the layer on the next render: wait for them (a second at most).
+        let tries = 0;
+        const replay = () => {
+          const layer = textLayerRef.current;
+          if (layer?.querySelector('span[data-ocr]')) {
+            if (selectBetween(page, layer, from, to)) document.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+          } else if (++tries < 60) requestAnimationFrame(replay);
+        };
+        requestAnimationFrame(replay);
+      });
+    });
+  };
+
   return (
     <div
       ref={containerRef}
       data-page-number={pageNumber}
       data-offstage={offstage || undefined}
+      // Read by selection capture: a drag here is read by OCR, not reported as unreadable.
+      data-no-text={hasText === false || undefined}
       // The book's page turn waits for this before it starts (usePdfNavigation).
       data-painted={painted || undefined}
       aria-hidden={offstage || undefined}
@@ -371,6 +410,7 @@ export const PdfPage: React.FC<PdfPageProps> = ({
       // a height — a 60vh placeholder — so anything measuring it lands on a guess.
       data-page-sized={String(Boolean(size))}
       className={`group relative mx-auto shadow-lg rounded-sm ${isDark ? 'bg-stone-200' : 'bg-white'}`}
+      onPointerDownCapture={readOnSelect}
       style={{
         width: size ? `${size.width}px` : '100%',
         height: size ? `${size.height}px` : '60vh',
@@ -446,7 +486,7 @@ export const PdfPage: React.FC<PdfPageProps> = ({
         </div>
       )}
 
-      {hasText === false && painted && !offstage && docId && <OcrPageButton docId={docId} pageNumber={pageNumber} lowered={pageTool !== tool} />}
+      {hasText === false && painted && !offstage && docId && <OcrPageStatus docId={docId} pageNumber={pageNumber} lowered={pageTool !== tool} />}
       {pageTool !== tool && painted && (
         <div className="absolute top-2 left-1/2 -translate-x-1/2 z-30 pointer-events-none rounded-full px-3 py-1 text-[11.5px] bg-ink/85 text-paper shadow-sm whitespace-nowrap">
           This page is a picture with no text, so drag a box to black it out.

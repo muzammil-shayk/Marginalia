@@ -18,7 +18,7 @@ import { fileStem } from './marksArchiveFormat';
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
-/** "moon, crescent; چاند" → terms. Commas, semicolons, Urdu commas or new lines separate them. */
+/** "moon, crescent; tide" → terms. Commas (also the Arabic comma), semicolons or new lines separate them. */
 const splitTerms = (s: string) => cleanTerms(s.split(/[,;،\n]+/));
 
 /** The snippet with each traced word picked out. */
@@ -174,15 +174,14 @@ export const MotifTracer: React.FC<{
             >
               <label className="text-[12px] text-muted">
                 Motif
-                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="The moon" dir="auto" className={`${field} mt-1`} />
+                <input value={name} onChange={(e) => setName(e.target.value)} placeholder="The moon" className={`${field} mt-1`} />
               </label>
               <label className="text-[12px] text-muted">
                 Words that carry it
                 <input
                   value={termText}
                   onChange={(e) => setTermText(e.target.value)}
-                  placeholder="moon, crescent, چاند, ماہ"
-                  dir="auto"
+                  placeholder="moon, crescent, lunar"
                   className={`${field} mt-1`}
                   data-autofocus
                 />
@@ -226,7 +225,7 @@ export const MotifTracer: React.FC<{
                         }}
                         className="accent-[var(--color-accent)]"
                       />
-                      <span dir="auto" className="truncate">{d.title}</span>
+                      <span className="truncate">{d.title}</span>
                     </label>
                   </li>
                 ))}
@@ -261,7 +260,7 @@ export const MotifTracer: React.FC<{
                   <div className="max-h-[50vh] overflow-y-auto space-y-4 pr-1">
                     {result.results.map((r) => (
                       <section key={r.id}>
-                        <h3 dir="auto" className="title-hand text-[21px] leading-tight">
+                        <h3 className="title-hand text-[21px] leading-tight">
                           {r.title} <span className="font-sans text-[11px] text-muted">· {plural(r.hits.length, 'passage')}</span>
                         </h3>
                         <ul className="mt-1 space-y-1">
@@ -283,7 +282,7 @@ export const MotifTracer: React.FC<{
                                 <span className="shrink-0 w-14 text-[11px] text-muted pt-0.5">
                                   {r.location === 'page' ? `p. ${h.paragraphIndex + 1}` : `¶ ${h.paragraphIndex + 1}`}
                                 </span>
-                                <span dir="auto" className="flex-1">
+                                <span className="flex-1">
                                   <Marked text={h.snippet} terms={[h.match]} />
                                 </span>
                               </button>

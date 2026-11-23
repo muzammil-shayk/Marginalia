@@ -1,4 +1,3 @@
-import { isMostlyRtl } from './scriptDirection';
 
 /**
  * A selection clipped to one container (2.8.0).
@@ -35,10 +34,8 @@ const CONTROL = /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g;
 /**
  * A quote in reading order from a selection's fragments, given in document order.
  *
- * PDFs write Arabic-script lines (Urdu, Persian, Arabic) as runs placed left to right on the page,
- * so document order reads such a line backwards: the last word first. Consecutive fragments on the
- * same line are one line; a line that is mostly right-to-left is read by position, right to left.
- * Other lines keep document order, so two columns side by side are never interleaved.
+ * Consecutive fragments on the same line are one line, joined to the next line by a space; every
+ * line keeps document order, so two columns side by side are never interleaved.
  */
 export function quoteFromFragments(fragments: TextFragment[]): string {
   const lines: TextFragment[][] = [];
@@ -50,10 +47,7 @@ export function quoteFromFragments(fragments: TextFragment[]): string {
     else lines.push([f]);
   }
   return lines
-    .map((line) => {
-      const ordered = isMostlyRtl(line.map((f) => f.text).join('')) ? [...line].sort((a, b) => b.x + b.w - (a.x + a.w)) : line;
-      return ordered.map((f) => f.text.replace(CONTROL, '')).join('');
-    })
+    .map((line) => line.map((f) => f.text.replace(CONTROL, '')).join(''))
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -75,4 +69,14 @@ export function rangeFragments(range: Range): TextFragment[] {
     if (n === root) break;
   }
   return out;
+}
+
+/**
+ * The page where a drag selected characters but no readable text (a PDF font with no letter map),
+ * when it selected nothing readable anywhere, so the reader is told rather than left with no mark.
+ * Pages with no text at all (`noText`) are read by OCR on the press instead (PdfPage). Pure.
+ */
+export function unreadableSelectionPage(pages: { page: number; quote: string; rects: number; noText: boolean }[]): number | null {
+  if (pages.some((p) => p.quote && p.rects > 0)) return null;
+  return pages.find((p) => !p.quote && p.rects > 0 && !p.noText)?.page ?? null;
 }

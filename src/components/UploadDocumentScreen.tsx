@@ -334,7 +334,6 @@ export const UploadDocumentScreen: React.FC<UploadDocumentScreenProps> = ({
           id="paste-text"
           rows={4}
           placeholder="Paste a poem, a passage or a page…"
-          dir="auto"
           value={pastedText}
           onPaste={(e) => {
             const html = e.clipboardData.getData('text/html');

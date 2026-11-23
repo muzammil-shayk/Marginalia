@@ -766,16 +766,3 @@ export async function openClassPack(fileText: string): Promise<OpenedClassPack |
   }
 }
 
-/** A printable page as a PDF, via the desktop app's renderer. Null when there is none (501) or it failed. */
-export async function printNotesPdf(html: string): Promise<Blob | null> {
-  try {
-    const res = await fetch('/api/export/notes-pdf', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ html })
-    });
-    return res.ok ? await res.blob() : null;
-  } catch {
-    return null;
-  }
-}

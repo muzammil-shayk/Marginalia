@@ -15,6 +15,7 @@ import { AnnotationFocus, Screen, TransitionType, UserSettings } from '../../typ
 import { pageToolFor } from './annotationModel';
 import type { PaletteSpot } from '../paletteSpot';
 import { usePdfCollapse } from './workspace/PdfCollapsed';
+import { useAutoOcr } from './workspace/useAutoOcr';
 import { BlackoutExportDialog } from './workspace/BlackoutExportDialog';
 import { ErrorDialog } from '../ErrorDialog';
 import { usePdfToolStyles } from './workspace/usePdfToolStyles';
@@ -25,6 +26,7 @@ import { useWorkspaceExtras } from './workspace/useWorkspaceExtras';
 import { usePdfNavigation } from './workspace/usePdfNavigation';
 import { useWorkspaceKeys } from './workspace/useWorkspaceKeys';
 import { useTextMarking } from './workspace/useTextMarking';
+import { UNREADABLE_SELECTION } from './ocrView';
 import { useMarkMutations } from './workspace/useMarkMutations';
 import { usePdfDocument } from './workspace/usePdfDocument';
 import { WorkspaceDialogs } from './workspace/WorkspaceDialogs';
@@ -103,6 +105,7 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
   const extras = useWorkspaceExtras({ docId, documentTitle, isDark, onAddThemes, saver, settings, marks, selection, view, status, nav, collapse });
   const pageEdits = usePageEdits({ docId, goToPage: nav.goToPage, saver, marks, view, status });
   const geometry = useMarkGeometry({ focusMode, marks, selection, view });
+  useAutoOcr({ pdf: view.pdf, scrollRef: view.scrollRef, currentPage: view.currentPage });
   const { saveState, failure, setFailure } = status;
   const { archive, askRedact, setAskRedact, exportPdf, blackoutPages } = extras;
 
@@ -151,6 +154,15 @@ export const PdfWorkspace: React.FC<PdfWorkspaceProps> = ({
       <WorkspaceToolbar docId={docId} settings={settings} isDark={isDark} focusMode={focusMode} onToggleFocus={onToggleFocus} onFocusPaletteChange={onFocusPaletteChange} zoomTouchedRef={zoomTouchedRef} styles={styles} marking={marking} marks={marks} selection={selection} view={view} status={status} nav={nav} extras={extras} pageEdits={pageEdits} collapse={collapse} />
 
       <WorkspaceBody settings={settings} isDark={isDark} styles={styles} pageTools={{ tool: pageTool, toolStrokeStyles: pageToolStrokeStyles, toolWeights: pageToolWeights }} marks={marks} mutations={mutations} geometry={geometry} selection={selection} view={view} status={status} nav={nav} extras={extras} pageEdits={pageEdits} collapse={collapse} />
+
+      {/* Always there, empty at rest: a live region added with its text is often not announced. */}
+      <div role="status" aria-live="polite" className="pointer-events-none fixed bottom-6 inset-x-0 z-40 flex justify-center">
+        {marking.unreadable !== null && (
+          <span data-unreadable-note className="rounded-full bg-white/90 shadow-sm ring-1 ring-black/5 px-3 py-1 text-[11px] text-stone-600 dark:bg-night-4/90 dark:ring-white/10 dark:text-stone-300">
+            {UNREADABLE_SELECTION}
+          </span>
+        )}
+      </div>
 
       <ErrorDialog open={Boolean(failure)} message={failure ?? ''} onClose={() => setFailure(null)} />
       {archive.ui}

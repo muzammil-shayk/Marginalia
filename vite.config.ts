@@ -49,8 +49,8 @@ function pdfjsWasm(): Plugin {
 
 /**
  * Ships OCR (tesseract.js) for scanned pages, offline, under `/ocr/`: the worker script, the one
- * core build Electron's Chromium runs (SIMD, LSTM only), and English and Urdu models. The packages
- * are devDependencies, so only these files reach the installer. Nothing is fetched from the web:
+ * core build Electron's Chromium runs (SIMD, LSTM only), and the English model. The packages are
+ * devDependencies, so only these files reach the installer. Nothing is fetched from the web:
  * `ocr/tesseractEngine.ts` points tesseract.js at these paths.
  */
 function ocrAssets(): Plugin {
@@ -58,8 +58,7 @@ function ocrAssets(): Plugin {
   const FILES: Record<string, string> = {
     'worker.min.js': path.join(pkg('tesseract.js'), 'dist', 'worker.min.js'),
     'tesseract-core-simd-lstm.wasm.js': path.join(pkg('tesseract.js-core'), 'tesseract-core-simd-lstm.wasm.js'),
-    'eng.traineddata.gz': path.join(pkg('@tesseract.js-data/eng'), '4.0.0_best_int', 'eng.traineddata.gz'),
-    'urd.traineddata.gz': path.join(pkg('@tesseract.js-data/urd'), '4.0.0_best_int', 'urd.traineddata.gz')
+    'eng.traineddata.gz': path.join(pkg('@tesseract.js-data/eng'), '4.0.0_best_int', 'eng.traineddata.gz')
   };
   const PREFIX = '/ocr/';
   return {

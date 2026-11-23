@@ -1,8 +1,7 @@
 /**
  * Cross-text motif tracing: every place an image or idea appears across the reader's documents.
- * A motif is a name and a few words that stand for it ("moon": moon, crescent, چاند). Each word
- * matches whole, any case, with its common plural and possessive endings, in Latin or Arabic
- * script. Pure, so it is tested; the server runs it over the library (`services/motifRoutes`).
+ * A motif is a name and a few words that stand for it ("moon": moon, crescent). Each word
+ * matches whole, any case, with its common English plural and possessive endings. Pure, so it is tested; the server runs it over the library (`services/motifRoutes`).
  */
 
 import { splitParagraphs, type ParagraphLayout } from './pastedText';
@@ -28,7 +27,6 @@ export interface MotifDocResult {
 }
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const ARABIC = /[؀-ۿ]/;
 const EDGE_BEFORE = '(?<![\\p{L}\\p{M}\\p{N}])';
 const EDGE_AFTER = '(?![\\p{L}\\p{M}\\p{N}])';
 
@@ -55,8 +53,7 @@ export function motifPattern(terms: string[]): RegExp | null {
     .sort((a, b) => b.length - a.length)
     .map((t) => {
       const body = t.split(' ').map(escape).join('\\s+');
-      const ending = ARABIC.test(t) ? '(?:وں|یں|ں|ے)?' : "(?:'s|’s|s|es)?";
-      return `${body}${ending}`;
+      return `${body}(?:'s|’s|s|es)?`;
     });
   return new RegExp(`${EDGE_BEFORE}(?:${parts.join('|')})${EDGE_AFTER}`, 'giu');
 }

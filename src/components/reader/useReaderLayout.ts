@@ -49,7 +49,7 @@ export function useReaderLayout(deps: UseReaderLayoutDeps) {
     const measure = () => {
       frame = 0;
       // In the spread, pages after the open pair sit to the right of its window.
-      const spreadRight = document.querySelector('.spread-window')?.getBoundingClientRect().right ?? Infinity;
+      const spreadRight = document.querySelector('.spread-book > .spread-window')?.getBoundingClientRect().right ?? Infinity;
       // Binary search: paragraphs run top to bottom, so find the last one whose top is on screen.
       let lo = 0;
       let hi = paragraphs.length - 1;
@@ -234,14 +234,14 @@ export function useReaderLayout(deps: UseReaderLayoutDeps) {
     return { obstacles, lane, dock };
   }, [flow, marginMode]);
 
-  // Line or sher numbers in the gutter, radif and rhyme underlined (poetry view only).
+  // Line or couplet numbers in the gutter, rhymes underlined (poetry view only).
   const poemTextId = useCallback((i: number) => `${PARA_TEXT_ID_PREFIX}${i}`, []);
   usePoemOverlay({
     analysis: activeControlTab === 'notes' ? poem : null,
     prefs: poetry,
     flow,
     textId: poemTextId,
-    layoutKey: `${settings.fontSize}|${settings.typography}|${settings.arabicScript}|${spreadOn}|${marginMode}|${marks.length}`
+    layoutKey: `${settings.fontSize}|${settings.typography}|${spreadOn}|${marginMode}|${marks.length}`
   });
 
   const paragraphFont = settings.typography.includes('Newsreader')

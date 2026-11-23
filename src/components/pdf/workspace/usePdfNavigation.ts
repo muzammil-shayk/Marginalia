@@ -4,8 +4,10 @@
  */
 
 import React, { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
+import { flushSync } from 'react-dom';
 import { useReducedMotion } from 'motion/react';
-import { playTurn, snapshotPage, turnDirection, waitFor, TURN_WAIT_MAX_MS, type PageBox } from '../../pageTurn';
+import { afterFirstFrame, isLiveMutation, playTurn, snapshotPage, turnDirection, waitFor, DRAW_NOW_EVENT, STEP_WAIT_MAX_MS, TURN_WAIT_MAX_MS, TurnPrep, type PageBox, type TurnDirection, type TurnOptions } from '../../pageTurn';
+import { bookStep } from './bookStep';
 import { isTypingTarget } from '../workspaceKeys';
 import { isTextAnchored, type PdfTool } from '../annotationModel';
 import { useSwipeTurn } from '../../swipeTurn';
@@ -62,32 +64,50 @@ export function usePdfNavigation(deps: UsePdfNavigationDeps) {
   const turnRef = useRef<{ finish: () => void } | null>(null);
   useEffect(() => () => turnRef.current?.finish(), []);
   const pageRef = useRef(currentPage);
-  pageRef.current = currentPage;
+  /** A turn's page until the leaf lands and `setCurrentPage` runs; re-renders before then must not undo it. */
+  const pendingPage = useRef<number | null>(null);
+  pageRef.current = pendingPage.current ?? currentPage;
   /** A turn waiting for its pages to paint: where it is going. Keys and swipes step on from here. */
   const pendingRef = useRef<{ page: number; cancel: () => void } | null>(null);
   useEffect(() => () => pendingRef.current?.cancel(), []);
-  const turnToPage = (page: number, animate: boolean) => {
+  const pageEl = (n: number) => bookRef.current?.querySelector<HTMLElement>(`[data-page-number="${n}"]`) ?? null;
+  const turnToPage = (page: number, animate: boolean, now = false) => {
+    // The last turn's page has not reached React yet: render it now, so the pages this turn needs
+    // (its neighbours) exist and the wait for paint below can see them.
+    const pending = pendingPage.current;
+    if (pending !== null) {
+      pendingPage.current = null;
+      flushSync(() => setCurrentPage(pending));
+    }
     const book = bookRef.current;
-    const pageEl = (n: number) => book?.querySelector<HTMLElement>(`[data-page-number="${n}"]`) ?? null;
     pendingRef.current?.cancel();
     pendingRef.current = null;
     const to = Math.floor((page - 1) / 2);
     const targets = [2 * to + 1, 2 * to + 2].filter((n) => n <= pageCount).map(pageEl);
     const ready = () => targets.every((el) => el?.dataset.painted);
     // Turn only onto finished pages: while they paint, the book shows it is turning (cursor and
-    // a status for screen readers), then turns. Never longer than TURN_WAIT_MAX_MS.
+    // a status for screen readers), then turns. Never longer than TURN_WAIT_MAX_MS. The pages
+    // are told to draw at once rather than after their usual wait (PdfPage, DRAW_NOW_EVENT).
+    // A second press the same way (`now`) still never turns onto an unpainted page: it waits on,
+    // but only STEP_WAIT_MAX_MS more.
     if (animate && book && targets.every(Boolean) && !ready()) {
+      const drawNow = () => targets.forEach((el) => el?.dispatchEvent(new Event(DRAW_NOW_EVENT)));
+      drawNow();
+      // Pages just mounted (flushSync above) listen only once they know their size: ask again.
+      const again = window.setInterval(drawNow, 50);
       book.dataset.turning = 'true';
       book.setAttribute('aria-busy', 'true');
-      const stop = waitFor(book, ready, TURN_WAIT_MAX_MS, () => {
+      const stop = waitFor(book, ready, now ? STEP_WAIT_MAX_MS : TURN_WAIT_MAX_MS, () => {
+        window.clearInterval(again);
         pendingRef.current = null;
         delete book.dataset.turning;
-          book.removeAttribute('aria-busy');
+        book.removeAttribute('aria-busy');
         startTurn(page, true);
       });
       pendingRef.current = {
         page,
         cancel: () => {
+          window.clearInterval(again);
           stop();
           delete book.dataset.turning;
           book.removeAttribute('aria-busy');
@@ -97,47 +117,124 @@ export function usePdfNavigation(deps: UsePdfNavigationDeps) {
     }
     startTurn(page, animate);
   };
+  /** The pages of pair `p` (0-based), left then right; right may be missing. */
+  const pairEls = (p: number) => [pageEl(2 * p + 1), pageEl(2 * p + 2)] as const;
+  /** Which turn this is and what it shows: rebuilt when a page involved paints or the zoom changes. */
+  const turnKey = (from: number, to: number) => {
+    const dir = turnDirection(from, to) ?? 1;
+    const [L, R] = pairEls(from);
+    const back = pageEl(dir === 1 ? 2 * to + 1 : 2 * to + 2);
+    const under = pageEl(dir === 1 ? 2 * to + 2 : 2 * to + 1);
+    const painted = [L, R, back, under].map((el) => (el?.dataset.painted ? 1 : 0)).join('');
+    return `${from}>${to}|${scale}|${painted}`;
+  };
+  /** A copy of a page drawn offstage: it takes a face's place, not the offstage spot. */
+  const offstageCopy = (n: number) => {
+    const el = pageEl(n);
+    if (!el) return null;
+    const copy = snapshotPage(el);
+    for (const p of ['position', 'left', 'top', 'visibility', 'pointer-events']) copy.style.removeProperty(p);
+    return copy;
+  };
+  /** The turn from pair `from` to pair `to`, built from copies of the pages as they are now. */
+  const turnOptions = (from: number, to: number, dir: TurnDirection): TurnOptions | null => {
+    const book = bookRef.current;
+    if (!book) return null;
+    const origin = book.getBoundingClientRect();
+    const boxOf = (el: HTMLElement): PageBox => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left - origin.left, top: r.top - origin.top, width: r.width, height: r.height };
+    };
+    const [L, R] = pairEls(from);
+    if (!L) return null;
+    const left = boxOf(L);
+    const right = R ? boxOf(R) : { ...left, left: left.left + left.width };
+    const turning = dir === 1 ? R : L;
+    const staying = dir === 1 ? L : R;
+    return {
+      layer: book,
+      left,
+      right,
+      dir,
+      front: turning ? snapshotPage(turning) : null,
+      cover: staying ? snapshotPage(staying) : null,
+      back: () => offstageCopy(dir === 1 ? 2 * to + 1 : 2 * to + 2),
+      under: () => offstageCopy(dir === 1 ? 2 * to + 2 : 2 * to + 1),
+      reduced: Boolean(reduceMotion)
+    };
+  };
   const startTurn = (page: number, animate: boolean) => {
     const from = Math.floor((pageRef.current - 1) / 2);
     const to = Math.floor((page - 1) / 2);
     const dir = turnDirection(from, to);
     pageRef.current = page;
-    setCurrentPage(page);
-    const book = bookRef.current;
-    if (!dir || !book || !animate) return;
-    turnRef.current?.finish();
-    const origin = book.getBoundingClientRect();
-    const pageEl = (n: number) => book.querySelector<HTMLElement>(`[data-page-number="${n}"]`);
-    const boxOf = (el: HTMLElement): PageBox => {
-      const r = el.getBoundingClientRect();
-      return { left: r.left - origin.left, top: r.top - origin.top, width: r.width, height: r.height };
+    const settle = () => {
+      pendingPage.current = null;
+      setCurrentPage(page);
     };
-    const L = pageEl(2 * from + 1);
-    const R = pageEl(2 * from + 2);
-    if (!L) return;
-    const left = boxOf(L);
-    const right = R ? boxOf(R) : { ...left, left: left.left + left.width };
-    const t = playTurn({
-      layer: book,
-      left,
-      right,
-      dir,
-      front: (dir === 1 ? R : L) ? snapshotPage((dir === 1 ? R : L)!) : null,
-      cover: (dir === 1 ? L : R) ? snapshotPage((dir === 1 ? L : R)!) : null,
-      back: () => {
-        const el = pageEl(dir === 1 ? 2 * to + 1 : 2 * to + 2);
-        if (!el) return null;
-        const copy = snapshotPage(el);
-        // Drawn offstage until now: the copy takes the face's place, not the offstage spot.
-        for (const p of ['position', 'left', 'top', 'visibility', 'pointer-events']) copy.style.removeProperty(p);
-        return copy;
-      },
-      reduced: Boolean(reduceMotion)
-    });
+    if (!dir || !bookRef.current || !animate) return settle();
+    turnRef.current?.finish();
+    // With the new page under the leaf the overlay shows the whole new pair, so React re-renders as
+    // the leaf lands. A last pair with no page on that side falls back to one frame in.
+    const whole = Boolean(pageEl(dir === 1 ? 2 * to + 2 : 2 * to + 1));
+    const land = () => {
+      if (pendingPage.current !== page) return;
+      pendingPage.current = null;
+      flushSync(() => setCurrentPage(page));
+    };
+    const ready = reduceMotion ? null : prep.take(dir, turnKey(from, to));
+    const options = ready ? null : turnOptions(from, to, dir);
+    const t = ready ? ready.start(land) : options ? playTurn(options, land) : null;
+    if (!t || reduceMotion) return settle();
     turnRef.current = t;
+    prep.after(t.done);
+    pendingPage.current = page;
+    if (!whole) afterFirstFrame(land);
   };
-  const bookTurnRef = useRef<((page: number, animate: boolean) => void) | null>(null);
+
+  // The turns either way from the open pair, built ahead so a key or click only starts one.
+  const [prep] = useState(() => new TurnPrep());
+  useEffect(() => () => prep.dispose(), [prep]);
+  useEffect(() => {
+    const book = bookRef.current;
+    if (!bookOn || !book) return;
+    // A page painting, a mark drawn or edited: the copies are out of date.
+    const observer = new MutationObserver((records) => {
+      if (records.some(isLiveMutation)) prep.invalidate();
+    });
+    observer.observe(book, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['data-painted', 'class', 'style', 'width', 'height'] });
+    return () => observer.disconnect();
+  }, [prep, bookOn, pdf]);
+  const buildRef = useRef({ turnKey, turnOptions });
+  useEffect(() => {
+    buildRef.current = { turnKey, turnOptions };
+  });
+  useEffect(() => {
+    if (!bookOn || reduceMotion) return;
+    const at = Math.floor((currentPage - 1) / 2);
+    const pairs = Math.ceil(pageCount / 2);
+    const target = (dir: TurnDirection) => (at + dir >= 0 && at + dir < pairs ? at + dir : null);
+    prep.schedule({
+      key: (dir) => {
+        const to = target(dir);
+        return to === null ? null : buildRef.current.turnKey(at, to);
+      },
+      options: (dir) => {
+        const to = target(dir);
+        return to === null ? null : buildRef.current.turnOptions(at, to, dir);
+      }
+    });
+  }, [prep, bookOn, reduceMotion, currentPage, pageCount, scale]);
+  const bookTurnRef = useRef<((page: number, animate: boolean, now?: boolean) => void) | null>(null);
   bookTurnRef.current = bookOn ? turnToPage : null;
+  /** One key press or swipe: see `bookStep`. */
+  const stepBook = useCallback(
+    (step: 1 | -1) => {
+      const next = bookStep(pageRef.current, pendingRef.current?.page ?? null, step, pageCount);
+      if (next) bookTurnRef.current?.(next.page, true, next.now);
+    },
+    [pageCount]
+  );
 
   // Arrow keys and Page Up / Down turn the book; never while typing or in a dialog.
   useEffect(() => {
@@ -148,23 +245,11 @@ export function usePdfNavigation(deps: UsePdfNavigationDeps) {
       const step = e.key === 'ArrowRight' || e.key === 'PageDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'PageUp' ? -1 : 0;
       if (!step) return;
       e.preventDefault();
-      const pair = Math.floor(((pendingRef.current?.page ?? pageRef.current) - 1) / 2) + step;
-      const page = Math.min(pageCount, Math.max(1, pair * 2 + 1));
-      if (page !== (pendingRef.current?.page ?? pageRef.current)) bookTurnRef.current?.(page, true);
+      stepBook(step);
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [bookOn, pageCount]);
-
-  // A sideways swipe (finger, pen, trackpad) turns the book too.
-  const swipeTurn = useCallback(
-    (step: 1 | -1) => {
-      const pair = Math.floor(((pendingRef.current?.page ?? pageRef.current) - 1) / 2) + step;
-      const page = Math.min(pageCount, Math.max(1, pair * 2 + 1));
-      if (page !== (pendingRef.current?.page ?? pageRef.current)) bookTurnRef.current?.(page, true);
-    },
-    [pageCount]
-  );
+  }, [bookOn, stepBook]);
   // Not while a drawing tool is armed: the finger is drawing, not turning.
   const toolRef = useRef(tool);
   toolRef.current = tool;
@@ -172,7 +257,8 @@ export function usePdfNavigation(deps: UsePdfNavigationDeps) {
     const t = toolRef.current;
     return Boolean(t && t !== 'select' && !isTextAnchored(t));
   }, []);
-  useSwipeTurn(scrollRef, swipeTurn, bookOn, swipeBlocked);
+  // A sideways swipe (finger, pen, trackpad) turns the book too.
+  useSwipeTurn(scrollRef, stepBook, bookOn, swipeBlocked);
 
   const goToPage = useCallback((page: number, animate = true) => {
     if (bookTurnRef.current) return bookTurnRef.current(page, animate);

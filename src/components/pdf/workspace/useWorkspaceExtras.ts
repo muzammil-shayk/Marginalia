@@ -3,7 +3,7 @@
  * archive (moved verbatim from PdfWorkspace).
  */
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, useSyncExternalStore } from 'react';
 import { useDocumentFind } from '../../FindBar';
 import { UserSettings } from '../../../types';
 import { Annotation, annotationBounds, asPdfMarks } from '../annotationModel';
@@ -17,6 +17,7 @@ import type { WorkspaceMarks, WorkspaceSelection, WorkspaceStatus, WorkspaceView
 import type { PdfNavigation } from './usePdfNavigation';
 import { ocrStore } from '../ocr/usePageOcr';
 import { ocrPageText } from '../../../utils/ocrWords';
+import { pageSearchText, unreadScanPages } from '../ocrView';
 import { pageElementAt } from './pageElement';
 import type { PdfCollapse } from './PdfCollapsed';
 
@@ -175,7 +176,12 @@ export function useWorkspaceExtras(deps: UseWorkspaceExtrasDeps) {
   // ── Find in document (Cmd+F) ──
   /** Each page's text-layer string, read from pdf.js the first time find opens on this file. */
   const [pageTexts, setPageTexts] = useState<string[] | null>(null);
-  useEffect(() => setPageTexts(null), [pdf]);
+  /** The same, as pdf.js has them (no OCR words): which pages are pictures Find cannot search yet. */
+  const [rawTexts, setRawTexts] = useState<string[] | null>(null);
+  useEffect(() => {
+    setPageTexts(null);
+    setRawTexts(null);
+  }, [pdf]);
   const pageTextLayer = (i: number) =>
     scrollRef.current?.querySelector(`[data-page-number="${i + 1}"] .marginalia-text-layer`) ?? null;
   // A page can be drawn more than once: the book's hidden neighbours, strips when collapsed.
@@ -225,14 +231,18 @@ export function useWorkspaceExtras(deps: UseWorkspaceExtrasDeps) {
           .then((tc) => tc.items.map((it) => ('str' in it ? it.str + (it.hasEOL ? ' ' : '') : '')).join(''))
           .catch(() => '')
       )
-    ).then((texts) => !cancelled && setPageTexts(withOcrText(texts)));
+    ).then((texts) => {
+      if (cancelled) return;
+      setRawTexts(texts);
+      setPageTexts(withOcrText(texts));
+    });
     return () => {
       cancelled = true;
     };
   }, [find.open, pageTexts, pdf]);
   /** A scanned page has no text of its own; once read by OCR, its OCR words are what Find searches. */
   const withOcrText = useCallback(
-    (texts: string[]) => texts.map((t, i) => (t.trim() ? t : ocrPageText(ocrStore.page(docId, i + 1).words))),
+    (texts: string[]) => texts.map((t, i) => pageSearchText(t, () => ocrPageText(ocrStore.page(docId, i + 1).words))),
     [docId]
   );
   // A page read while Find is open joins the search.
@@ -246,6 +256,10 @@ export function useWorkspaceExtras(deps: UseWorkspaceExtrasDeps) {
       })
     );
   }, [find.open, pageTexts, withOcrText]);
+
+  const unreadScans = useSyncExternalStore(ocrStore.subscribe, () =>
+    rawTexts ? unreadScanPages(rawTexts, (n) => ocrStore.page(docId, n).status === 'done' || ocrStore.refused(docId, n)) : 0
+  );
 
   // ── Linked marks ──
   const linkOption = (a: Annotation): LinkOption => ({
@@ -285,7 +299,7 @@ export function useWorkspaceExtras(deps: UseWorkspaceExtrasDeps) {
     teacher: settings.name
   });
 
-  return { askRedact, setAskRedact, exportPdf, blackoutPages, archive, find, handleExport, markLinksFor, scrollToAnnotation };
+  return { askRedact, setAskRedact, exportPdf, blackoutPages, archive, find, unreadScans, handleExport, markLinksFor, scrollToAnnotation };
 }
 
 export type WorkspaceExtras = ReturnType<typeof useWorkspaceExtras>;

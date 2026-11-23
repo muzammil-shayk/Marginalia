@@ -18,6 +18,10 @@ import type { WorkspaceExtras } from './useWorkspaceExtras';
 import type { PageEdits } from './usePageEdits';
 import { PdfCollapsed, type PdfCollapse } from './PdfCollapsed';
 
+/** Book view: the open pair is set by turns only; a page crossing the window's middle (often a
+ *  turn behind, as it mounts) must not move it back. */
+const ignoreVisible = () => {};
+
 /** What the page itself acts as: Black it out's mode stands in for the mask tool. */
 export interface PageTools {
   tool: PdfTool;
@@ -109,7 +113,7 @@ export const WorkspaceBody: React.FC<WorkspaceBodyProps> = ({ settings, isDark, 
                 onEdit={startEditing}
                 onUpdate={updateAnnotation}
                 onHover={setHoveredId}
-                onVisible={setCurrentPage}
+                onVisible={bookOn ? ignoreVisible : setCurrentPage}
                 onDeletePage={pageCount > 1 ? () => void handleDeletePage(pageNumber) : undefined}
               />
             );

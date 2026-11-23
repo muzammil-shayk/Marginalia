@@ -1,9 +1,10 @@
 /**
  * "Make text selectable": reading a scanned page's words (OCR) so it can be highlighted,
- * underlined and searched like any PDF with text. Runs only when pressed (ocr/usePageOcr.ts).
+ * underlined and searched like any PDF with text. Runs only on the reader's action: selecting on
+ * the page, or the toolbar panel (ocr/usePageOcr.ts).
  *
- * - `OcrPageButton`: on a scanned page, a pill to read that page, its progress with Cancel, and
- *   an error with Try again. Gone once the page has text.
+ * - `OcrPageStatus`: on a scanned page, nothing at rest; selecting on the page reads it (PdfPage),
+ *   and only that read shows, as small progress with Cancel, or a quiet error.
  * - `OcrDocumentMenu`: a toolbar button whose panel reads every scanned page, with page n of N,
  *   Cancel, and plain words on what OCR gets right and wrong.
  * The wording lives in ocrView.ts (tested).
@@ -11,61 +12,45 @@
 
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Info, Loader2, ScanText, X } from '../icons';
+import { Loader2, ScanText } from '../icons';
 import { HoverTooltip } from '../HoverTooltip';
 import { useDismiss } from './useDismiss';
 import { useDocumentOcr, usePageOcr } from './ocr/usePageOcr';
-import { OCR_ACCURACY, OCR_PAGES_NOTE, docOcrView, pageOcrView } from './ocrView';
+import { OCR_ACCURACY, OCR_PAGES_NOTE, docOcrView, findScanNote, pageOcrView } from './ocrView';
 
-const pill = 'flex items-center gap-1.5 rounded-full caps px-3 py-1.5 text-[11px] cursor-pointer transition-colors';
-
-/** `lowered`: the page's own hint (Black it out on a scan) holds the top, so this sits under it. */
-export const OcrPageButton: React.FC<{ docId: string; pageNumber: number; lowered?: boolean }> = ({ docId, pageNumber, lowered = false }) => {
+/**
+ * Over a scanned page while it is being read (selecting on it starts the read: PdfPage), or after
+ * a read failed. Nothing at rest. `lowered`: the page's own hint (Black it out on a scan) holds the top.
+ */
+export const OcrPageStatus: React.FC<{ docId: string; pageNumber: number; lowered?: boolean }> = ({ docId, pageNumber, lowered = false }) => {
   const ocr = usePageOcr(docId, pageNumber);
   const view = pageOcrView(ocr);
-  if (view.kind === 'hidden') return null;
+  const said = view.kind === 'running' || view.kind === 'note' ? view.label : view.kind === 'error' ? `${view.label}. Select again to retry.` : '';
   return (
-    // Over the page's paper, which is light in both themes: fixed ink colours, not theme tokens.
-    <div data-ocr-page={pageNumber} data-mark-ui className={`absolute ${lowered ? 'top-11' : 'top-3'} left-1/2 -translate-x-1/2 z-30 flex items-center gap-1 rounded-full bg-white/95 shadow-md ring-1 ring-black/10 p-1 text-stone-800`}>
-      {view.kind === 'offer' && (
-        <>
-          <button type="button" onClick={() => void ocr.run()} className={`${pill} bg-ink text-paper hover:bg-stone-700`}>
-            <ScanText className="w-3.5 h-3.5" />
-            {view.label}
-          </button>
-          <HoverTooltip label={`This page is a picture. Reading its words lets you highlight, underline and Find in it. ${OCR_ACCURACY}`}>
-            <span tabIndex={0} aria-label={`About reading this page. ${OCR_ACCURACY}`} className="p-1.5 rounded-full text-stone-600 hover:text-stone-900 cursor-help">
-              <Info className="w-3.5 h-3.5" />
-            </span>
-          </HoverTooltip>
-        </>
-      )}
-      {view.kind === 'running' && (
-        <>
-          <span role="status" className="flex items-center gap-2 pl-2 pr-1 text-[12px]">
-            <Loader2 className="w-3.5 h-3.5 motion-safe:animate-spin" />
-            {view.label}
-            <span aria-hidden className="w-16 h-1 rounded-full bg-stone-200 overflow-hidden">
-              <span className="block h-full bg-ink transition-[width] duration-300 ease-out" style={{ width: `${view.percent}%` }} />
-            </span>
+    <>
+      {/* Always there, empty at rest: a live region added with its text is often not announced. */}
+      <span data-ocr-live role="status" aria-live="polite" className="sr-only">
+        {said}
+      </span>
+      {view.kind !== 'hidden' && (
+        // Over the page's paper, which is light in both themes: fixed ink colours, not theme tokens.
+        <div
+          data-ocr-page={pageNumber}
+          data-mark-ui
+          className={`absolute ${lowered ? 'top-10' : 'top-2'} left-2 z-30 flex items-center gap-1.5 rounded-full bg-white/90 shadow-sm ring-1 ring-black/5 pl-2.5 pr-1 py-0.5 text-[11px] text-stone-600`}
+        >
+          <span aria-hidden title={view.kind === 'error' ? view.detail : undefined} className={`flex items-center gap-1.5 tabular-nums ${view.kind === 'error' ? 'pr-1.5' : ''}`}>
+            {view.kind === 'running' && <Loader2 className="w-3 h-3 motion-safe:animate-spin" />}
+            {said}
           </span>
-          <button type="button" onClick={ocr.cancel} className={`${pill} text-stone-700 hover:bg-stone-100`}>
-            <X className="w-3.5 h-3.5" />
-            Cancel
-          </button>
-        </>
+          {view.kind === 'running' && (
+            <button type="button" onClick={ocr.cancel} className="rounded-full px-2 py-0.5 text-stone-500 hover:text-stone-900 hover:bg-stone-100 cursor-pointer transition-colors">
+              Cancel
+            </button>
+          )}
+        </div>
       )}
-      {view.kind === 'error' && (
-        <>
-          <span role="alert" title={view.detail} className="pl-2 pr-1 text-[12px] text-red-800">
-            {view.label}
-          </span>
-          <button type="button" onClick={() => void ocr.run()} className={`${pill} bg-ink text-paper hover:bg-stone-700`}>
-            Try again
-          </button>
-        </>
-      )}
-    </div>
+    </>
   );
 };
 
@@ -195,5 +180,26 @@ export const OcrDocumentMenu: React.FC<{ docId: string; isDark: boolean }> = ({ 
           document.getElementById('app-container') ?? document.body
         )}
     </div>
+  );
+};
+
+/** Find's line about scanned pages it cannot search yet: "Read pages" reads them (on this click only). */
+export const FindScanNote: React.FC<{ docId: string; unread: number; hits: number; pages: number; query: string }> = ({ docId, unread, hits, pages, query }) => {
+  const ocr = useDocumentOcr(docId);
+  const note = findScanNote(unread, ocr, { hits, pages, query });
+  if (!note) return null;
+  return (
+    <span data-find-scans className="inline-flex items-center gap-2" title={OCR_ACCURACY}>
+      <span role="status">{note.text}</span>
+      {note.action ? (
+        <button type="button" onClick={() => void ocr.run()} className="underline underline-offset-2 decoration-1 hover:text-ink dark:hover:text-paper cursor-pointer">
+          {note.action}
+        </button>
+      ) : (
+        <button type="button" onClick={ocr.cancel} className="underline underline-offset-2 decoration-1 hover:text-ink dark:hover:text-paper cursor-pointer">
+          Cancel
+        </button>
+      )}
+    </span>
   );
 };

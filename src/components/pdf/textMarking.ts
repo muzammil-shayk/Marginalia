@@ -134,9 +134,24 @@ export function blackoutMarks(
 }
 
 /**
+ * Whether a string holds any printable character (letters, digits, symbols, punctuation,
+ * private-use glyphs). A PDF font with no letter map (common in Urdu Nastaliq/InPage exports)
+ * gives pdf.js control/format characters only, which `trim()` keeps.
+ */
+export function hasReadableText(s: string): boolean {
+  return /[^\p{Cc}\p{Cf}\p{Z}\s]/u.test(s);
+}
+
+/**
  * Whether a page's text content (pdf.js `getTextContent().items`) holds any real text. A scanned
- * page has none (or only blank runs), so Black it out's Words mode draws a box there instead.
+ * page has none (or only blank or control-character runs), so it is read by OCR and Black it
+ * out's Words mode draws a box there instead.
  */
 export function pageHasText(items: ReadonlyArray<object>): boolean {
-  return items.some((item) => 'str' in item && typeof item.str === 'string' && item.str.trim().length > 0);
+  return items.some((item) => 'str' in item && typeof item.str === 'string' && hasReadableText(item.str));
+}
+
+/** Characters but none printable on the whole page: a font with no letter map, not a scan. */
+export function pageHasUnmappedText(items: ReadonlyArray<object>): boolean {
+  return !pageHasText(items) && items.some((item) => 'str' in item && typeof item.str === 'string' && item.str.trim().length > 0);
 }

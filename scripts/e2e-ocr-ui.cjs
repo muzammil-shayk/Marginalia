@@ -1,17 +1,19 @@
 /**
- * End-to-end checks of the "make text selectable" controls for scanned PDFs (pdf/OcrControls.tsx),
- * in the real app (Electron + the built server), on a throwaway library in the temp folder.
- * The OCR engine itself is checked in e2e-ocr.cjs; this drives it the way a reader does.
+ * End-to-end checks of reading scanned PDF pages (OCR) the way a reader does, in the real app
+ * (Electron + the built server), on a throwaway library in the temp folder, with real mouse drags.
+ * The OCR engine itself is checked in e2e-ocr.cjs.
  *
  *   npm run test:e2e        (builds first)
  *
- * 1. Nothing is read on opening; each scanned page offers "Make text selectable".
- * 2. One page's button reads that page (with progress), then its words are selectable and the
- *    button goes.
+ * English scans, so pages in view are also read on their own (useAutoOcr): page 1 is a dense page
+ * that takes a while, so a drag on page 2 meanwhile is the reader's read, which goes first.
+ * 1. Nothing sits over a scanned page at rest (no button; an empty live region waits).
+ * 2. Dragging across a line of page 2 with Highlight armed, while page 1 is read on its own, reads
+ *    page 2 (small progress), then the same drag is replayed: a highlight with the line's words.
  * 3. The toolbar panel offers the whole document, with honest copy; focus moves into it, Tab
  *    stays inside, Escape returns to its button; it reads what is left.
- * 4. A PDF with text of its own shows no page button.
- * 5. Cancel on a page read stops it: the button offers again and nothing is saved.
+ * 4. A drag on a PDF with text of its own reads nothing and shows no progress.
+ * 5. Cancel on a page read stops it: the progress goes and nothing is saved.
  * Exits 0 when every check passes, 1 otherwise, printing each result.
  */
 
@@ -32,26 +34,37 @@ const LINE = 'The quick brown fox jumps over the lazy dog';
 const W = 1200;
 const H = 1600;
 
-/** A one-page scan: a picture of a line of English, no text layer. Drawn in an Electron canvas. */
+/** A six-page scan, no text layer: page 1 a dense page of English, the rest one line. Small pages, so two show at once. */
 async function scannedPdf() {
   const w = new BrowserWindow({ show: false });
   await w.loadURL('data:text/html,<html><body></body></html>');
-  const png = await w.webContents.executeJavaScript(`(() => {
+  const draw = (dense) => w.webContents.executeJavaScript(`(() => {
     const c = document.createElement('canvas'); c.width = ${W}; c.height = ${H};
     const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
-    g.fillStyle = '#111'; g.font = '48px serif'; g.fillText(${JSON.stringify(LINE)}, 100, 300);
+    g.fillStyle = '#111'; g.font = '${dense ? 28 : 48}px serif';
+    if (${dense}) for (let i = 0; i < 44; i++) g.fillText('Line ' + i + ' of a long page the reader has not reached yet', 60, 60 + i * 34);
+    else g.fillText(${JSON.stringify(LINE)}, 100, 300);
     return c.toDataURL('image/png');
   })()`);
+  const pngs = [await draw(true), await draw(false)];
   w.destroy();
   const { PDFDocument } = require(path.join(ROOT, 'node_modules', 'pdf-lib'));
   const doc = await PDFDocument.create();
-  const image = await doc.embedPng(Buffer.from(png.split(',')[1], 'base64'));
-  for (let i = 0; i < 2; i++) doc.addPage([W / 2, H / 2]).drawImage(image, { x: 0, y: 0, width: W / 2, height: H / 2 });
+  const [dense, line] = await Promise.all(pngs.map((png) => doc.embedPng(Buffer.from(png.split(',')[1], 'base64'))));
+  for (let i = 0; i < 6; i++) doc.addPage([W / 4, H / 4]).drawImage(i === 0 ? dense : line, { x: 0, y: 0, width: W / 4, height: H / 4 });
   return Buffer.from(await doc.save());
 }
 
 async function main() {
   const store = fs.mkdtempSync(path.join(os.tmpdir(), 'marginalia-e2e-ocrui-'));
+  try {
+    await run(store);
+  } finally {
+    fs.rmSync(store, { recursive: true, force: true });
+  }
+}
+
+async function run(store) {
   Object.assign(process.env, { MARGINALIA_STORE_DIR: store, MARGINALIA_EMBEDDED: '1', NODE_ENV: 'production', PORT: '0' });
   const server = require(path.join(ROOT, 'dist', 'server.cjs'));
   const port = await server.startServer({ staticRoot: path.join(ROOT, 'dist') });
@@ -76,31 +89,75 @@ async function main() {
   await win.loadURL(base);
   await js(`sessionStorage.setItem('marginalia_session', ${JSON.stringify(JSON.stringify(s))}); return true;`);
   await win.loadURL(base);
-  if (!(await until(`return document.querySelector('[data-page-number="1"][data-painted]');`))) throw new Error('page 1 never painted');
-  await sleep(1500);
+  // Small enough that pages 1 and 2 are both on screen.
+  const twoInView = async () => {
+    await until(`return document.querySelector('[data-page-number="1"][data-painted]');`);
+    for (let i = 0; i < 12 && (await js(`return document.querySelector('[data-page-number="1"]').getBoundingClientRect().height;`)) > 380; i++) {
+      // The toolbar folds zoom into More at this width.
+      await js(`if (!document.querySelector('button[aria-label="Zoom out"]')) document.querySelector('[aria-label^="More:"]')?.click(); await new Promise((r) => setTimeout(r, 200)); document.querySelector('button[aria-label="Zoom out"]')?.click(); return true;`);
+      await sleep(150);
+    }
+    return until(`return document.querySelector('[data-page-number="2"][data-painted]');`);
+  };
+  if (!(await twoInView())) throw new Error('page 2 never painted ' + JSON.stringify(await js(`return { z: [...document.querySelectorAll('button[aria-label]')].map((b) => b.getAttribute('aria-label')).filter((l) => /zoom/i.test(l)), p: [...document.querySelectorAll('[data-page-number]')].map((e) => [e.dataset.pageNumber, Math.round(e.getBoundingClientRect().top), Math.round(e.getBoundingClientRect().height), e.hasAttribute('data-painted')]) };`)));
   const ocrOnDisk = () => (fs.existsSync(path.join(store, 'ocr', pdf.id)) ? fs.readdirSync(path.join(store, 'ocr', pdf.id)) : []);
 
   const pill = (n) => js(`const p = document.querySelector('[data-page-number="${n}"] [data-ocr-page]'); return p ? p.textContent : null;`);
-  /** Pages away from the view are not painted (and show nothing): look at one in view. */
-  const view = async (n) => {
-    await js(`document.querySelector('[data-page-number="${n}"]').scrollIntoView({ block: 'start' }); return true;`);
-    await until(`return document.querySelector('[data-page-number="${n}"][data-painted]');`);
-    await sleep(500);
+  const marks = async (id) => (await api(`/documents/${id}/annotations`)).annotations || [];
+  const wc0 = win.webContents;
+  /** A real mouse drag across page n, from and to page fractions. */
+  const dragOn = async (n, from, to) => {
+    const r = await js(`const b = document.querySelector('[data-page-number="${n}"]').getBoundingClientRect(); return { x: b.left, y: b.top, w: b.width, h: b.height };`);
+    const at = ([fx, fy]) => ({ x: Math.round(r.x + r.w * fx), y: Math.round(r.y + r.h * fy) });
+    const a = at(from);
+    const b = at(to);
+    wc0.sendInputEvent({ type: 'mouseMove', x: a.x, y: a.y });
+    wc0.sendInputEvent({ type: 'mouseDown', x: a.x, y: a.y, button: 'left', clickCount: 1 });
+    for (let i = 1; i <= 10; i++) {
+      wc0.sendInputEvent({ type: 'mouseMove', x: Math.round(a.x + ((b.x - a.x) * i) / 10), y: Math.round(a.y + ((b.y - a.y) * i) / 10), button: 'left' });
+      await sleep(20);
+    }
+    wc0.sendInputEvent({ type: 'mouseUp', x: b.x, y: b.y, button: 'left', clickCount: 1 });
+    await sleep(100);
   };
+  const keyTap = async (keyCode) => {
+    wc0.focus();
+    wc0.sendInputEvent({ type: 'keyDown', keyCode });
+    wc0.sendInputEvent({ type: 'char', keyCode });
+    wc0.sendInputEvent({ type: 'keyUp', keyCode });
+    await sleep(200);
+  };
+  // The line of the scan runs from x ~330 to 1100 of 1200, y ~227 to 337 of 1600: its middle is ~0.176.
+  const LINE_FROM = [0.25, 0.176];
+  const LINE_TO = [0.93, 0.176];
   const clickIn = (n, text) => js(`const b = [...document.querySelectorAll('[data-page-number="${n}"] [data-ocr-page] button')].find((x) => x.textContent.includes(${JSON.stringify(text)})); if (!b) return false; b.click(); return true;`);
-  await view(2);
-  const offer2 = await pill(2);
-  await view(1);
-  const offers = [await pill(1), offer2];
-  check('Each scanned page offers "Make text selectable"; nothing is read on opening', offers.every((t) => t && t.includes('Make text selectable')) && ocrOnDisk().length === 0, JSON.stringify({ offers, saved: ocrOnDisk() }));
+  const rest2 = await pill(2);
+  // An empty live region waits on the page, so the reading progress is announced when it starts.
+  const live = await js(`const l = document.querySelector('[data-page-number="2"] [data-ocr-live]'); return l ? { role: l.getAttribute('role'), text: l.textContent } : null;`);
+  check(
+    'Nothing sits over a scanned page at rest (an empty live region waits for progress)',
+    rest2 === null && !ocrOnDisk().includes('2.json') && live?.role === 'status' && live.text === '',
+    JSON.stringify({ rest2, live, saved: ocrOnDisk() })
+  );
 
-  // 2. Page 1 by its own button.
-  await clickIn(1, 'Make text selectable');
-  const reading = await until(`const t = document.querySelector('[data-page-number="1"] [data-ocr-page] [role="status"]')?.textContent; return t && t.includes('Reading this page') ? t : null;`, 10000);
-  const page1Words = await until(`const n = document.querySelectorAll('[data-page-number="1"] .marginalia-text-layer span').length; return n > 3 && !document.querySelector('[data-page-number="1"] [data-ocr-page]') ? n : null;`, 90000);
-  await view(2);
-  const page2Still = await pill(2);
-  check('Page 1 button: progress, then selectable words and the button goes; page 2 still offers it', Boolean(reading) && Boolean(page1Words) && Boolean(page2Still) && ocrOnDisk().length === 1, JSON.stringify({ reading, page1Words, page2Still: Boolean(page2Still), saved: ocrOnDisk() }));
+  // 2. A drag across the line with Highlight armed, while page 1 is read on its own: page 2 is read first, then the drag becomes a highlight.
+  await keyTap('H');
+  await dragOn(2, LINE_FROM, LINE_TO);
+  const reading = await until(`const t = document.querySelector('[data-page-number="2"] [data-ocr-live]')?.textContent; const chip = document.querySelector('[data-page-number="2"] [data-ocr-page]')?.textContent; return t && t.includes('Reading this page') && chip?.includes('Reading this page') ? t : null;`, 10000);
+  const hl = await (async () => {
+    for (const t0 = Date.now(); Date.now() - t0 < 90000; await sleep(300)) {
+      const m = (await marks(pdf.id)).filter((a) => a.kind === 'highlight');
+      if (m.length) return m;
+    }
+    return [];
+  })();
+  const quote = hl[0]?.quote || '';
+  check(
+    'Dragging on a scanned page reads it (small progress), then the drag is a highlight of the line on that page',
+    Boolean(reading) && hl.length === 1 && hl[0].page === 2 && /quick/i.test(quote) && /brown/i.test(quote) && ocrOnDisk().includes('2.json'),
+    JSON.stringify({ reading, marks: hl.length, quote, saved: ocrOnDisk() })
+  );
+  await keyTap('V');
 
   // 3. The toolbar panel: what OCR can and cannot do, and the rest of the document.
   const opened = await js(`
@@ -112,8 +169,8 @@ async function main() {
     return { button: true, text: panel?.textContent ?? '', inApp: Boolean(panel?.closest('#app-container')) };
   `);
   check(
-    'The toolbar panel offers the whole document and is honest about Urdu and page edits',
-    opened.button && /Make whole document selectable/.test(opened.text) && /Urdu \(Nastaliq\)/.test(opened.text) && /Inserting or deleting a page clears/.test(opened.text) && opened.inApp,
+    'The toolbar panel offers the whole document and is honest about right-to-left books and page edits',
+    opened.button && /Make whole document selectable/.test(opened.text) && /right-to-left books aren.t supported yet/.test(opened.text) && /Inserting or deleting a page clears/.test(opened.text) && opened.inApp,
     JSON.stringify({ saved: ocrOnDisk(), ...opened, text: opened.text?.slice(0, 60) })
   );
 
@@ -138,11 +195,13 @@ async function main() {
   await sleep(400);
 
   await js(`[...document.querySelectorAll('[data-ocr-menu] button')].find((b) => b.textContent.includes('Make whole document selectable')).click(); return true;`);
-  const progress = await until(`const t = document.querySelector('[data-ocr-menu] [role="status"]')?.textContent || ''; return /Reading page \\d of 2/.test(t) ? t : null;`, 15000);
-  const done = await until(`const t = document.querySelector('[data-ocr-menu]')?.textContent || ''; return t.includes('Done: every page of 2') ? t : null;`, 120000);
+  const progress = await until(`const t = document.querySelector('[data-ocr-menu] [role="status"]')?.textContent || ''; return /Reading page \\d of 6/.test(t) ? t : null;`, 15000);
+  const done = await until(`const t = document.querySelector('[data-ocr-menu]')?.textContent || ''; return t.includes('Done: every page of 6') ? t : null;`, 120000);
   const words = await until(`const n = document.querySelectorAll('[data-page-number="2"] .marginalia-text-layer span').length; return n > 3 ? n : null;`, 10000);
   const page2Gone = !(await pill(2));
-  check('The panel reads the rest (page n of N): both pages saved, no page button left', Boolean(progress) && Boolean(done) && Boolean(words) && page2Gone && ocrOnDisk().length === 2, JSON.stringify({ progress, done: Boolean(done), words, page2Gone, saved: ocrOnDisk() }));
+  check('The panel reads the rest (page n of N): every page saved, nothing left over the page', Boolean(progress) && Boolean(done) && Boolean(words) && page2Gone && ocrOnDisk().length === 6, JSON.stringify({ progress, done: Boolean(done), words, page2Gone, saved: ocrOnDisk() }));
+  const savedLangs = ocrOnDisk().map((f) => JSON.parse(fs.readFileSync(path.join(store, 'ocr', pdf.id, f), 'utf8')).langs);
+  check('Every page is read in English', savedLangs.length === 6 && savedLangs.every((l) => l === 'eng'), JSON.stringify(savedLangs));
 
   // 4. A PDF with text of its own.
   const { PDFDocument, StandardFonts } = require(path.join(ROOT, 'node_modules', 'pdf-lib'));
@@ -156,7 +215,10 @@ async function main() {
   await win.loadURL(base);
   await until(`return document.querySelector('[data-page-number="1"] .marginalia-text-layer span');`);
   await sleep(800);
-  check('A PDF with its own text shows no page button', (await pill(1)) === null);
+  await dragOn(1, [0.1, 0.12], [0.6, 0.12]);
+  await sleep(1500);
+  check('A drag on a PDF with its own text reads nothing and shows no progress', (await pill(1)) === null && !fs.existsSync(path.join(store, 'ocr', plain.id)), JSON.stringify({ pill: await pill(1) }));
+  await js(`getSelection().removeAllRanges(); return true;`);
 
   // 5. Cancel, on a second scan (last: it must not hold up the checks above if it misbehaves).
   const scan2 = await api('/documents', 'POST', { title: 'Scan two', text: 'A scanned page', format: 'PDF', filename: 'scan2.pdf' });
@@ -165,18 +227,27 @@ async function main() {
   await win.loadURL(base);
   await js(`sessionStorage.setItem('marginalia_session', ${JSON.stringify(JSON.stringify({ ...s, analysisDoc: { title: scan2.title, text: '', format: 'PDF', docId: scan2.id } }))}); return true;`);
   await win.loadURL(base);
-  await until(`return document.querySelector('[data-page-number="2"]');`);
-  await view(2);
-  await clickIn(2, 'Make text selectable');
-  await until(`return document.querySelector('[data-page-number="2"] [data-ocr-page] [role="status"]');`, 10000);
+  await twoInView();
+  await dragOn(2, LINE_FROM, LINE_TO);
+  await until(`return document.querySelector('[data-page-number="2"] [data-ocr-page]');`, 10000);
   await clickIn(2, 'Cancel');
-  const afterCancel = await until(`const t = document.querySelector('[data-page-number="2"] [data-ocr-page]')?.textContent; return t && t.includes('Make text selectable') ? t : null;`, 10000);
-  await sleep(800);
-  check('Cancel stops a page read: its button offers again and nothing is saved', Boolean(afterCancel) && ocrOnDisk2().length === 0, JSON.stringify({ afterCancel: Boolean(afterCancel), saved: ocrOnDisk2() }));
+  const afterCancel = await until(`return document.querySelector('[data-page-number="2"] [data-ocr-page]') ? null : 'gone';`, 10000);
+  check('Cancel stops a page read: the progress goes and nothing of it is saved', Boolean(afterCancel) && !ocrOnDisk2().includes('2.json'), JSON.stringify({ afterCancel: Boolean(afterCancel), saved: ocrOnDisk2() }));
 
+  // 6. Cancel on an automatic read: the reader's Cancel lets auto-OCR go on, so one starts again; cancelling it pauses auto-OCR here.
+  const autoPage = await until(`const c = [...document.querySelectorAll('[data-ocr-page]')].find((x) => [...x.querySelectorAll('button')].some((b) => b.textContent.includes('Cancel'))); return c ? c.closest('[data-page-number]').dataset.pageNumber : null;`, 15000);
+  const savedAtCancel = ocrOnDisk2().length;
+  if (autoPage) await clickIn(autoPage, 'Cancel');
+  await until(`return document.querySelector('[data-ocr-page]') ? null : 'gone';`, 5000);
+  const restarted = await until(`return document.querySelector('[data-ocr-page]') ? 'chip' : null;`, 2500);
+  await sleep(500);
+  check(
+    'Cancel on an automatic read: no page starts reading again for 2.5 s and nothing more is saved',
+    Boolean(autoPage) && !restarted && ocrOnDisk2().length === savedAtCancel,
+    JSON.stringify({ autoPage, restarted, savedAtCancel, saved: ocrOnDisk2() })
+  );
 
   win.destroy();
-  fs.rmSync(store, { recursive: true, force: true });
 }
 
 app.disableHardwareAcceleration();

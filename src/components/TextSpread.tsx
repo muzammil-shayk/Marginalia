@@ -7,8 +7,9 @@
  */
 
 import React, { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { ChevronLeft, ChevronRight } from './icons';
-import { clampSpread, columnAt, pageCountFor, playTurn, snapshotPage, turnDirection, type PageBox } from './pageTurn';
+import { clampSpread, columnAt, isLiveMutation, pageCountFor, playTurn, snapshotPage, turnDirection, TurnPrep, type PageBox, type TurnDirection, type TurnOptions } from './pageTurn';
 import { isTypingTarget } from './pdf/workspaceKeys';
 import { useSwipeTurn } from './swipeTurn';
 
@@ -60,7 +61,9 @@ export const TextSpread = forwardRef<TextSpreadHandle, TextSpreadProps>(function
   const [pages, setPages] = useState(1);
   const [spread, setSpread] = useState(0);
   const spreadRef = useRef(0);
-  spreadRef.current = spread;
+  /** A turn's target until the leaf lands and `setSpread` runs; re-renders before then must not undo it. */
+  const pendingSpread = useRef<number | null>(null);
+  spreadRef.current = pendingSpread.current ?? spread;
   const turning = useRef<{ finish: () => void } | null>(null);
   const placedInitial = useRef(false);
   const [tick, setTick] = useState(0);
@@ -178,6 +181,61 @@ export const TextSpread = forwardRef<TextSpreadHandle, TextSpreadProps>(function
     [geo, pages]
   );
 
+  /** The turn from spread `from` to `to`, built from copies of the pages as they are now. */
+  const turnOptions = useCallback(
+    (from: number, to: number, dir: TurnDirection): TurnOptions | null => {
+      const book = bookRef.current;
+      if (!book || !geo) return null;
+      const left: PageBox = { left: 0, top: 0, width: geo.pageW, height: geo.bookH };
+      const right: PageBox = { ...left, left: geo.pageW };
+      return {
+        layer: book,
+        left,
+        right,
+        dir,
+        front: snapshotText(dir === 1 ? 2 * from + 1 : 2 * from),
+        cover: snapshotText(dir === 1 ? 2 * from : 2 * from + 1),
+        back: () => snapshotText(dir === 1 ? 2 * to : 2 * to + 1),
+        under: () => snapshotText(dir === 1 ? 2 * to + 1 : 2 * to),
+        reduced
+      };
+    },
+    [geo, snapshotText, reduced]
+  );
+  const turnKey = useCallback(
+    (from: number, to: number) => (geo ? `${from}>${to}|${geo.bookW}x${geo.bookH}|${pages}` : ''),
+    [geo, pages]
+  );
+
+  // The turns either way from the open spread, built ahead so a click only starts one.
+  const [prep] = useState(() => new TurnPrep());
+  useEffect(() => () => prep.dispose(), [prep]);
+  useEffect(() => {
+    const flow = flowEl.current;
+    if (!flow) return;
+    // Marks, notes, hover tints and font changes all show on the copies: rebuild after them.
+    const observer = new MutationObserver((records) => {
+      if (records.some(isLiveMutation)) prep.invalidate();
+    });
+    observer.observe(flow, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['class', 'style'] });
+    return () => observer.disconnect();
+  }, [prep, geo]);
+  useEffect(() => {
+    if (reduced || !geo) return;
+    const at = spread;
+    const target = (dir: TurnDirection) => (at + dir >= 0 && at + dir < spreads ? at + dir : null);
+    prep.schedule({
+      key: (dir) => {
+        const to = target(dir);
+        return to === null ? null : turnKey(at, to);
+      },
+      options: (dir) => {
+        const to = target(dir);
+        return to === null ? null : turnOptions(at, to, dir);
+      }
+    });
+  }, [prep, spread, spreads, geo, reduced, turnKey, turnOptions]);
+
   const turnTo = useCallback(
     (target: number, animate = true) => {
       const to = clampSpread(target, spreads);
@@ -187,29 +245,35 @@ export const TextSpread = forwardRef<TextSpreadHandle, TextSpreadProps>(function
       turning.current?.finish();
       onTurn?.();
       window.getSelection()?.removeAllRanges();
-      const book = bookRef.current;
-      if (animate && book && geo) {
-        const left: PageBox = { left: 0, top: 0, width: geo.pageW, height: geo.bookH };
-        const right: PageBox = { ...left, left: geo.pageW };
-        const t = playTurn({
-          layer: book,
-          left,
-          right,
-          dir,
-          front: snapshotText(dir === 1 ? 2 * from + 1 : 2 * from),
-          cover: snapshotText(dir === 1 ? 2 * from : 2 * from + 1),
-          back: () => snapshotText(dir === 1 ? 2 * to : 2 * to + 1),
-          reduced
-        });
-        turning.current = t;
-        void t.done.then(() => {
-          if (turning.current === t) turning.current = null;
-        });
+      // The overlay shows the whole new spread (its under page and back), so the flow moves to it as
+      // the leaf lands: React's re-render then never runs during the turn.
+      const land = () => {
+        if (pendingSpread.current !== to) return;
+        pendingSpread.current = null;
+        flushSync(() => setSpread(to));
+      };
+      let folding = false;
+      if (animate) {
+        const ready = reduced ? null : prep.take(dir, turnKey(from, to));
+        const options = ready ? null : turnOptions(from, to, dir);
+        const t = ready ? ready.start(land) : options ? playTurn(options, land) : null;
+        if (t) {
+          folding = !reduced;
+          turning.current = t;
+          prep.after(t.done);
+          void t.done.then(() => {
+            if (turning.current === t) turning.current = null;
+          });
+        }
       }
       spreadRef.current = to;
-      setSpread(to);
+      if (folding) pendingSpread.current = to;
+      else {
+        pendingSpread.current = null;
+        setSpread(to);
+      }
     },
-    [spreads, geo, snapshotText, reduced, onTurn]
+    [spreads, reduced, onTurn, prep, turnKey, turnOptions]
   );
 
   useEffect(() => () => turning.current?.finish(), []);
@@ -311,7 +375,7 @@ export const TextSpread = forwardRef<TextSpreadHandle, TextSpreadProps>(function
             type="button"
             className="spread-edge left-0"
             style={{ width: g.padX }}
-            onClick={() => turnTo(spread - 1)}
+            onClick={() => turnTo(spreadRef.current - 1)}
             disabled={spread === 0}
             aria-label="Previous pages (Left arrow)"
             title="Previous pages (←)"
@@ -322,7 +386,7 @@ export const TextSpread = forwardRef<TextSpreadHandle, TextSpreadProps>(function
             type="button"
             className="spread-edge right-0"
             style={{ width: g.padX }}
-            onClick={() => turnTo(spread + 1)}
+            onClick={() => turnTo(spreadRef.current + 1)}
             disabled={spread >= spreads - 1}
             aria-label="Next pages (Right arrow)"
             title="Next pages (→)"

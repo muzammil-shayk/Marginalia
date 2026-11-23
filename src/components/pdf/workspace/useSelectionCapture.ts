@@ -4,11 +4,11 @@
  * the selection menu (moved verbatim from useTextMarking).
  */
 
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import { UserSettings } from '../../../types';
 import { FractionRect, PdfTool, isTextAnchored, mergeRectsIntoLines, rectToFraction } from '../annotationModel';
 import { isTypingTarget } from '../workspaceKeys';
-import { clippedRange, quoteFromFragments, rangeFragments } from '../../../utils/selectionText';
+import { clippedRange, quoteFromFragments, rangeFragments, unreadableSelectionPage } from '../../../utils/selectionText';
 import { blackoutMarks } from '../textMarking';
 import type { WorkspaceMarks, WorkspaceSelection } from './workspaceState';
 import type { PdfToolStyles } from './usePdfToolStyles';
@@ -50,6 +50,15 @@ export function useSelectionCapture(deps: UseSelectionCaptureDeps) {
   const { maskMode, tool, toolColors } = deps.styles;
   const { setAnnotations } = deps.marks;
   const { setPendingSelection, setSelectedId, setSelectionAnchor } = deps.selection;
+  /** A page where the last drag selected only characters with no letters (font with no letter map). */
+  const [unreadable, setUnreadable] = useState<number | null>(null);
+  /** Bumped on every unreadable drag, so a second one on the same page restarts the timer. */
+  const [unreadableDrag, setUnreadableDrag] = useState(0);
+  useEffect(() => {
+    if (unreadable === null) return;
+    const t = window.setTimeout(() => setUnreadable(null), 4000);
+    return () => window.clearTimeout(t);
+  }, [unreadable, unreadableDrag]);
 
   // ── Text selection → highlight / underline / strikeout ──
   /**
@@ -72,22 +81,23 @@ export function useSelectionCapture(deps: UseSelectionCaptureDeps) {
      * the page's words and their boxes, one mark per page for a drag across a page break.
      */
     const groups: { page: number; rects: FractionRect[]; quote: string }[] = [];
+    const seen: { page: number; quote: string; rects: number; noText: boolean }[] = [];
     for (const pageEl of Array.from(document.querySelectorAll<HTMLElement>('[data-page-number]'))) {
       const layer = pageEl.querySelector('.marginalia-text-layer');
       const whole = layer ? clippedRange(range, layer) : null;
       const strip = pageEl.closest('.pdf-band');
       const clip = whole && strip ? inSight(whole, layer!, strip) : whole;
       if (!clip) continue;
-      // In reading order: an Urdu line's runs sit left to right in the layer (selectionText.ts).
       const quote = quoteFromFragments(rangeFragments(clip));
       // Zero-area rects are emitted for collapsed line ends and would render as invisible slivers
       // that are impossible to click or erase.
       const rects = Array.from(clip.getClientRects()).filter((r) => r.width >= 0.5 && r.height >= 0.5);
+      seen.push({ page: Number(pageEl.dataset.pageNumber), quote, rects: rects.length, noText: pageEl.dataset.noText !== undefined });
       if (!quote || rects.length === 0) continue;
       const pageBox = pageEl.getBoundingClientRect();
       groups.push({ page: Number(pageEl.dataset.pageNumber), rects: mergeRectsIntoLines(rects).map((r) => rectToFraction(r, pageBox)), quote });
     }
-    return groups.length ? groups : null;
+    return { groups: groups.length ? groups : null, unreadable: unreadableSelectionPage(seen) };
   }, []);
 
   /**
@@ -102,7 +112,12 @@ export function useSelectionCapture(deps: UseSelectionCaptureDeps) {
     const sync = (byPointer: boolean) => {
       // Typing a new theme's name in the selection menu moves the browser's selection; the passage stays.
       if ((document.activeElement as HTMLElement | null)?.closest('[data-keep-selection]')) return;
-      const groups = readSelection();
+      const read = readSelection();
+      const groups = read?.groups ?? null;
+      if (byPointer) {
+        setUnreadable(read?.unreadable ?? null);
+        if (read?.unreadable != null) setUnreadableDrag((n) => n + 1);
+      }
       if (!groups) {
         // A click that collapses the selection clears it, so a later tool tap does not apply to
         // something the reader has visibly moved on from.
@@ -183,4 +198,6 @@ export function useSelectionCapture(deps: UseSelectionCaptureDeps) {
       document.removeEventListener('selectionchange', onSelectionChange);
     };
   }, [tool, maskMode, readSelection, applyTextMark, toolColors, settings.name]);
+
+  return { unreadable };
 }

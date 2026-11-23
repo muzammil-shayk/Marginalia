@@ -100,7 +100,7 @@ export const ExcerptBoard: React.FC<{
                 className={`w-full text-left text-[12px] leading-snug px-3 py-2 rounded-xl border-l-[3px] border cursor-grab ${surface} hover:shadow-md transition-shadow`}
                 style={{ borderLeftColor: i.color }}
               >
-                <span dir="auto" className="line-clamp-3">{excerpt(i.quote || i.mark.text || 'Note', 140)}</span>
+                <span className="line-clamp-3">{excerpt(i.quote || i.mark.text || 'Note', 140)}</span>
               </button>
             </li>
           ))}
@@ -195,11 +195,11 @@ export const ExcerptBoard: React.FC<{
                 } ${linkFrom && linkFrom !== id ? 'ring-2 ring-gold/50' : ''} ${linkFrom === id ? 'ring-2 ring-gold' : ''}`}
                 style={{ left: p.x, top: p.y, width: CARD_W, minHeight: CARD_H - 20, borderLeftColor: i.color }}
               >
-                <p dir="auto" className="text-[12.5px] leading-snug line-clamp-4 text-stone-800 dark:text-stone-100">
+                <p className="text-[12.5px] leading-snug line-clamp-4 text-stone-800 dark:text-stone-100">
                   {i.quote ? `“${excerpt(i.quote, 220)}”` : i.mark.title || 'Note'}
                 </p>
                 {i.mark.text && i.quote && (
-                  <p dir="auto" className="mt-1 text-[11.5px] text-muted line-clamp-2">{i.mark.text}</p>
+                  <p className="mt-1 text-[11.5px] text-muted line-clamp-2">{i.mark.text}</p>
                 )}
                 <div className="mt-1.5 flex items-center justify-between text-[10.5px] text-muted">
                   <span>¶ {i.mark.anchor.paragraphIndex + 1}</span>

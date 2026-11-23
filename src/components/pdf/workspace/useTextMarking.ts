@@ -97,7 +97,7 @@ export function useTextMarking(deps: UseTextMarkingDeps) {
     [annotations, toolColors, activeThemeIds, settings.name, settings.terminologyColor, toolWeights, setAnnotations]
   );
 
-  useSelectionCapture({ settings, styles: deps.styles, marks: deps.marks, selection: deps.selection, scrollRef, applyTextMark });
+  const { unreadable } = useSelectionCapture({ settings, styles: deps.styles, marks: deps.marks, selection: deps.selection, scrollRef, applyTextMark });
 
   /**
    * Writes a sticky note about the selected passage.
@@ -268,7 +268,7 @@ export function useTextMarking(deps: UseTextMarkingDeps) {
     [pendingSelection, applyTextMark, tool, maskMode, toolColors, settings.name]
   );
 
-  return { applyTextMark, createNoteForSelection, createReactionForSelection, handleToolTap, ...styleHandlers };
+  return { applyTextMark, createNoteForSelection, createReactionForSelection, handleToolTap, unreadable, ...styleHandlers };
 }
 
 export type TextMarking = ReturnType<typeof useTextMarking>;

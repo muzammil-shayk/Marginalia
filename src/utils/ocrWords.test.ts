@@ -2,8 +2,8 @@
  * Run with: npx tsx --test src/utils/ocrWords.test.ts
  *
  * Fixtures are real tesseract.js 7 output (blocks), trimmed to a few lines: an English page of a
- * scanned book (image 1080 x 1677, eng+urd) and a Nastaliq page of Kulliyat-e-Iqbal (image
- * 1464 x 2076, urd).
+ * scanned book (image 1080 x 1677, eng+urd) and a page in another script (image 1464 x 2076)
+ * read by an older version.
  */
 
 import { test } from 'node:test';
@@ -57,10 +57,10 @@ test('words become page fractions, numbered by line, in reading order', () => {
   assert.ok(words.every((w) => !w.rtl));
 });
 
-test('an Urdu line keeps tesseract reading order, right to left, and is marked rtl', () => {
+test('a line in another script keeps tesseract\'s order, as plain words: nothing is marked right to left', () => {
   const words = ocrWordsFromBlocks(urdu, 1464, 2076);
   assert.deepEqual(words.map((w) => w.text), ['پائّیے', 'ںا']);
-  assert.ok(words.every((w) => w.rtl === true));
+  assert.ok(words.every((w) => !('rtl' in w)));
   assert.ok(words[0].x > words[1].x);
 });
 
@@ -86,15 +86,15 @@ test('spans fit each word to its box: font size from the height, stretched to th
   const spans = ocrSpans(words, 1000, 1000, (text, size) => (text.length * size) / 2);
   assert.deepEqual(spans, [
     // Between words of a line a space, so the quote has its spaces; none at a line's end.
-    { text: 'and ', left: 100, top: 200, fontSize: 20, scaleX: 100 / 30, rtl: false },
-    { text: 'so', left: 250, top: 200, fontSize: 20, scaleX: 50 / 20, rtl: false },
-    { text: 'on', left: 100, top: 300, fontSize: 20, scaleX: 50 / 20, rtl: false }
+    { text: 'and ', left: 100, top: 200, fontSize: 20, scaleX: 100 / 30 },
+    { text: 'so', left: 250, top: 200, fontSize: 20, scaleX: 50 / 20 },
+    { text: 'on', left: 100, top: 300, fontSize: 20, scaleX: 50 / 20 }
   ]);
 });
 
-test('an rtl word span is marked rtl', () => {
+test('a word an older version saved as right to left lays out as a plain span', () => {
   const spans = ocrSpans([{ text: 'ںا', x: 0.5, y: 0.1, w: 0.05, h: 0.02, line: 0, rtl: true }], 1000, 1000, () => 10);
-  assert.equal(spans[0].rtl, true);
+  assert.deepEqual(spans, [{ text: 'ںا', left: 500, top: 100, fontSize: 20, scaleX: 5 }]);
 });
 
 test('a saved OCR page is accepted only in the expected shape', () => {

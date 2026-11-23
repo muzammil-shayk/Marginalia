@@ -8,7 +8,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { isAlreadyMarked, pageHasText, planTextMarks, type SelectionGroup } from './textMarking';
+import { isAlreadyMarked, pageHasText, pageHasUnmappedText, planTextMarks, type SelectionGroup } from './textMarking';
 import type { Annotation } from './annotationModel';
 
 const line = (y: number, x = 0.1, w = 0.6) => ({ x, y, w, h: 0.02 });
@@ -125,4 +125,35 @@ test('a scanned page (no text items, or only blank ones) has no text; a page wit
   assert.equal(pageHasText([]), false);
   assert.equal(pageHasText([{ str: ' ' }, { str: '' }, { type: 'beginMarkedContent' }]), false);
   assert.equal(pageHasText([{ str: ' ' }, { str: 'Red' }]), true);
+});
+
+test('a page whose text is only control characters (a font with no letter map) has no text; Urdu letters or digits are text', () => {
+  assert.equal(pageHasText([{ str: '\u0001\u0002 \u0003' }, { str: '\u000e\u200f' }]), false);
+  assert.equal(pageHasText([{ str: '\u0001' }, { str: 'میں' }]), true);
+  assert.equal(pageHasText([{ str: '\u0003' }, { str: '12' }]), true);
+});
+
+test('a page whose only text is symbols, punctuation or private-use glyphs still has text', () => {
+  assert.equal(pageHasText([{ str: '•' }]), true, 'lone bullet');
+  assert.equal(pageHasText([{ str: '—' }, { str: ' ' }]), true, 'em dash');
+  assert.equal(pageHasText([{ str: '...' }]), true, 'ellipsis dots');
+  assert.equal(pageHasText([{ str: '∑∞' }, { str: '✂' }]), true, 'math and dingbat');
+  assert.equal(pageHasText([{ str: '' }]), true, 'private-use ligatures');
+  assert.equal(pageHasText([{ str: '42' }]), true, 'digits only');
+  assert.equal(pageHasUnmappedText([{ str: '•' }]), false);
+  assert.equal(pageHasUnmappedText([{ str: '' }]), false);
+});
+
+test('control, format and whitespace characters alone are no text', () => {
+  assert.equal(pageHasText([{ str: '\u0000\u001f\u007f\u0085' }]), false, 'C0/C1 controls');
+  assert.equal(pageHasText([{ str: '​‎⁠﻿' }]), false, 'format chars');
+  assert.equal(pageHasText([{ str: ' 　\t\n' }]), false, 'whitespace');
+  assert.equal(pageHasText([{ str: '' }]), false, 'empty');
+});
+
+test('a page with characters but no letters has unmapped text; a scan or a page with words has not', () => {
+  assert.equal(pageHasUnmappedText([{ str: '\u0001\u0002' }, { str: ' ' }]), true);
+  assert.equal(pageHasUnmappedText([]), false);
+  assert.equal(pageHasUnmappedText([{ str: '  ' }, { type: 'beginMarkedContent' }]), false);
+  assert.equal(pageHasUnmappedText([{ str: '\u0001' }, { str: 'Red' }]), false);
 });

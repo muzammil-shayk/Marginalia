@@ -38,24 +38,6 @@
   unicode-range: U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
 }
 
-/* Noto Nastaliq Urdu (2.7.0), Arabic script only: Urdu and Persian text in the reader and in exports. */
-@font-face {
-  font-family: 'Noto Nastaliq Urdu';
-  font-style: normal;
-  font-display: swap;
-  font-weight: 400;
-  src: url('../node_modules/@fontsource/noto-nastaliq-urdu/files/noto-nastaliq-urdu-arabic-400-normal.woff2') format('woff2');
-  unicode-range: U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC;
-}
-@font-face {
-  font-family: 'Noto Nastaliq Urdu';
-  font-style: normal;
-  font-display: swap;
-  font-weight: 700;
-  src: url('../node_modules/@fontsource/noto-nastaliq-urdu/files/noto-nastaliq-urdu-arabic-700-normal.woff2') format('woff2');
-  unicode-range: U+0600-06FF,U+0750-077F,U+0870-088E,U+0890-0891,U+0897-08E1,U+08E3-08FF,U+200C-200E,U+2010-2011,U+204F,U+2E41,U+FB50-FDFF,U+FE70-FE74,U+FE76-FEFC;
-}
-
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ── App palette: the shelf's night-and-paper world, app-wide ──────────────
@@ -1713,15 +1695,22 @@ main[data-annotation-surface] ::selection {
 }
 
 /* Clipped to the book: a leaf lifting toward the viewer must never hang past the pages onto the
-   background. A long perspective keeps the leaf's text from squashing as it swings (less
-   foreshortening, and the clip trims only a few px at the peak). */
-.page-turn {
+   background. `.page-turn-prep` is a turn built ahead (pageTurn.ts TurnPrep), laid out and painted
+   but transparent until it starts. */
+.page-turn,
+.page-turn-prep {
   position: absolute;
   inset: 0;
   z-index: 4;
   overflow: clip;
   pointer-events: none;
-  perspective: 7000px;
+}
+/* Opacity, not visibility: visibility is inherited, so flipping it restyled every copied node
+   (~25 ms) on the click; opacity changes one element. `will-change` makes the browser paint the
+   copies now, while idle, rather than on the click (it skips painting plain opacity-0 content). */
+.page-turn-prep {
+  opacity: 0;
+  will-change: opacity;
 }
 .page-turn-face {
   position: absolute;
@@ -1729,35 +1718,59 @@ main[data-annotation-surface] ::selection {
   overflow: hidden;
   background: var(--spread-page);
   backface-visibility: hidden;
-}
-.page-turn-leaf {
-  transform-style: preserve-3d;
-  will-change: transform;
-}
-.page-turn-back {
-  transform: rotateY(180deg);
-}
-.page-turn-shade {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  /* Soft, not a flat grey sheet: deepest at the hinge, fading out well before the free edge.
-     The back face is mirrored, so its hinge is on the opposite local side. */
-  --shade-dir: to right;
-  background: linear-gradient(var(--shade-dir), rgb(30 20 6 / 0.28), rgb(30 20 6 / 0.1) 45%, rgb(30 20 6 / 0.04));
-}
-.page-turn-leaf[data-hinge='right'] .page-turn-front .page-turn-shade,
-.page-turn-leaf[data-hinge='left'] .page-turn-back .page-turn-shade {
-  --shade-dir: to left;
+  /* Keeps a copied page's z-indexed mark layers inside their face; without it the old page's
+     highlights and notes painted over the turning leaf until it landed. */
+  isolation: isolate;
 }
 .page-turn-cast {
   opacity: 0;
 }
 .page-turn-cast[data-side='left'] {
-  background: linear-gradient(to right, rgb(30 20 6 / 0.22), rgb(30 20 6 / 0.08) 22%, transparent 60%);
+  background: linear-gradient(to right, rgb(100 74 38 / 0.2), rgb(100 74 38 / 0.07) 22%, transparent 60%);
 }
 .page-turn-cast[data-side='right'] {
-  background: linear-gradient(to left, rgb(30 20 6 / 0.22), rgb(30 20 6 / 0.08) 22%, transparent 60%);
+  background: linear-gradient(to left, rgb(100 74 38 / 0.2), rgb(100 74 38 / 0.07) 22%, transparent 60%);
+}
+.dark .page-turn-cast[data-side='left'] {
+  background: linear-gradient(to right, rgb(0 0 0 / 0.4), rgb(0 0 0 / 0.14) 22%, transparent 60%);
+}
+.dark .page-turn-cast[data-side='right'] {
+  background: linear-gradient(to left, rgb(0 0 0 / 0.4), rgb(0 0 0 / 0.14) 22%, transparent 60%);
+}
+/* The folding leaf: thin vertical strips placed along the curl, each a slice of the page, clipped
+   to the two pages (perspective enlarges the lifted edge past them). */
+.fold-clip {
+  position: absolute;
+  overflow: clip;
+  perspective: 3000px;
+}
+.fold-strip {
+  position: absolute;
+  transform-style: preserve-3d;
+}
+.fold-face {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--spread-page);
+  backface-visibility: hidden;
+  isolation: isolate;
+}
+.fold-back {
+  transform: rotateY(180deg);
+}
+/* One flat colour per strip, its opacity animated (0 flat, 1 edge-on): a soft crease where the
+   sheet turns. The depth lives in the colour's alpha. Light: a warm paper shadow that never greys
+   the cream; dark: deeper, so the fold still reads on night pages. */
+.fold-shade {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  opacity: 0;
+  background: rgb(120 92 52 / 0.2);
+}
+.dark .fold-shade {
+  background: rgb(0 0 0 / 0.45);
 }
 
 /* ── Focus mode ── the bar slides in from the top edge, eased, no overshoot. Reduced motion: it
@@ -1836,19 +1849,11 @@ main[data-annotation-surface] ::selection {
   background-color: rgb(251 176 36 / 0.58);
 }
 
-/* ── Poetry mode (utils/poetry.ts): radif and rhyme, painted the same way ── */
-::highlight(poem-radif) {
-  text-decoration: underline dotted rgb(161 120 40 / 0.9);
-  text-decoration-thickness: 2px;
-  text-underline-offset: 6px;
-}
+/* ── Poetry mode (utils/poetry.ts): rhymes ── */
 ::highlight(poem-rhyme) {
   text-decoration: underline solid rgb(91 128 112 / 0.85);
   text-decoration-thickness: 2px;
   text-underline-offset: 6px;
-}
-.dark ::highlight(poem-radif) {
-  text-decoration-color: rgb(226 190 110 / 0.9);
 }
 .dark ::highlight(poem-rhyme) {
   text-decoration-color: rgb(150 196 176 / 0.9);
@@ -1862,7 +1867,7 @@ main[data-annotation-surface] ::selection {
   background-color: rgb(167 139 250 / 0.3);
 }
 
-/* Poetry mode: line and sher numbers in the gutter beside each line (PoetryView.tsx). */
+/* Poetry mode: line and couplet numbers in the gutter beside each line (PoetryView.tsx). */
 .poem-num {
   position: absolute;
   left: -1.6rem;
@@ -1876,15 +1881,6 @@ main[data-annotation-surface] ::selection {
   color: var(--muted);
   pointer-events: none;
   user-select: none;
-}
-.poem-num-rtl {
-  left: auto;
-  right: -1.6rem;
-  text-align: left;
-}
-.poem-key-radif {
-  text-decoration: underline dotted rgb(161 120 40 / 0.9) 2px;
-  text-underline-offset: 3px;
 }
 .poem-key-rhyme {
   text-decoration: underline solid rgb(91 128 112 / 0.85) 2px;

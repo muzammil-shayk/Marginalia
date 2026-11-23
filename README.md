@@ -5,8 +5,8 @@ passage, then highlight, underline, file passages under themes and write notes i
 Everything stays on your computer.
 
 - **Reading:** a bookshelf of your documents with reading progress, a two-page spread with page
-  turns (arrows, keys or a swipe), 1, 2, 4 or 6 PDF pages in view, focus mode, a poetry view, and
-  Urdu and other right-to-left text in Nastaliq.
+  turns (arrows, keys or a swipe), 1, 2, 4 or 6 PDF pages in view, focus mode and a poetry view.
+  English books only for now: Urdu and other right-to-left text is not supported yet.
 - **Marking:** highlight, underline, strikeout, terminology, area highlight, pen, shapes, brackets,
   black-out boxes, reactions, sticky notes and text boxes, linked marks, several themes on one passage.
 - **Finding:** Find in a document, search across everything, and motif tracing across your collections.

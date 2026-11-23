@@ -140,7 +140,7 @@ export const ReaderControlBar: React.FC<ReaderControlBarProps> = ({ settings, is
               type="button"
               onClick={() => setPoetryOpen((o) => !o)}
               className={pillClass(poetry.on)}
-              title="Poetry view: line and sher numbers, radif and rhyme"
+              title="Poetry view: line and couplet numbers, and rhymes"
               aria-label="Poetry view"
               aria-expanded={poetryOpen}
             >

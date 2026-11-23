@@ -259,8 +259,11 @@ const OPTION_LIST: { key: keyof FindOptions; glyph: string; label: string }[] = 
   { key: 'wholeWord', glyph: 'W', label: 'Whole words only' }
 ];
 
-/** The find strip. Render it inside the surface's sticky toolbar block so it never covers text. */
-export const FindBar: React.FC<{ find: DocumentFind; isDark: boolean; className?: string }> = ({ find, isDark, className = '' }) => {
+/**
+ * The find strip. Render it inside the surface's sticky toolbar block so it never covers text.
+ * `note`: one quiet line under the bar (a PDF's scanned pages that are not searched yet).
+ */
+export const FindBar: React.FC<{ find: DocumentFind; isDark: boolean; className?: string; note?: React.ReactNode }> = ({ find, isDark, className = '', note }) => {
   if (!find.open) return null;
   const label = findCountLabel(find.query, find.hits.length, find.current, find.loading);
   const none = !find.loading && !!find.query.trim() && find.hits.length === 0;
@@ -344,6 +347,7 @@ export const FindBar: React.FC<{ find: DocumentFind; isDark: boolean; className?
           </button>
         </HoverTooltip>
       </div>
+      {note && <div className="basis-full pl-3 text-[11.5px] text-muted empty:hidden">{note}</div>}
     </div>
   );
 };

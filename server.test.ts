@@ -145,3 +145,32 @@ test('an OCR page at the 20,000-word cap fits under its route body limit', async
   const res = await json('PUT', `/api/documents/${meta.id}/ocr/1`, body);
   assert.equal(res.status, 200);
 });
+
+test('records saved by the Urdu versions (2.7–2.11) still load, and their extra fields survive later saves', async () => {
+  // Settings: the Urdu script choice and per-document poem prefs stay on disk through a save of something else.
+  const old = { name: 'Reader', arabicScript: 'naskh', poetry: { [`${'c'.repeat(32)}`]: { on: true, numbering: 'couplets', prosody: true, metre: 'hazaj', radif: 'نکلے' } } };
+  assert.equal((await json('PUT', '/api/settings', { settings: old })).status, 200);
+  assert.equal((await json('PUT', '/api/settings', { settings: { name: 'Reader two' } })).status, 200);
+  const settings = (await (await fetch(`${base}/api/settings`)).json()).settings;
+  assert.equal(settings.name, 'Reader two');
+  assert.equal(settings.arabicScript, 'naskh');
+  assert.deepEqual(settings.poetry, old.poetry);
+
+  // Marks on an Urdu book, with fields this version no longer writes: kept as they are.
+  const meta = await store.saveDocument({ title: 'کلیات', text: 'دل ہی تو ہے', format: 'TXT', filename: 'urdu.txt' });
+  const mark = { id: 'u', kind: 'highlight', page: 1, color: '#ffd400', quote: 'دل ہی تو ہے', rtl: true, scriptDirection: 'rtl' };
+  assert.equal((await json('PUT', `/api/documents/${meta.id}/annotations`, { annotations: [mark] })).status, 200);
+  const marks = (await (await fetch(`${base}/api/documents/${meta.id}/annotations`)).json()).annotations;
+  assert.equal(marks.length, 1);
+  assert.equal(marks[0].quote, 'دل ہی تو ہے');
+  assert.equal(marks[0].rtl, true);
+  assert.equal(marks[0].scriptDirection, 'rtl');
+
+  // OCR pages read in Urdu ("urd", "eng+urd", right-to-left words) still load and are not refused.
+  const ocr = { words: [{ text: 'شام', x: 0.5, y: 0.1, w: 0.1, h: 0.03, line: 0, rtl: true }], langs: 'urd', createdAt: '2026-11-22T10:00:00.000Z' };
+  assert.equal((await json('PUT', `/api/documents/${meta.id}/ocr/1`, ocr)).status, 200);
+  assert.deepEqual(await (await fetch(`${base}/api/documents/${meta.id}/ocr`)).json(), { pages: { 1: ocr } });
+  const doc = await fetch(`${base}/api/documents/${meta.id}`);
+  assert.equal(doc.status, 200);
+  assert.equal((await doc.json()).title, 'کلیات');
+});

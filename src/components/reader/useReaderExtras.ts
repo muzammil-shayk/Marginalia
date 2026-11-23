@@ -4,11 +4,8 @@
  */
 
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { hasRtlText } from '../../utils/scriptDirection';
 import { paragraphHits } from '../../utils/motifTrace';
 import { paintHighlight, rangeFor, readPieces } from '../findHighlight';
-import { printNotesPdf } from '../../utils/documentStorage';
-import nastaliqFontUrl from '@fontsource/noto-nastaliq-urdu/files/noto-nastaliq-urdu-arabic-400-normal.woff2?url';
 import { copyText, excerpt, useMarksArchive } from '../MarksArchive';
 import { useDocumentFind } from '../FindBar';
 import type { MarkLinks } from '../pdf/MarkProperties';
@@ -19,7 +16,6 @@ import { ParagraphRange } from '../../utils/textFormatting';
 import type { PlainTextAnnotations } from '../../hooks/usePlainTextAnnotations';
 import {
   exportToPDF,
-  notesPrintHtml,
   generateMarkdown,
   generatePlainText,
   downloadTextFile,
@@ -70,25 +66,7 @@ export function useReaderExtras(deps: UseReaderExtrasDeps) {
       format,
       includeQuotes: true
     };
-    if (format === 'pdf') {
-      // jsPDF has no right-to-left glyphs or Nastaliq shaping; such notes print through the desktop app's renderer.
-      if (hasRtlText([displayTitle, ...exportable.flatMap((e) => [e.quote, e.content, e.title])])) {
-        void (async () => {
-          const font = await fetch(nastaliqFontUrl)
-            .then((r) => r.blob())
-            .then((b) => new Promise<string>((res) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result)); fr.readAsDataURL(b); }))
-            .catch(() => undefined);
-          const pdf = await printNotesPdf(notesPrintHtml(exportable, opts, font?.replace(/^data:[^;]*;/, 'data:font/woff2;'), settings.arabicScript));
-          if (!pdf) return exportToPDF(exportable, opts);
-          const url = URL.createObjectURL(pdf);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `marginalia-annotations-${displayTitle.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'document'}.pdf`;
-          a.click();
-          window.setTimeout(() => URL.revokeObjectURL(url), 10_000);
-        })();
-      } else void exportToPDF(exportable, opts);
-    }
+    if (format === 'pdf') void exportToPDF(exportable, opts);
     else if (format === 'markdown') downloadTextFile(generateMarkdown(exportable, opts), `${displayTitle}-annotations.md`, 'text/markdown');
     else downloadTextFile(generatePlainText(exportable, opts), `${displayTitle}-annotations.txt`, 'text/plain');
   };

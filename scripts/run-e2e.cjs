@@ -20,6 +20,8 @@ const SUITES = [
   [ELECTRON, 'e2e-inkarrow.cjs'],
   [ELECTRON, 'e2e-focus.cjs'],
   [ELECTRON, 'e2e-ocr-ui.cjs'],
+  [ELECTRON, 'e2e-ocr-auto.cjs'],
+  [ELECTRON, 'e2e-nomap.cjs'],
   [process.execPath, 'e2e-first-run.cjs']
 ];
 

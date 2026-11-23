@@ -26,10 +26,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ── Sample library ──────────────────────────────────────────────────────────
 
-const GHAZAL = [
-  'ہزاروں خواہشیں ایسی کہ ہر خواہش پہ دم نکلے\nبہت نکلے مرے ارمان لیکن پھر بھی کم نکلے',
-  'ڈرے کیوں میرا قاتل کیا رہے گا اس کی گردن پر\nوہ خوں جو چشم تر سے عمر بھر یوں دم بہ دم نکلے',
-  'نکلنا خلد سے آدم کا سنتے آئے ہیں لیکن\nبہت بے آبرو ہو کر ترے کوچے سے ہم نکلے'
+const SHORE = [
+  'The tide goes out along the sand\nThe gulls go wheeling west\nThe boats lie waiting near the land\nAnd all the shore is rest',
+  'The lamp is lit above the bay\nThe nets are hung to dry\nThe children run the long way home\nBeneath a reddening sky'
 ].join('\n\n');
 
 const NIGHT = [
@@ -305,7 +304,7 @@ async function main() {
   // Documents, oldest first so the shelf reads in a sensible order.
   const essay = await api('/documents', 'POST', { title: 'On Marginalia', text: ESSAY, format: 'TXT', layout: 'verbatim' });
   const night = await api('/documents', 'POST', { title: 'Night Songs', text: NIGHT, format: 'TXT', layout: 'verbatim' });
-  const ghazal = await api('/documents', 'POST', { title: 'Ghalib: Hazaron khwahishen', text: GHAZAL, format: 'TXT', layout: 'verbatim' });
+  const shore = await api('/documents', 'POST', { title: 'The Shore', text: SHORE, format: 'TXT', layout: 'verbatim' });
   const pdf = await api('/documents', 'POST', { title: 'Reading Slowly', text: ESSAY, format: 'PDF', filename: 'reading-slowly.pdf' });
   await fetch(`${base}/api/documents/${pdf.id}/original?filename=reading-slowly.pdf`, {
     method: 'PUT',
@@ -321,7 +320,7 @@ async function main() {
   await api(`/documents/${essay.id}/annotations`, 'PUT', { annotations: essayMarks() });
   await api(`/documents/${night.id}/annotations`, 'PUT', { annotations: nightMarks() });
   await api(`/documents/${pdf.id}/annotations`, 'PUT', { annotations: pdfMarks() });
-  for (const [id, position, total] of [[essay.id, 6, 10], [night.id, 3, 3], [ghazal.id, 2, 3], [pdf.id, 3, 8]]) {
+  for (const [id, position, total] of [[essay.id, 6, 10], [night.id, 3, 3], [shore.id, 2, 3], [pdf.id, 3, 8]]) {
     await api(`/documents/${id}/progress`, 'PUT', { position, total }).catch(() => {});
   }
   const settings = {
@@ -334,10 +333,10 @@ async function main() {
     terminologyColor: '#c08a2e',
     lastSeenVersion: version,
     poetry: {
-      [ghazal.id]: { on: true, numbering: 'couplets', prosody: true, metre: 'hazaj musamman saalim' },
+      [shore.id]: { on: true, numbering: 'lines', prosody: true, metre: 'iambic, four and three beats' },
       [night.id]: { on: true, numbering: 'lines', prosody: false }
     },
-    motifs: [{ id: 'mo-moon', name: 'The moon', terms: ['moon', 'چاند'] }]
+    motifs: [{ id: 'mo-moon', name: 'The moon', terms: ['moon'] }]
   };
   await api('/settings', 'PUT', { settings });
 
@@ -486,7 +485,7 @@ async function main() {
     await shot('board', full);
   });
   await step('poetry', async () => {
-    await open('reader', ghazal);
+    await open('reader', shore);
     await sleep(800);
     await shot('poetry', full);
   });
@@ -549,12 +548,12 @@ async function main() {
     await sleep(400);
   });
   await step('ocr', async () => {
-    // A scanned page: its own "Make text selectable", and the toolbar panel for the whole document.
+    // A scanned page (selecting on it reads it), and the toolbar panel for the whole document.
     await open('workspace', { ...scan, format: 'PDF' });
     await sleep(2500);
     await js(`__click('button[aria-label="Make scanned pages selectable"]'); return true;`);
     await sleep(700);
-    points.ocr = { focus: await js(`return __pt(document.querySelector('[data-page-number="1"] [data-ocr-page]'));`) };
+    points.ocr = { focus: await js(`return __pt(document.querySelector('[data-page-number="1"]'));`) };
     await shot('ocr', full);
     await js(`document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); return true;`);
   });

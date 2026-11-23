@@ -13,7 +13,7 @@ import type { PdfCollapse } from './PdfCollapsed';
 import { FindBar, FIND_SHORTCUT } from '../../FindBar';
 import { UserSettings } from '../../../types';
 import { PdfToolbar, TOOL_GROUPS } from '../PdfToolbar';
-import { OcrDocumentMenu } from '../OcrControls';
+import { FindScanNote, OcrDocumentMenu } from '../OcrControls';
 import { FocusPalette, type PaletteTool } from '../../FocusPalette';
 import type { PaletteSpot } from '../../paletteSpot';
 import { TOOL_HOTKEYS } from '../workspaceKeys';
@@ -42,7 +42,7 @@ export interface WorkspaceToolbarProps {
   view: Pick<WorkspaceView, 'currentPage' | 'pageCount' | 'scale' | 'setScale' | 'viewMode'>;
   status: Pick<WorkspaceStatus, 'isExporting' | 'isPanelOpen' | 'setIsPanelOpen'>;
   nav: Pick<PdfNavigation, 'fitPage' | 'fitWidth' | 'goToPage' | 'handleViewModeChange'>;
-  extras: Pick<WorkspaceExtras, 'archive' | 'find' | 'handleExport'>;
+  extras: Pick<WorkspaceExtras, 'archive' | 'find' | 'handleExport' | 'unreadScans'>;
   pageEdits: Pick<PageEdits, 'isDeletingPage' | 'isInsertingPage' | 'setInsertPageMenuOpen'>;
   collapse: Pick<PdfCollapse, 'on' | 'toggle'>;
 }
@@ -187,7 +187,7 @@ export const WorkspaceToolbar: React.FC<WorkspaceToolbarProps> = ({ docId, setti
       />
       {find.open && (
         <div className={`shrink-0 px-3 py-1.5 border-b ${isDark ? 'bg-night-2 border-stone-800' : 'bg-white border-stone-200'}`}>
-          <FindBar find={find} isDark={isDark} />
+          <FindBar find={find} isDark={isDark} note={docId && <FindScanNote docId={docId} unread={extras.unreadScans} hits={find.hits.length} pages={view.pageCount} query={find.query} />} />
         </div>
       )}
       </FocusChrome>

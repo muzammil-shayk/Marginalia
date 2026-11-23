@@ -4,7 +4,6 @@
  * Pure, so it is tested; the worker itself lives in components/pdf/ocr.
  */
 
-import { isMostlyRtl } from './scriptDirection';
 
 /** A box in image pixels, as tesseract.js gives it. */
 export interface OcrBox {
@@ -28,7 +27,7 @@ export interface OcrWord {
   h: number;
   /** Line number on the page, counted from 0 in reading order. */
   line: number;
-  /** On a right-to-left line (Urdu, Arabic, Hebrew). */
+  /** Set by older versions on a right-to-left line (Urdu OCR); kept on disk, no longer used for layout. */
   rtl?: true;
 }
 
@@ -40,11 +39,11 @@ export interface OcrPage {
   createdAt: string;
 }
 
-/** Direction marks tesseract wraps words in; the layer sets direction itself, quotes need none. */
+/** Direction marks tesseract may wrap words in; quotes need none. */
 const BIDI_MARKS = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 
 /**
- * Words from tesseract.js blocks, in reading order (tesseract gives an Urdu line right to left),
+ * Words from tesseract.js blocks, in tesseract's reading order,
  * as fractions of an image `width` x `height`. Blank words and empty boxes are dropped.
  */
 export function ocrWordsFromBlocks(blocks: OcrBlock[], width: number, height: number): OcrWord[] {
@@ -53,13 +52,12 @@ export function ocrWordsFromBlocks(blocks: OcrBlock[], width: number, height: nu
   for (const block of blocks) {
     for (const paragraph of block.paragraphs ?? []) {
       for (const l of paragraph.lines ?? []) {
-        const rtl = isMostlyRtl(l.text);
         let kept = false;
         for (const word of l.words ?? []) {
           const text = word.text.replace(BIDI_MARKS, '').trim();
           const { x0, y0, x1, y1 } = word.bbox;
           if (!text || x1 <= x0 || y1 <= y0) continue;
-          out.push({ text, x: x0 / width, y: y0 / height, w: (x1 - x0) / width, h: (y1 - y0) / height, line, ...(rtl && { rtl: true as const }) });
+          out.push({ text, x: x0 / width, y: y0 / height, w: (x1 - x0) / width, h: (y1 - y0) / height, line });
           kept = true;
         }
         if (kept) line++;
@@ -77,7 +75,6 @@ export interface OcrSpan {
   fontSize: number;
   /** Horizontal stretch so the word's glyphs span its box. */
   scaleX: number;
-  rtl: boolean;
 }
 
 /**
@@ -95,8 +92,7 @@ export function ocrSpans(words: OcrWord[], pageW: number, pageH: number, measure
       left: w.x * pageW,
       top: w.y * pageH,
       fontSize,
-      scaleX: natural > 0 ? (w.w * pageW) / natural : 1,
-      rtl: w.rtl === true
+      scaleX: natural > 0 ? (w.w * pageW) / natural : 1
     };
   });
 }

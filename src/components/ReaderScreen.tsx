@@ -1,5 +1,4 @@
 import React from 'react';
-import { paragraphTypeface } from '../utils/scriptDirection';
 import type { ThemeStore } from './themeStore';
 import {
   AnnotationFocus,
@@ -151,7 +150,6 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
   );
   const paragraphNodes = paragraphs.map((text, idx) => {
     const notes = paraData.notes.get(idx) ?? EMPTY_NOTES;
-    const face = paragraphTypeface(text, paragraphFont, settings.arabicScript);
     return (
       <Paragraph
         key={idx}
@@ -170,9 +168,7 @@ export const ReaderScreen: React.FC<ReaderScreenProps> = ({
         styles={stylesByPara.get(idx) ?? EMPTY_STYLES}
         openPin={openPin && notes.some((n) => n.mark.id === openPin) ? openPin : ''}
         terminologyColor={settings.terminologyColor}
-        fontFamily={face.fontFamily}
-        dir={face.dir}
-        lineHeight={face.lineHeight}
+        fontFamily={paragraphFont}
         fontSize={settings.fontSize}
         clock={notes.length ? clock : 0}
         actions={paragraphActions}

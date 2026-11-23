@@ -8,6 +8,7 @@
  * 2. Book view: a hit on the next pair turns the book there, instead of landing on a hidden page.
  * 3. Collapsed to marks: a hit outside the strips opens the document at it, in view.
  * 4. A scanned page read by OCR is searched too, and its hit is painted on the OCR words.
+ * 5. A scanned page not read yet: Find says so in one line; "Read pages" reads it and its hit is found.
  * Exits 0 when every check passes, 1 otherwise, printing each result.
  */
 
@@ -38,6 +39,30 @@ async function samplePdf() {
   const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNoAAAAggCBd81ytgAAAABJRU5ErkJggg==', 'base64');
   const image = await doc.embedPng(png);
   doc.addPage([420, 595]).drawImage(image, { x: 0, y: 0, width: 420, height: 595 });
+  return Buffer.from(await doc.save());
+}
+
+/**
+ * Pages 1-6 have text without the word; page 7 is a picture of "a lantern glowed by the water" (no
+ * text layer), far enough from page 1 that it is not read on its own (useAutoOcr reads the pages in
+ * view and their neighbours): Find's note and Read pages do it.
+ */
+async function halfScannedPdf() {
+  const { PDFDocument, StandardFonts } = require(path.join(ROOT, 'node_modules', 'pdf-lib'));
+  const w = new BrowserWindow({ show: false });
+  await w.loadURL('data:text/html,<html><body></body></html>');
+  const png = await w.webContents.executeJavaScript(`(() => {
+    const c = document.createElement('canvas'); c.width = 1200; c.height = 1600;
+    const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height);
+    g.fillStyle = '#111'; g.font = '52px serif'; g.fillText('a lantern glowed by the water', 100, 300);
+    return c.toDataURL('image/png');
+  })()`);
+  w.destroy();
+  const doc = await PDFDocument.create();
+  const font = await doc.embedFont(StandardFonts.TimesRoman);
+  for (let n = 1; n <= 6; n++) doc.addPage([600, 800]).drawText('nothing glowed by the water', { x: 40, y: 700, size: 14, font });
+  const image = await doc.embedPng(Buffer.from(png.split(',')[1], 'base64'));
+  doc.addPage([600, 800]).drawImage(image, { x: 0, y: 0, width: 600, height: 800 });
   return Buffer.from(await doc.save());
 }
 
@@ -145,6 +170,34 @@ async function main() {
   await sleep(2500);
   const ocr = await current();
   check('A page read by OCR is searched, its hit painted on the OCR words', /of 4$/.test(total || '') && ocr?.page === 10 && ocr.text === 'lantern' && ocr.seen, JSON.stringify({ total, ocr }));
+
+  // 5. A scanned page not read yet: Find says so, and Read pages reads it.
+  const half = await api('/documents', 'POST', { title: 'Half', text: 'nothing', format: 'PDF', filename: 'half.pdf' });
+  await fetch(`${base}/api/documents/${half.id}/original?filename=half.pdf`, { method: 'PUT', headers: { 'Content-Type': 'application/octet-stream' }, body: await halfScannedPdf() });
+  const sh = { currentScreen: 'workspace', analysisDoc: { title: half.title, text: '', format: 'PDF', docId: half.id }, uploadedLibrary: [], documentNotes: {}, documentFormats: {} };
+  await win.loadURL(base);
+  await js(`sessionStorage.setItem('marginalia_session', ${JSON.stringify(JSON.stringify(sh))}); return true;`);
+  await win.loadURL(base);
+  await waitFor('[data-page-number="1"][data-painted] .marginalia-text-layer span');
+  await sleep(800);
+  await find('lantern');
+  await sleep(1200);
+  const scanBefore = await js(`return { count: document.querySelector('#find-count')?.textContent, note: document.querySelector('[role="search"] [data-find-scans]')?.textContent ?? null };`);
+  await js(`[...document.querySelectorAll('[role="search"] [data-find-scans] button')].find((b) => b.textContent === 'Read pages')?.click(); return true;`);
+  const scanAfter = await js(`
+    for (const t0 = performance.now(); performance.now() - t0 < 90000; await new Promise((r) => setTimeout(r, 300))) {
+      const count = document.querySelector('#find-count')?.textContent;
+      if (count === '1 of 1') return { count, note: document.querySelector('[role="search"] [data-find-scans]')?.textContent ?? null };
+    }
+    return { count: document.querySelector('#find-count')?.textContent, timedOut: true };
+  `);
+  check(
+    'A scanned page not read yet: Find says so, and Read pages reads it so its hit is found',
+    scanBefore.count === 'No results' && /1 page has no text to search yet/.test(scanBefore.note || '') && scanAfter.count === '1 of 1' && scanAfter.note === null,
+    JSON.stringify({ scanBefore, scanAfter })
+  );
+  const halfLangs = fs.readdirSync(path.join(store, 'ocr', half.id)).map((f) => JSON.parse(fs.readFileSync(path.join(store, 'ocr', half.id, f), 'utf8')).langs);
+  check('Read pages reads the scan in English', halfLangs.length === 1 && halfLangs[0] === 'eng', JSON.stringify(halfLangs));
 
   win.destroy();
   fs.rmSync(store, { recursive: true, force: true });

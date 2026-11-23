@@ -107,9 +107,6 @@ export interface ParagraphProps {
   terminologyColor: string;
   fontFamily: string;
   fontSize: number;
-  /** From the paragraph's own script: right-to-left text runs right to left, Urdu is set in Nastaliq. */
-  dir: 'rtl' | 'ltr';
-  lineHeight: string;
   /** Minute tick for the notes' relative times; 0 for paragraphs without notes. */
   clock: number;
   actions: ParagraphActions;
@@ -163,7 +160,7 @@ export const NoteCard: React.FC<{
     <div className="flex items-start justify-between gap-2 mb-1">
       <div className="flex items-center gap-1.5 min-w-0">
         <StickyNoteIcon className="w-3.5 h-3.5 shrink-0" style={{ color }} />
-        <h4 dir="auto" className="font-semibold text-[12.5px] tracking-tight truncate">{label}</h4>
+        <h4 className="font-semibold text-[12.5px] tracking-tight truncate">{label}</h4>
       </div>
       <div className="flex items-center gap-0.5 shrink-0 -mr-1 -mt-0.5">
         <button
@@ -193,11 +190,11 @@ export const NoteCard: React.FC<{
       </div>
     </div>
     {quote && (
-      <div dir="auto" className="text-[11px] italic text-stone-600 dark:text-stone-400 border-s-2 ps-2 my-1.5 leading-snug line-clamp-3" style={{ borderInlineStartColor: color }}>
+      <div className="text-[11px] italic text-stone-600 dark:text-stone-400 border-s-2 ps-2 my-1.5 leading-snug line-clamp-3" style={{ borderInlineStartColor: color }}>
         &ldquo;{quote}&rdquo;
       </div>
     )}
-    {note.text && <p dir="auto" className="text-[12px] leading-relaxed whitespace-pre-wrap break-words">{note.text}</p>}
+    {note.text && <p className="text-[12px] leading-relaxed whitespace-pre-wrap break-words">{note.text}</p>}
     {/* Only the time on the reader's own notes; a teacher's (from a class pack) is signed. */}
     {(time || note.fromClassPack) && (
       <p className="mt-1 text-right text-[10px] text-muted">
@@ -231,8 +228,6 @@ export const Paragraph = React.memo(function Paragraph({
   terminologyColor,
   fontFamily,
   fontSize,
-  dir,
-  lineHeight,
   clock,
   actions
 }: ParagraphProps) {
@@ -376,9 +371,8 @@ export const Paragraph = React.memo(function Paragraph({
     >
       <p
         id={`${PARA_TEXT_ID_PREFIX}${idx}`}
-        dir={dir}
         className="leading-relaxed text-stone-800 dark:text-stone-200"
-        style={{ fontFamily, fontSize: `${fontSize}px`, lineHeight, whiteSpace: verbatim ? 'pre-wrap' : undefined }}
+        style={{ fontFamily, fontSize: `${fontSize}px`, lineHeight: '1.75', whiteSpace: verbatim ? 'pre-wrap' : undefined }}
       >
         {renderText()}
       </p>
