@@ -22,9 +22,48 @@ export interface ReleaseNote {
   highlights: ChangelogItem[];
 }
 
-export const CURRENT_APP_VERSION = '2.12.0';
+export const CURRENT_APP_VERSION = '2.13.0';
 
 export const CHANGELOG_RELEASES: ReleaseNote[] = [
+  {
+    version: '2.13.0',
+    title: 'Tutorial Cards That Show Every Step',
+    date: 'November 2026',
+    summary:
+      'Every card in "Getting the most from Marginalia" now plays a real, step-by-step demo recorded in the app, and each one ends on the result.',
+    highlights: [
+      {
+        category: 'feature',
+        title: 'Step-by-step demos on every card',
+        description:
+          'All 62 cards, toolbar tools, features and shortcuts, now play real steps from the real app: the pointer moves, clicks, drags and types. Each step has a short caption ("2 of 4"), step dots, and a replay button. The last step ends on the finished result, such as the boxed paragraph or the saved note.'
+      },
+      {
+        category: 'feature',
+        title: 'Shortcuts, one key at a time',
+        description:
+          'The keyboard shortcuts card plays each of its 17 keys on its own: press the key, then watch what it does. Pick a key in the list to see just that one.'
+      },
+      {
+        category: 'improvement',
+        title: 'Reduced motion and your keyboard',
+        description:
+          'With reduced motion on, a card shows its final picture and a numbered list of the steps instead of moving. The shortcut keys appear as ⌘ on a Mac and Ctrl on Windows.'
+      },
+      {
+        category: 'improvement',
+        title: 'Fresh pictures, English only',
+        description:
+          'The pictures were recorded again from the current app, with English books only. The captions were rewritten to name each step and its result.'
+      },
+      {
+        category: 'fix',
+        title: 'The first press after dragging the deck',
+        description:
+          'After you drag the card deck, the first click on a card now works instead of being ignored.'
+      }
+    ]
+  },
   {
     version: '2.12.0',
     title: 'Folding Page Turns and Scans That Read Themselves',
